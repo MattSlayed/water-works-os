@@ -189,6 +189,7 @@ Other changes:
     - A stale hash is refused.
     - P-001's release succeeds: A is superseded, B is current, and the F01–F04 filter-to-waste Lines exist only under `PM-RB-B`.
   - POS-HLP-B is unchanged byte for byte.
+  - On release, each reviewed `AMBIGUOUS` cell whose reasoning cites an existing record (the `15CQ13|binding` cell) raises one `Issue` titled `Drawing disagrees with record: <key>` for the record's owner (spec §4.3 step 3). Releasing again raises no duplicate.
   - A technician's view hides a Line whose `zones` include Z06.
 - [ ] **Run:** FAIL.
 - [ ] **Implement.**
