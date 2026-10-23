@@ -7,8 +7,8 @@ import { competenceCheck } from "../src/functions.mjs";
 
 const mgr = { id: "P-001", clearance: "manager" };
 
-test("catalogue has the 14 PRD agents, the 4 workforce agents and Geo Watch, with triggers, tools and autonomy", () => {
-  assert.equal(AGENT_SPECS.length, 19);
+test("catalogue has the 14 PRD agents, the 4 workforce agents, Geo Watch and Root Cause, with triggers, tools and autonomy", () => {
+  assert.equal(AGENT_SPECS.length, 20);
   const names = AGENT_SPECS.map((s) => s.name);
   for (const n of ["Shift Handover", "Process Watch", "Asset Watch", "Maintenance Triage", "Work Pack", "Parts Readiness", "Scheduler", "Technician Copilot", "Debrief", "Shift Cover", "Permit Guard", "Drop Pack", "Ask", "Tag Matcher", "Chat Intake", "Scribe", "Project Watch", "Procedure Steward", "Geo Watch"]) {
     assert.ok(names.includes(n), n);

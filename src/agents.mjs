@@ -6,6 +6,7 @@ import { LEVELS } from "./actions.mjs";
 import * as F from "./functions.mjs";
 import { baseline } from "./scenes.mjs";
 import { specFor, shadowId, demoteIfNeeded, objectTime } from "./harness.mjs";
+import { rootCause, rcaSummary } from "./rca.mjs";
 
 const v = (s) => ({ version: "1.0.0", owner: "P-002", ...s }); // P-002, a reliability engineer, owns the default agents (agents design §4.1)
 export const AGENT_SPECS = [
@@ -27,6 +28,7 @@ export const AGENT_SPECS = [
   v({ name: "Project Watch", purpose: "Keep projects and contracts visible: flag quiet ones daily and post a weekly status to the project group", trigger: { kind: "schedule", every: "daily; Fridays from 15:00 for the weekly status" }, tools: ["send_message", "notify"], autonomy: { send_message: "act", notify: "act" } }),
   v({ name: "Procedure Steward", purpose: "Point engineers at procedure steps that run long or collect notes and issues", trigger: { kind: "schedule", every: "weekly" }, tools: ["notify"], autonomy: { notify: "act" } }),
   v({ name: "Geo Watch", purpose: "Watch the dam and catchment in each new scene; raise and triage index anomalies and extent changes; ask for a raw-water sample", trigger: { kind: "event", on: "Scene ingested" }, tools: ["record_detection", "raise_alert", "propose_dose_change", "start_sampling_round", "notify"], autonomy: { record_detection: "act", raise_alert: "act", propose_dose_change: "propose", start_sampling_round: "propose", notify: "act" } }),
+  v({ name: "Root Cause", purpose: "Explain an alert: rank the local and upstream causes from the process graph, the region and history, with their evidence and the hypotheses rejected", trigger: { kind: "event", on: "Alert ranked high" }, tools: ["draft_document"], autonomy: { draft_document: "act" } }),
   v({ name: "Tag Matcher", purpose: "Match historian tags to positions and report unmatched keys", trigger: { kind: "event", on: "Connector import" }, tools: ["draft_document"], autonomy: { draft_document: "act" } })
 ];
 
@@ -288,7 +290,8 @@ const LOGIC = {
     const priority = c.label === "high" || (alert.score || 0) > 0.75 ? "P1" : c.label === "medium" ? "P2" : "P3";
     ctx.think(`${asset.positionTag}: ${c.supply}; ${hours} h of treated storage; consequence ${c.label}; priority ${priority}.`);
     ctx.act("rank_alert", { alertId: alert.id, consequence: { ...c, storageHours: hours, redundancy }, priority });
-    return priority !== "P3" ? [{ agent: "Work Pack", scope: { alertId: alert.id } }] : [];
+    // an alert ranked high is explained by the Root Cause agent (agents design §5)
+    return [...(priority !== "P3" ? [{ agent: "Work Pack", scope: { alertId: alert.id } }] : []), ...(priority === "P1" ? [{ agent: "Root Cause", scope: { alertId: alert.id } }] : [])];
   },
 
   "Work Pack"(ctx) {
@@ -547,6 +550,14 @@ const LOGIC = {
         }
       }
     }
+  },
+
+  "Root Cause"(ctx) {
+    const targetId = ctx.scope.alertId || ctx.scope.targetId, t = targetId && ctx.get(targetId);
+    if (!t) return ctx.think("Nothing in scope to explain.");
+    const r = rootCause(ctx, { targetId, at: ctx.scope.at });
+    ctx.think(`${r.verdict}: ${r.causes.map((c) => `${c.label} (${c.kind})`).join(", ") || r.why}.`);
+    ctx.act("draft_document", { kind: "rca", title: `Root cause: ${t.title || t.name || targetId}`, body: rcaSummary(r), aboutId: targetId, assetId: r.symptom ? r.symptom.id : null, data: r });
   },
 
   "Tag Matcher"(ctx) {

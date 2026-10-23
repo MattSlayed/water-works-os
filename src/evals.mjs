@@ -14,6 +14,8 @@ const inbound = (s, channelId, from, text, ctx = {}) => {
 const outbound = (s, channelId) => s.ont.list("Message", (m) => m.channelId === channelId && m.direction === "out" && m.inReplyTo === "MSG-EVAL");
 const tech = { id: "P-023", clearance: "technician" };
 const drafts = (sys, kind) => sys.ont.list("Draft", (d) => d.kind === kind);
+// the F07 alert, raised by Process Watch at the clock
+const f07Scope = (s) => { s.runtime.run("Process Watch", { actingUser: mgr, chain: false }); return { scope: { alertId: s.ont.list("Alert", (a) => a.state === "active" && /^F07/.test(a.title))[0].id } }; };
 const assetByTag = (sys, tag) => sys.ont.list("Asset", (a) => a.positionTag === tag)[0];
 // alerts on plant assets (Geo Watch's satellite detections raise alerts on no asset)
 const assetAlerts = (s) => s.ont.list("Alert", (a) => a.assetId);
@@ -128,6 +130,11 @@ export const EVALS = {
     { name: "flags the pump procedure", grader: "rule", check: (r, s) => s.ont.list("Notification", (n) => n.aboutId === "PRC-CENTRIFUGAL_PUMP-v3").length === 1 },
     { name: "names steps, never people", grader: "rule", check: (r, s) => plantNotes(s).every((n) => !/P-0\d\d/.test(n.message)) },
     { name: "is quiet when nothing needs revising", prep: (s) => { for (const t of ["Execution", "Issue", "KnowledgeNote"]) for (const o of s.ont.list(t)) s.ont.remove(o.id); }, grader: "exact", value: (r, s) => plantNotes(s).length, expect: 0 }
+  ],
+  "Root Cause": [
+    { name: "explains F07 as a local fault", prep: f07Scope, grader: "rule", check: (r, s) => { const c = drafts(s, "rca")[0].data.causes[0]; return c.kind === "local" && s.ont.get(c.id).positionTag === "F07"; } },
+    { name: "rejects DP-2 as too late", prep: f07Scope, grader: "rule", check: (r, s) => drafts(s, "rca")[0].data.rejected.some((x) => s.ont.get(x.id) && s.ont.get(x.id).positionTag === "DP-2" && /too late/.test(x.reason)) },
+    { name: "insufficient evidence for RES-CWR1", prep: () => ({ scope: { targetId: "RES-CWR1" } }), grader: "exact", value: (r, s) => drafts(s, "rca")[0].data.verdict, expect: "Insufficient evidence" }
   ],
   "Tag Matcher": [
     { name: "no unmatched tags in the synthetic works", grader: "exact", value: (r, s) => drafts(s, "tag-match")[0].data.unmatched.length, expect: 0 },
