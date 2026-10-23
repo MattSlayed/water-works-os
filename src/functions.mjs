@@ -159,3 +159,91 @@ export function stepRequires(text, intrusive, partNames, bandOf) {
   const b = banded && bandOf(banded);
   return { permit: gated, isolation: gated, reading: b ? { partName: banded, measure: b.measure, unit: b.unit } : null };
 }
+
+// ---------- Process graph over the current released plant model (design §4.6) ----------
+// Nodes: plant Structures, and machines keyed by their Position id. Edges: causal Lines (flow), dosing lines
+// (injection, acting on all the water at the injection point) and machine-in-structure (contains).
+// Intermittent lines (backwash, filter-to-waste) are walked only in mode "backwash"; recycle edges are marked, never crossed.
+export function graphFrom(objects) {
+  const nodes = new Map(), out = new Map(), inc = new Map(), alias = new Map();
+  const add = (e) => { (out.get(e.from) || out.set(e.from, []).get(e.from)).push(e); (inc.get(e.to) || inc.set(e.to, []).get(e.to)).push(e); };
+  for (const o of objects) if (o.type === "Structure") { nodes.set(o.id, o); if (o.positionId) alias.set(o.positionId, o.id); }
+  for (const o of objects) if (o.type === "MachinePlacement") {
+    const id = o.positionId || o.id;
+    nodes.set(id, o);
+    if (nodes.has(o.structureId)) add({ from: id, to: o.structureId, kind: "contains", split: null, mode: "continuous", recycle: false });
+  }
+  for (const l of objects) if (l.type === "Line" && l.causal && nodes.has(l.fromId)) {
+    const to = l.injectionAt ? l.fromId.replace(/STR-.*$/, `STR-${l.injectionAt}`) : l.toId;
+    if (!nodes.has(to)) continue;
+    add({ from: l.fromId, to, kind: l.injectionAt ? "injection" : "flow", lineId: l.id, split: l.splitFraction ?? null, mode: l.mode, recycle: !!l.recycle, length: l.length || 0, pumped: !!l.pumped });
+  }
+  return { nodes, out, in: inc, alias };
+}
+
+const live = (edges, mode) => (edges || []).filter((e) => mode === "backwash" || e.mode !== "intermittent");
+const flowTotal = (edges) => edges.filter((e) => e.kind === "flow").reduce((s, e) => s + (e.split || 0), 0);
+
+// Sets with shares: the fraction of the node's water that passed through each item (flow), or 1 for a dose or a
+// machine acting on all of it. Every path keeps its own visited set, and recycle edges stop the walk.
+function walk(start, g, up, { depth = 20, mode = "normal" } = {}) {
+  const id0 = g.alias.get(start) || start, res = new Map();
+  const step = (id, share, d, seen) => {
+    if (d >= depth) return;
+    const edges = live((up ? g.in : g.out).get(id), mode), total = flowTotal(edges);
+    for (const e of edges) {
+      const next = up ? e.from : e.to;
+      if (seen.has(next)) continue;
+      const s = share * (e.kind === "flow" ? (total ? (e.split || 0) / total : 0) : 1);
+      const r = res.get(next) || res.set(next, { id: next, share: 0 }).get(next);
+      r.share += s;
+      if (e.recycle) { r.recycle = true; continue; }
+      step(next, s, d + 1, new Set(seen).add(next));
+    }
+  };
+  step(id0, 1, 0, new Set([id0]));
+  return [...res.values()].map((r) => ({ ...r, share: Math.round(r.share * 1e4) / 1e4 }));
+}
+export const upstreamOf = (id, g, opts) => walk(id, g, true, opts);
+export const downstreamOf = (id, g, opts) => walk(id, g, false, opts);
+
+export function processPaths(from, to, g, { limit = 10, depth = 20, mode = "normal" } = {}) {
+  const a = g.alias.get(from) || from, b = g.alias.get(to) || to, paths = [];
+  const dfs = (id, path) => {
+    if (paths.length >= limit) return;
+    if (id === b) return void paths.push(path);
+    if (path.length > depth) return;
+    for (const e of live(g.out.get(id), mode)) if (!e.recycle && !path.includes(e.to)) dfs(e.to, [...path, e.to]);
+  };
+  dfs(a, [a]);
+  return paths;
+}
+
+// Residence-time classes [onset, tail] as multiples of t = V/(Q·share): T10 baffling factors after the EPA classes
+// (clarifier 0.4, contact tank 0.5), a mixed flash-mix tank, staged flocculation, a filter's supernatant over a plug-flow
+// bed, and the reservoir's exponential response (onset 0.1·t, tail 3·t). Unlisted structures are treated as plug flow.
+const RTD = { flash_mix: [0.1, 2.3], flocculator: [0.3, 1.7], clarifier_circular: [0.4, 1.8], filter_bed: [0.2, 1.6], contact_tank: [0.5, 1.5], reservoir_covered: [0.1, 3] };
+export function travelWindow(path, g, { flowMlD = 120, lagMin = 0 } = {}) {
+  const Q = (flowMlD * 1000) / 24, speed = flowMlD / 120; // line velocity 1.0 m/s gravity, 2.0 m/s pumped, at 120 ML/d
+  let on = 0, mean = 0, tl = 0;
+  path.forEach((id, i) => {
+    const e = i > 0 && (g.out.get(path[i - 1]) || []).find((x) => x.to === id);
+    if (e && e.length) { const t = e.length / ((e.pumped ? 2 : 1) * speed) / 3600; on += t; mean += t; tl += t; }
+    const n = g.nodes.get(id);
+    if (n && n.type === "Structure" && n.volumeM3) {
+      const thru = flowTotal(live(g.in.get(id), "normal")) || 1, t = n.volumeM3 / (Q * thru), [fo, ft] = RTD[n.kind] || [1, 1];
+      on += fo * t; mean += t; tl += ft * t;
+    }
+  });
+  const r = (h) => Math.round((h + lagMin / 60) * 100) / 100;
+  return { onsetH: r(on), meanH: r(mean), tailH: r(tl), basis: `design volumes at Q=${flowMlD} ML/d (${Math.round(Q)} m³/h); onset and tail from residence-time classes; lines at 1.0 m/s gravity, 2.0 m/s pumped scaled to flow; sample lag ${lagMin} min` };
+}
+
+// The first sample that leaves the baseline by more than rel × the baseline median. With a period (a known duty
+// cycle such as a filter run), each sample is compared with the one a period earlier, so the cycle itself is not an onset.
+export function onsetMinute(values = [], { baseline = 120, rel = 0.25, period } = {}) {
+  if (values.length <= baseline) return null;
+  const med = median(values.slice(0, baseline)), tol = rel * (Math.abs(med) || 1);
+  for (let i = Math.max(baseline, period || 0); i < values.length; i++) if (Math.abs(values[i] - (period ? values[i - period] : med)) > tol) return i;
+  return null;
+}
