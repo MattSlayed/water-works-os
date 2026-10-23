@@ -5,6 +5,7 @@
 import { LEVELS } from "./actions.mjs";
 import * as F from "./functions.mjs";
 import { baseline } from "./scenes.mjs";
+import { specFor, shadowId } from "./harness.mjs";
 
 const v = (s) => ({ version: "1.0.0", owner: "P-002", ...s }); // P-002, a reliability engineer, owns the default agents (agents design §4.1)
 export const AGENT_SPECS = [
@@ -612,12 +613,19 @@ export function createRuntime({ ont, tel, actions }) {
         return call(`fn:${name}`, args.length === 1 ? args[0] : args.map((a) => (a && a.id ? a.id : Array.isArray(a) ? `[${a.length}]` : a)), F[name](...args));
       },
       act: (action, params, meta = {}) => {
-        if (!spec.tools.includes(action)) {
-          const r = { status: "refused", reason: `${action} not in manifest` };
-          run.refusals.push({ action, reason: r.reason });
-          return call(action, params, r);
+        const no = (reason) => { run.refusals.push({ action, reason }); return call(action, params, { status: "refused", reason }); };
+        if (!spec.tools.includes(action)) return no(`${action} not in manifest`);
+        // the decision statement sets the mode and the off switches (agents design §4.2, §4.6)
+        const hs = specFor(ont, spec.name), tool = hs && hs.tools.find((t) => t.action === action);
+        if (tool && !tool.enabled) return no("tool turned off");
+        if (hs && hs.mode === "shadow") {
+          const sha = ont.upsert({ id: shadowId(), type: "ShadowAction", agent: spec.name, specVersion: hs.version, runId: run.id, action, params, at: now, status: "pending", minClearance: opts.actingUser.clearance });
+          run.outputs.push({ action, status: "shadowed", ref: sha.id });
+          return call(action, params, { status: "shadowed", ref: sha.id, objects: [] });
         }
-        const r = actions.invoke({ action, params, actor: { kind: "agent", id: spec.name, clearance: opts.actingUser.clearance, onBehalfOf: opts.actingUser.id }, autonomy: spec.autonomy[action] || "propose", runId: run.id, ...meta });
+        const level = spec.autonomy[action] || "propose";
+        const autonomy = hs && hs.mode === "assisted" && LEVELS.indexOf(level) > LEVELS.indexOf("propose") ? "propose" : level;
+        const r = actions.invoke({ action, params, actor: { kind: "agent", id: spec.name, clearance: opts.actingUser.clearance, onBehalfOf: opts.actingUser.id }, autonomy, runId: run.id, ...meta });
         if (r.status === "refused") run.refusals.push({ action, reason: r.reason });
         else run.outputs.push({ action, status: r.status, ref: (r.decision || r.proposal).id });
         return call(action, params, { status: r.status, ref: r.decision ? r.decision.id : r.proposal ? r.proposal.id : null, objects: r.decision ? r.decision.objects : [], reason: r.reason });
@@ -664,6 +672,8 @@ export function createRuntime({ ont, tel, actions }) {
       if (!LEVELS.includes(level)) throw new Error(`unknown level ${level}`);
       if (!s.tools.includes(action)) throw new Error(`${action} not in ${name}'s manifest`);
       s.autonomy[action] = level;
+      const hs = specFor(ont, name);
+      if (hs) ont.upsert({ id: hs.id, type: "AgentSpec", tools: hs.tools.map((t) => (t.action === action ? { ...t, level } : t)) });
       return s;
     },
     run,

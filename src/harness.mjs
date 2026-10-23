@@ -60,3 +60,30 @@ export function statementSentences(spec, ont) {
   out.push(...HARD_CONSTRAINTS.filter((c) => spec.constraints.includes(c.id)).map((c) => c.text));
   return out;
 }
+
+// Shadow mode (agents design §4.2): what the agent would have done, matched later against what people did.
+let shaSeq = 0;
+export const shadowId = () => `SHA-${String(++shaSeq).padStart(5, "0")}`;
+const KEYS = ["assetId", "targetId", "workOrderId", "alertId"];
+const DAY_MS = 24 * 3600000;
+// The matching rule: the key target is the first of assetId, targetId, workOrderId, alertId in the shadow action's
+// params. A person's Decision within 24 h after it, naming the same key with the same value, is "agreed" when it is
+// the same action and "differed" when it is another. Nothing within 24 h, once 24 h have passed, is "missed".
+export function matchShadow(ont, nowIso) {
+  const now = Date.parse(nowIso);
+  const decisions = ont.list("Decision", (d) => d.actorKind === "person");
+  for (const sha of ont.list("ShadowAction", (x) => x.status === "pending")) {
+    const key = KEYS.find((k) => sha.params[k] != null);
+    const from = Date.parse(sha.at), to = from + DAY_MS;
+    const near = key ? decisions.filter((d) => d.params && d.params[key] === sha.params[key] && Date.parse(d.at) >= from && Date.parse(d.at) <= to) : [];
+    const status = near.some((d) => d.action === sha.action) ? "agreed" : near.length ? "differed" : now >= to ? "missed" : null;
+    if (status) ont.upsert({ id: sha.id, type: "ShadowAction", status, matchedTo: (near.find((d) => d.action === sha.action) || near[0] || {}).id || null, matchedAt: nowIso });
+  }
+}
+
+export function shadowRecord(ont, agent) {
+  const done = ont.list("ShadowAction", (x) => x.agent === agent && ["agreed", "differed", "missed"].includes(x.status));
+  const n = (s) => done.filter((x) => x.status === s).length;
+  const cases = done.length, agreed = n("agreed");
+  return { cases, agreed, differed: n("differed"), missed: n("missed"), agreePct: cases ? Math.round((agreed / cases) * 100) : 0 };
+}
