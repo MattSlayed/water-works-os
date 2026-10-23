@@ -86,16 +86,19 @@ export function createTelemetry({ ont, seed = 7, start = "2026-10-01T00:00:00Z",
     start,
     now: () => new Date(t0 + cursor * MIN).toISOString(),
     cursor: () => cursor,
-    tick: (n = 1) => { cursor = Math.min(minutes, cursor + Math.max(0, n)); return cursor; },
+    // the plant clock runs on past the replay window; readings hold the last sample
+    tick: (n = 1) => { cursor += Math.max(0, n); return cursor; },
     latest(id) {
       const v = series.get(id);
-      return v ? { value: round(v[cursor]), at: new Date(t0 + cursor * MIN).toISOString(), quality: "good" } : null;
+      if (!v) return null;
+      const i = Math.min(cursor, v.length - 1);
+      return { value: round(v[i]), at: new Date(t0 + i * MIN).toISOString(), quality: "good" };
     },
     history(id, n = 60) {
       const v = series.get(id);
       if (!v) return [];
-      const from = Math.max(0, cursor - n + 1);
-      return Array.from(v.subarray(from, cursor + 1), round);
+      const end = Math.min(cursor, v.length - 1), from = Math.max(0, end - n + 1);
+      return Array.from(v.subarray(from, end + 1), round);
     },
     sensorsFor: (objId) => sensors.filter((s) => s.assetId === objId || s.processUnitId === objId)
   };

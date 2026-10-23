@@ -11,7 +11,7 @@ export function createSystem({ seed = 7 } = {}) {
   const ont = createOntology(generateWorks(seed));
   const tel = createTelemetry({ ont, seed, start: "2026-10-01T00:00:00Z" });
   const audit = createAudit();
-  const actions = createActionService({ ont, audit });
+  const actions = createActionService({ ont, audit, clock: tel.now });
   const runtime = createRuntime({ ont, tel, actions });
   const copilot = createCopilot({ ont, tel, actions, runtime });
   return { seed, ont, tel, audit, actions, runtime, copilot };

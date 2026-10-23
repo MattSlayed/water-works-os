@@ -7,7 +7,7 @@ const lv = (l) => LEVELS.indexOf(l);
 
 let seq = 0;
 const nextId = (p) => `${p}-${String(++seq).padStart(5, "0")}`;
-const now = () => new Date().toISOString();
+const wallClock = () => new Date().toISOString();
 
 // needs: the level an actor must hold to apply the action directly. ceiling: the most an agent may ever hold
 // for it ("human" = never an agent). minClearance: the least clearance of the actor (or the person an agent acts for).
@@ -31,90 +31,91 @@ const TARGET_TYPES = { workOrderId: ["WorkOrder"], assetId: ["Asset"], partIds: 
 const PATCHABLE = ["title", "priority", "state", "planned", "hours", "closed"];
 
 export const ACTIONS = {
-  create_work_order: def("act", "act", ["assetId", "title"], (ont, p) => {
-    const wo = create(ont, { id: nextId("WO-N"), type: "WorkOrder", assetId: p.assetId, title: p.title, kind: p.kind || "CM", priority: p.priority || "P3", state: "requested", requested: now(), source: p.source || null }, [["TARGETS", p.assetId]]);
+  create_work_order: def("act", "act", ["assetId", "title"], (ont, p, ctx) => {
+    const wo = create(ont, { id: nextId("WO-N"), type: "WorkOrder", assetId: p.assetId, title: p.title, kind: p.kind || "CM", priority: p.priority || "P3", state: "requested", requested: ctx.now(), source: p.source || null }, [["TARGETS", p.assetId]]);
     return { objects: [wo.id], revert: () => setProps(ont, wo.id, { state: "cancelled" }) };
   }),
-  update_work_order: def("act", "propose", ["workOrderId", "patch"], (ont, p) => {
+  update_work_order: def("act", "propose", ["workOrderId", "patch"], (ont, p, ctx) => {
     const keys = Object.keys(p.patch || {});
     if (!keys.length || keys.some((k) => !PATCHABLE.includes(k))) throw new Error(`patch may only change: ${PATCHABLE.join(", ")}`);
     if (keys.some((k) => p.patch[k] !== null && !["string", "number"].includes(typeof p.patch[k]))) throw new Error("patch values must be text or numbers");
     return { objects: [p.workOrderId], revert: setProps(ont, p.workOrderId, p.patch) };
   }),
   draft_document: def("draft", "act", ["kind", "title", "body"], (ont, p, ctx) => {
-    const d = create(ont, { id: nextId("DRF"), type: "Draft", minClearance: ctx.actor.kind === "agent" ? ctx.actor.clearance : null, kind: p.kind, title: p.title, body: p.body, data: p.data || null, aboutId: p.aboutId || null, assetId: p.assetId || null, created: now(), state: "draft" }, [["ABOUT", p.aboutId]]);
+    const d = create(ont, { id: nextId("DRF"), type: "Draft", minClearance: ctx.actor.kind === "agent" ? ctx.actor.clearance : null, kind: p.kind, title: p.title, body: p.body, data: p.data || null, aboutId: p.aboutId || null, assetId: p.assetId || null, created: ctx.now(), state: "draft" }, [["ABOUT", p.aboutId]]);
     return { objects: [d.id], revert: () => setProps(ont, d.id, { state: "withdrawn" }) };
   }),
-  reserve_parts: def("act", "act", ["partIds"], (ont, p) => {
+  reserve_parts: def("act", "act", ["partIds"], (ont, p, ctx) => {
     // check every part before changing any, so a refusal leaves stock untouched; reverts are relative
     for (const id of p.partIds) if ((ont.get(id).stock || 0) < 1) throw new Error(`no stock for ${id}`);
     for (const id of p.partIds) { const part = ont.get(id); ont.upsert({ id, type: "Part", stock: part.stock - 1, reserved: (part.reserved || 0) + 1 }); }
     const reverts = p.partIds.map((id) => () => { const part = ont.get(id); ont.upsert({ id, type: "Part", stock: (part.stock || 0) + 1, reserved: Math.max(0, (part.reserved || 0) - 1) }); });
-    const r = create(ont, { id: nextId("RSV"), type: "Reservation", partIds: p.partIds, workOrderId: p.workOrderId || null, assetId: ont.get(p.partIds[0]).assetId, at: now() }, [["FOR", p.workOrderId]]);
+    const r = create(ont, { id: nextId("RSV"), type: "Reservation", partIds: p.partIds, workOrderId: p.workOrderId || null, assetId: ont.get(p.partIds[0]).assetId, at: ctx.now() }, [["FOR", p.workOrderId]]);
     return { objects: [r.id, ...p.partIds], revert: () => { reverts.forEach((f) => f()); setProps(ont, r.id, { state: "released" }); } };
   }),
-  raise_purchase_requisition: def("act", "propose", ["itemId", "qty"], (ont, p) => {
-    const pr = create(ont, { id: nextId("PR"), type: "PurchaseRequisition", itemId: p.itemId, qty: p.qty, reason: p.reason || null, state: "raised", at: now() });
+  raise_purchase_requisition: def("act", "propose", ["itemId", "qty"], (ont, p, ctx) => {
+    const pr = create(ont, { id: nextId("PR"), type: "PurchaseRequisition", itemId: p.itemId, qty: p.qty, reason: p.reason || null, state: "raised", at: ctx.now() });
     return { objects: [pr.id], revert: () => setProps(ont, pr.id, { state: "cancelled" }) };
   }),
-  schedule_work: def("act", "propose", ["workOrderId", "assigneeId"], (ont, p) => {
+  schedule_work: def("act", "propose", ["workOrderId", "assigneeId"], (ont, p, ctx) => {
     const revert = setProps(ont, p.workOrderId, { assigneeId: p.assigneeId, planned: p.window || null, state: "scheduled" });
     ont.link(p.workOrderId, "ASSIGNED_TO", p.assigneeId);
     return { objects: [p.workOrderId], revert };
   }),
-  open_permit: def("act", "human", ["assetId", "kind", "holderId"], (ont, p) => {
+  open_permit: def("act", "human", ["assetId", "kind", "holderId"], (ont, p, ctx) => {
     const a = ont.get(p.assetId);
-    const pt = create(ont, { id: nextId("PTW"), type: "Permit", kind: p.kind, state: "open", assetId: p.assetId, zoneId: a && a.zoneId, holderId: p.holderId, opened: now(), isolations: [] }, [["COVERS", p.assetId]]);
+    const pt = create(ont, { id: nextId("PTW"), type: "Permit", kind: p.kind, state: "open", assetId: p.assetId, zoneId: a && a.zoneId, holderId: p.holderId, opened: ctx.now(), isolations: [] }, [["COVERS", p.assetId]]);
     return { objects: [pt.id], revert: () => setProps(ont, pt.id, { state: "cancelled" }) };
   }, "supervisor"),
-  close_permit: def("act", "human", ["permitId"], (ont, p) => ({ objects: [p.permitId], revert: setProps(ont, p.permitId, { state: "closed", closed: now() }) }), "supervisor"),
-  record_isolation: def("act", "human", ["permitId", "point"], (ont, p) => {
+  close_permit: def("act", "human", ["permitId"], (ont, p, ctx) => ({ objects: [p.permitId], revert: setProps(ont, p.permitId, { state: "closed", closed: ctx.now() }) }), "supervisor"),
+  record_isolation: def("act", "human", ["permitId", "point"], (ont, p, ctx) => {
     const pt = ont.get(p.permitId);
     if (!pt) throw new Error(`permit not found: ${p.permitId}`);
     const isolations = [...(pt.isolations || []), { point: p.point, state: "applied", appliedBy: p.by || null, verifiedBy: p.verifiedBy || null }];
     return { objects: [p.permitId], revert: setProps(ont, p.permitId, { isolations }) };
   }, "supervisor"),
-  raise_alert: def("act", "act", ["targetId", "title"], (ont, p) => {
+  raise_alert: def("act", "act", ["targetId", "title"], (ont, p, ctx) => {
     const t = ont.get(p.targetId);
-    const al = create(ont, { id: nextId("ALT"), type: "Alert", targetId: p.targetId, assetId: t && t.type === "Asset" ? t.id : t && t.assetId, zoneId: t && t.zoneId, title: p.title, severity: p.severity || "medium", evidence: p.evidence || [], score: p.score ?? null, state: "active", at: now() }, [["ON", p.targetId]]);
+    const al = create(ont, { id: nextId("ALT"), type: "Alert", targetId: p.targetId, assetId: t && t.type === "Asset" ? t.id : t && t.assetId, zoneId: t && t.zoneId, title: p.title, severity: p.severity || "medium", evidence: p.evidence || [], score: p.score ?? null, state: "active", at: ctx.now() }, [["ON", p.targetId]]);
     return { objects: [al.id], revert: () => setProps(ont, al.id, { state: "withdrawn" }) };
   }),
-  rank_alert: def("act", "act", ["alertId", "consequence"], (ont, p) => ({ objects: [p.alertId], revert: setProps(ont, p.alertId, { consequence: p.consequence, priority: p.priority || null, rankedAt: now() }) })),
-  acknowledge_alert: def("act", "act", ["alertId"], (ont, p) => ({ objects: [p.alertId], revert: setProps(ont, p.alertId, { state: "acknowledged" }) })),
+  rank_alert: def("act", "act", ["alertId", "consequence"], (ont, p, ctx) => ({ objects: [p.alertId], revert: setProps(ont, p.alertId, { consequence: p.consequence, priority: p.priority || null, rankedAt: ctx.now() }) })),
+  acknowledge_alert: def("act", "act", ["alertId"], (ont, p, ctx) => ({ objects: [p.alertId], revert: setProps(ont, p.alertId, { state: "acknowledged" }) })),
   notify: def("notify", "act", ["to", "message"], (ont, p, ctx) => {
-    const n = create(ont, { id: nextId("NTF"), type: "Notification", minClearance: ctx.actor.kind === "agent" ? ctx.actor.clearance : null, to: p.to, message: p.message, aboutId: p.aboutId || null, at: now() });
+    const n = create(ont, { id: nextId("NTF"), type: "Notification", minClearance: ctx.actor.kind === "agent" ? ctx.actor.clearance : null, to: p.to, message: p.message, aboutId: p.aboutId || null, at: ctx.now() });
     return { objects: [n.id] };
   }),
-  record_reading: def("act", "act", ["targetId", "measure", "value"], (ont, p) => {
+  record_reading: def("act", "act", ["targetId", "measure", "value"], (ont, p, ctx) => {
     const t = ont.get(p.targetId);
-    const r = create(ont, { id: nextId("RDG"), type: "Reading", targetId: p.targetId, assetId: t && (t.assetId || t.id), measure: p.measure, value: p.value, unit: p.unit || null, workOrderId: p.workOrderId || null, at: now(), source: "field" }, [["OF", p.targetId]]);
+    const r = create(ont, { id: nextId("RDG"), type: "Reading", targetId: p.targetId, assetId: t && (t.assetId || t.id), measure: p.measure, value: p.value, unit: p.unit || null, workOrderId: p.workOrderId || null, at: ctx.now(), source: "field" }, [["OF", p.targetId]]);
     return { objects: [r.id] };
   }),
-  tag_part: def("act", "act", ["partId", "note"], (ont, p) => {
+  tag_part: def("act", "act", ["partId", "note"], (ont, p, ctx) => {
     const part = ont.get(p.partId);
     if (!part) throw new Error(`part not found: ${p.partId}`);
-    const f = create(ont, { id: nextId("FND"), type: "Finding", partId: p.partId, assetId: part.assetId, workOrderId: p.workOrderId || null, text: p.note, reading: p.reading ?? null, photo: p.photo || null, point: p.point || null, authorId: p.authorId || null, verified: false, at: now() }, [["ABOUT", p.partId], ["ON", p.workOrderId]]);
+    const f = create(ont, { id: nextId("FND"), type: "Finding", partId: p.partId, assetId: part.assetId, workOrderId: p.workOrderId || null, text: p.note, reading: p.reading ?? null, photo: p.photo || null, point: p.point || null, authorId: p.authorId || null, verified: false, at: ctx.now() }, [["ABOUT", p.partId], ["ON", p.workOrderId]]);
     return { objects: [f.id] };
   }),
-  raise_deviation: def("act", "propose", ["targetId", "finding"], (ont, p) => {
+  raise_deviation: def("act", "propose", ["targetId", "finding"], (ont, p, ctx) => {
     const t = ont.get(p.targetId);
-    const dv = create(ont, { id: nextId("DEV"), type: "Deviation", targetId: p.targetId, assetId: t && (t.assetId || t.id), finding: p.finding, disposition: p.disposition || "engineer to decide", state: "raised", at: now() }, [["AGAINST", p.targetId]]);
+    const dv = create(ont, { id: nextId("DEV"), type: "Deviation", targetId: p.targetId, assetId: t && (t.assetId || t.id), finding: p.finding, disposition: p.disposition || "engineer to decide", state: "raised", at: ctx.now() }, [["AGAINST", p.targetId]]);
     return { objects: [dv.id], revert: () => setProps(ont, dv.id, { state: "withdrawn" }) };
   }),
-  change_asset_state: def("act", "propose", ["assetId", "state"], (ont, p) => ({ objects: [p.assetId], revert: setProps(ont, p.assetId, { state: p.state }) })),
+  change_asset_state: def("act", "propose", ["assetId", "state"], (ont, p, ctx) => ({ objects: [p.assetId], revert: setProps(ont, p.assetId, { state: p.state }) })),
   // A recorded request for the process controller. Nothing is written to a control system (BR-06).
-  request_setpoint_change: def("act", "propose", ["targetId", "setpoint", "value"], (ont, p) => {
-    const r = create(ont, { id: nextId("SPR"), type: "SetpointRequest", targetId: p.targetId, setpoint: p.setpoint, value: p.value, unit: p.unit || null, state: "requested", at: now() });
+  request_setpoint_change: def("act", "propose", ["targetId", "setpoint", "value"], (ont, p, ctx) => {
+    const r = create(ont, { id: nextId("SPR"), type: "SetpointRequest", targetId: p.targetId, setpoint: p.setpoint, value: p.value, unit: p.unit || null, state: "requested", at: ctx.now() });
     return { objects: [r.id], revert: () => setProps(ont, r.id, { state: "withdrawn" }) };
   }),
-  submit_compliance_pack: def("act", "human", ["framework"], (ont, p) => {
-    const s = create(ont, { id: nextId("SUB"), type: "Submission", framework: p.framework, state: "submitted", at: now() });
+  submit_compliance_pack: def("act", "human", ["framework"], (ont, p, ctx) => {
+    const s = create(ont, { id: nextId("SUB"), type: "Submission", framework: p.framework, state: "submitted", at: ctx.now() });
     return { objects: [s.id] };
   }, "manager"),
-  release_asset_model: def("act", "human", ["assetId", "revision"], (ont, p) => ({ objects: [p.assetId], revert: setProps(ont, p.assetId, { modelRevision: p.revision }) }), "engineer")
+  release_asset_model: def("act", "human", ["assetId", "revision"], (ont, p, ctx) => ({ objects: [p.assetId], revert: setProps(ont, p.assetId, { modelRevision: p.revision }) }), "engineer")
 };
 
-export function createActionService({ ont, audit }) {
+export function createActionService({ ont, audit, clock = wallClock }) {
+  const now = clock;
   const reverts = new Map();
   const log = (entry) => audit && audit.append(entry);
   const refuse = (action, actor, reason) => {
@@ -147,7 +148,7 @@ export function createActionService({ ont, audit }) {
   }
 
   function apply(action, params, actor, extra = {}) {
-    const res = ACTIONS[action].apply(ont, params, { actor });
+    const res = ACTIONS[action].apply(ont, params, { actor, now });
     const dec = ont.upsert({ zoneId: zoneFor(params),
       id: nextId("DEC"), type: "Decision", action, params, actorId: actor.id, actorKind: actor.kind, autonomy: extra.autonomy || null,
       approvedBy: extra.approvedBy || null, proposalId: extra.proposalId || null, runId: extra.runId || null,

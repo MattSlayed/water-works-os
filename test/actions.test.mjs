@@ -130,3 +130,11 @@ test("audit chain verifies and detects tampering", () => {
   audit.all()[0].action = "tampered";
   assert.equal(audit.verify(), false);
 });
+
+test("actions stamp objects with the injected clock", () => {
+  const ont = createOntology(generateWorks(7));
+  const svc = createActionService({ ont, audit: createAudit(), clock: () => "2026-10-14T07:05:00.000Z" });
+  const r = svc.invoke({ action: "raise_alert", params: { targetId: "SEN-FW-turb", title: "t" }, actor: planner });
+  assert.equal(ont.get(r.decision.objects[0]).at, "2026-10-14T07:05:00.000Z");
+  assert.equal(r.decision.at, "2026-10-14T07:05:00.000Z");
+});

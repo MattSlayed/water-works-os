@@ -21,11 +21,21 @@ test("tick advances the clock by minutes", () => {
   assert.equal(Date.parse(t.now()) - before, 60 * 60000);
 });
 
-test("replay starts part-way so tick has data ahead, and ends at the full window", () => {
+test("replay starts part-way so tick has data ahead", () => {
   const t = make();
   assert.ok(Date.parse(t.now()) < Date.parse("2026-10-15T00:00:00Z"));
-  t.tick(1e9);
-  assert.equal(t.now(), "2026-10-15T00:00:00.000Z");
+});
+
+test("clock runs past the window while readings hold the last sample", () => {
+  const t = make();
+  t.tick(1e6);
+  const a = t.latest("SEN-HLP-B-vib_de");
+  const h = t.history("SEN-HLP-B-vib_de", 10);
+  t.tick(60);
+  assert.ok(t.now() > "2026-10-15T00:00:00Z");
+  assert.equal(t.latest("SEN-HLP-B-vib_de").value, a.value);
+  assert.deepEqual(t.history("SEN-HLP-B-vib_de", 10), h);
+  assert.equal(h.length, 10);
 });
 
 test("HLP-B degrades: DE vibration and bearing temperature above HLP-A at the end", () => {
