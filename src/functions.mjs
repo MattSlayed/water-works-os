@@ -76,3 +76,14 @@ export function competenceCheck(person, competencies, required, onDate) {
   if (required.regClass && (best.regClass || 0) < required.regClass) return { ok: false, reasons: [`process-controller class ${best.regClass} below ${required.regClass}`] };
   return { ok: true, reasons: [] };
 }
+
+// The released procedure for an asset template.
+export const currentProcedure = (procedures, template) => procedures.find((p) => p.template === template && p.state === "released") || null;
+
+// A step that needs a permit or an isolation stays locked until both are on record.
+export function stepLock(step, { permit, isolated }) {
+  const r = step.requires || {};
+  if (r.permit && !permit) return { locked: true, reason: `Step ${step.step} needs an open permit to work and an applied isolation first.` };
+  if (r.isolation && !isolated) return { locked: true, reason: `Step ${step.step} needs the isolation recorded on the permit first.` };
+  return { locked: false, reason: null };
+}

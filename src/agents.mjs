@@ -45,7 +45,8 @@ export function assetInsight(ctx, assetId, partId) {
   const permit = ctx.list("Permit", (p) => p.assetId === assetId && p.state === "open")[0] || null;
   const isolated = !!(permit && (permit.isolations || []).some((i) => i.state === "applied"));
   const zone = ctx.get(asset.zoneId);
-  const steps = ctx.list("ProcedureStep", (s) => s.template === asset.template).sort((a, b) => a.step - b.step);
+  const proc = F.currentProcedure(ctx.list("Procedure"), asset.template);
+  const steps = proc ? proc.steps : [];
   const procedure = part ? steps.filter((s) => s.partNames.includes(part.name)) : steps;
   const manual = ctx.list("Document", (d) => d.kind === "manual" && d.template === asset.template)[0] || null;
   return { asset, part, sensors, alerts, findings, history, deviations, permit, isolated, hazards: zone ? zone.hazard : null, zone, procedure, allSteps: steps, manual };

@@ -45,5 +45,5 @@ test("42 people, hero assets have sensors, an intrusive procedure step exists", 
     const n = ofType("Sensor").filter((s) => s.assetId === a.id).length;
     assert.ok(n >= 3, `${a.id} sensors ${n}`);
   }
-  assert.ok(ofType("ProcedureStep").some((s) => s.intrusive));
+  assert.ok(ofType("Procedure").some((p) => p.steps.some((s) => s.intrusive)));
 });

@@ -9,6 +9,7 @@ import { dropPackEvidence } from "./agents.mjs";
 import { runEvals } from "./evals.mjs";
 import { rank } from "./ontology.mjs";
 import { llmEnabled } from "./llm.mjs";
+import { currentProcedure } from "./functions.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const WEB = path.resolve(here, "..", "web");
@@ -129,7 +130,7 @@ export function createServer(sys) {
       const view = ont.view(v);
       const a = view.get(decodeURIComponent(m[1]));
       if (!a || a.type !== "Asset") throw new HttpError(404, "not found");
-      return { asset: a, parts: view.list("Part", (p) => p.assetId === a.id), sensors: tel.sensorsFor(a.id).filter((s) => view.get(s.id)).map(latest), procedure: view.list("ProcedureStep", (s) => s.template === a.template).sort((x, y) => x.step - y.step), findings: view.list("Finding", (f) => f.assetId === a.id) };
+      return { asset: a, parts: view.list("Part", (p) => p.assetId === a.id), sensors: tel.sensorsFor(a.id).filter((s) => view.get(s.id)).map(latest), procedure: (currentProcedure(view.list("Procedure"), a.template) || { steps: [] }).steps, procedureId: (currentProcedure(view.list("Procedure"), a.template) || {}).id || null, findings: view.list("Finding", (f) => f.assetId === a.id) };
     }],
     ["GET", /^\/api\/telemetry\/([^/]+)$/, (v, m, url) => { const id = decodeURIComponent(m[1]); if (!ont.view(v).get(id)) throw new HttpError(404, "not found"); return { id, now: tel.now(), values: tel.history(id, Math.min(20160, Number(url.searchParams.get("n")) || 240)) }; }],
     ["GET", /^\/api\/agents$/, () => runtime.specs().map((s) => {

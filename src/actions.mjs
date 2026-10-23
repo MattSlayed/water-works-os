@@ -27,7 +27,7 @@ const create = (ont, obj, linksTo = []) => {
 };
 
 // Parameters that name an object: the type it must be. Every named object must also be visible to the actor.
-const TARGET_TYPES = { workOrderId: ["WorkOrder"], assetId: ["Asset"], partIds: ["Part"], partId: ["Part"], alertId: ["Alert"], permitId: ["Permit"], assigneeId: ["Person"], holderId: ["Person"], itemId: ["Part", "Chemical"], targetId: null };
+const TARGET_TYPES = { procedureId: ["Procedure"], workOrderId: ["WorkOrder"], assetId: ["Asset"], partIds: ["Part"], partId: ["Part"], alertId: ["Alert"], permitId: ["Permit"], assigneeId: ["Person"], holderId: ["Person"], itemId: ["Part", "Chemical"], targetId: null };
 const PATCHABLE = ["title", "priority", "state", "planned", "hours", "closed"];
 
 export const ACTIONS = {
@@ -110,6 +110,27 @@ export const ACTIONS = {
   submit_compliance_pack: def("act", "human", ["framework"], (ont, p, ctx) => {
     const s = create(ont, { id: nextId("SUB"), type: "Submission", framework: p.framework, state: "submitted", at: ctx.now() });
     return { objects: [s.id] };
+  }, "manager"),
+  // Living SOPs: an author with the c-author competence drafts the next version; the manager releases it.
+  propose_procedure_version: def("act", "human", ["procedureId", "steps", "reason"], (ont, p, ctx) => {
+    const today = ctx.now().slice(0, 10);
+    if (!ont.list("Competency", (c) => c.personId === ctx.actor.id && c.competency === "c-author" && c.validTo >= today).length) throw new Error("needs the c-author competence");
+    const cur = ont.get(p.procedureId);
+    if (!Array.isArray(p.steps) || !p.steps.length || p.steps.some((s) => !s || typeof s.text !== "string" || !s.text.trim())) throw new Error("steps must be a non-empty list with text");
+    const version = Math.max(...ont.list("Procedure", (x) => x.template === cur.template).map((x) => x.version)) + 1;
+    const id = `PRC-${cur.template.toUpperCase()}-v${version}`;
+    const steps = p.steps.map((s, i) => ({ ...(cur.steps[i] || {}), text: String(s.text), id: `${id}-S${String(i + 1).padStart(2, "0")}`, step: i + 1 }));
+    const pr = create(ont, { id, type: "Procedure", template: cur.template, documentId: cur.documentId, title: cur.title, version, state: "draft", steps, basedOn: cur.id, proposedBy: ctx.actor.id, reason: p.reason, created: ctx.now() }, [["PART_OF", cur.documentId], ["REVISES", cur.id]]);
+    return { objects: [pr.id], revert: () => setProps(ont, pr.id, { state: "withdrawn" }) };
+  }, "engineer"),
+  release_procedure: def("act", "human", ["procedureId"], (ont, p, ctx) => {
+    const next = ont.get(p.procedureId);
+    if (next.state !== "draft") throw new Error(`${next.id} is ${next.state}, not a draft`);
+    const prev = ont.list("Procedure", (x) => x.template === next.template && x.state === "released")[0];
+    const undo = [setProps(ont, next.id, { state: "released", releasedBy: ctx.actor.id, releasedAt: ctx.now() })];
+    if (prev) undo.push(setProps(ont, prev.id, { state: "superseded" }));
+    if (ont.get(next.documentId)) undo.push(setProps(ont, next.documentId, { sourceBehind: true }));
+    return { objects: [next.id, ...(prev ? [prev.id] : [])], revert: () => undo.forEach((f) => f()) };
   }, "manager"),
   release_asset_model: def("act", "human", ["assetId", "revision"], (ont, p, ctx) => ({ objects: [p.assetId], revert: setProps(ont, p.assetId, { modelRevision: p.revision }) }), "engineer")
 };

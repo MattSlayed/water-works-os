@@ -213,7 +213,7 @@ export function generateWorks(seed = 7) {
   for (const [tpl, t] of Object.entries(T)) {
     const docId = `DOC-SOP-${tpl.toUpperCase()}`;
     docsByTemplate[tpl] = docId;
-    add({ id: docId, type: "Document", kind: "SOP", title: `${t.label}: inspection and overhaul`, revision: "C", template: tpl }, "SYNTH-DOCS");
+    add({ id: docId, type: "Document", kind: "SOP", title: `${t.label}: inspection and overhaul`, revision: "C", template: tpl, sourceRef: { system: "sharepoint", url: `https://riverbend.sharepoint.example/sops/${tpl.toUpperCase()}.pdf`, revision: "C" }, sourceBehind: false }, "SYNTH-DOCS");
     add({ id: `DOC-OEM-${tpl.toUpperCase()}`, type: "Document", kind: "manual", title: `${t.make} ${t.model} operating and maintenance manual`, revision: "4", template: tpl, faultTree: t.faults }, "SYNTH-DOCS");
   }
 
@@ -256,13 +256,21 @@ export function generateWorks(seed = 7) {
   }
   stockNo += 100;
 
-  // Procedure steps per template (shared SOP), bound to the parts of every asset of that template by name.
+  // Digitised SOPs: one released Procedure per template (SOP revision C = version 3), steps bound to parts by name.
   for (const [tpl, t] of Object.entries(T)) {
-    t.steps.forEach(([text, intrusive, partNames, hazard], i) => {
-      const id = `PS-${tpl.toUpperCase()}-${String(i + 1).padStart(2, "0")}`;
-      add({ id, type: "ProcedureStep", documentId: docsByTemplate[tpl], template: tpl, step: i + 1, text, intrusive, partNames, hazard, requires: intrusive ? { level: 2 } : { level: 1 } }, "SYNTH-DOCS");
-      link(id, "PART_OF", docsByTemplate[tpl]);
+    const id = `PRC-${tpl.toUpperCase()}-v3`;
+    const steps = t.steps.map(([text, intrusive, partNames, hazard], i) => {
+      const gated = intrusive || /permit to work/i.test(text);
+      const banded = /measure/i.test(text) && partNames.find((n) => t.bands[n]);
+      const b = banded && t.bands[banded];
+      return {
+        id: `${id}-S${String(i + 1).padStart(2, "0")}`, step: i + 1, text, intrusive, partNames, hazard, documentId: docsByTemplate[tpl],
+        requires: { permit: gated, isolation: gated, reading: b ? { partName: banded, measure: b[0], unit: b[3] } : null },
+        expectedMinutes: hazard === "Heavy lift" ? 45 : intrusive ? 25 : 10
+      };
     });
+    add({ id, type: "Procedure", template: tpl, documentId: docsByTemplate[tpl], title: `${t.label}: inspection and overhaul`, version: 3, state: "released", steps, releasedBy: "P-001", releasedAt: "2025-02-01T00:00:00Z", reason: "Converted from SOP revision C" }, "SYNTH-DOCS");
+    link(id, "PART_OF", docsByTemplate[tpl]);
   }
 
   // Filters and process sensors
@@ -334,6 +342,14 @@ export function generateWorks(seed = 7) {
     }
   }
 
+  // Line management, consent to agent submission, and procedure authoring
+  const sups = people.filter((p) => p.role === "shift_supervisor");
+  for (const p of people) {
+    p.supervisorId = p.trade && p.role !== "contractor" ? (p.role === "millwright" ? sups[1].id : sups[0].id) : null;
+    p.autoSubmit = p === millwrights[2];
+    if (p.role === "reliability_engineer") comp(p.id, "c-author", 1, "2028-12-31");
+  }
+
   // Shifts: today's day and night shift (min class IV = 4)
   for (const [id, crew, start, end] of [["SHF-DAY", "A", "2026-10-15T06:00:00Z", "2026-10-15T18:00:00Z"], ["SHF-NIGHT", "B", "2026-10-15T18:00:00Z", "2026-10-16T06:00:00Z"], ["SHF-PREV", "D", "2026-10-14T18:00:00Z", "2026-10-15T06:00:00Z"]]) {
     add({ id, type: "Shift", crew, start, end, minClass: 4 }, "SYNTH-HR");
@@ -370,7 +386,7 @@ export function generateWorks(seed = 7) {
   const hlpB = assets.find((a) => a.positionTag === "HLP-B");
   const histWo = wo({ kind: "CM", assetId: hlpA.id, title: "High DE vibration on HLP-A", state: "closed", priority: "P2", assigneeId: millwrights[0].id, planned: "2025-08-04", closed: "2025-08-06", hours: 9 });
   wo({ kind: "CM", assetId: hlpB.id, title: "HLP-B: replaced mechanical seal", state: "closed", priority: "P2", assigneeId: millwrights[2].id, planned: "2026-03-02", closed: "2026-03-03", hours: 6 });
-  wo({ kind: "PM", assetId: hlpB.id, title: "HLP-B: 6-monthly vibration survey", state: "open", priority: "P3", assigneeId: null, planned: "2026-10-20", hours: 2 });
+  wo({ kind: "PM", assetId: hlpB.id, title: "HLP-B: 6-monthly vibration survey", state: "open", priority: "P3", assigneeId: millwrights[0].id, planned: "2026-10-20", hours: 2 });
   const dp2 = assets.find((a) => a.positionTag === "DP-2");
   wo({ kind: "CM", assetId: dp2.id, title: "DP-2 losing prime intermittently", state: "in_progress", priority: "P2", assigneeId: people.find((p) => p.role === "fitter").id, planned: "2026-10-14", hours: 3 });
 
