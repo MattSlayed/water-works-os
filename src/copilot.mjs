@@ -31,6 +31,7 @@ export function createCopilot({ ont, tel, actions, runtime, llm = askClaude }) {
   function open({ assetId, partId, workOrderId, user }) {
     if (!user || !user.id) throw new Error("user required");
     const ctx = ctxFor(user);
+    if (partId) { const part = ctx.get(partId); if (!part || part.assetId !== assetId) throw new Error("part not found"); }
     const insight = assetInsight(ctx, assetId, partId);
     if (!insight) throw new Error("asset not found");
     if (runtime) runtime.run("Technician Copilot", { actingUser: user, scope: { assetId, partId }, chain: false, trigger: { kind: "copilot-open" } });
@@ -107,6 +108,8 @@ export function createCopilot({ ont, tel, actions, runtime, llm = askClaude }) {
   function tag({ sessionId, partId, note, reading, photo, point }) {
     const s = sessions.get(sessionId);
     if (!s) throw new Error("session not found");
+    const pid = partId || s.partId, tagged = pid && ctxFor(s.user).get(pid);
+    if (!tagged || tagged.assetId !== s.assetId) throw new Error("part not found");
     const r = actions.invoke({ action: "tag_part", params: { partId: partId || s.partId, note, reading, photo, point, workOrderId: s.workOrderId, authorId: s.user.id }, actor: { kind: "person", ...s.user } });
     if (r.status !== "done") throw new Error(r.reason);
     const f = ont.get(r.decision.objects[0]);

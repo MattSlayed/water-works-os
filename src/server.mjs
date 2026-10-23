@@ -19,9 +19,16 @@ class HttpError extends Error { constructor(status, msg) { super(msg); this.stat
 
 export function createServer(sys) {
   const { ont, tel, actions, runtime, copilot, audit } = sys;
-  const clients = new Set();
+  const clients = new Map(); // response -> viewer
   const muster = { on: false, since: null, checkins: new Set() };
-  const broadcast = (e) => { for (const c of clients) c.write(`data: ${JSON.stringify(e)}\n\n`); };
+  // Each client hears only about objects it may see.
+  const broadcast = (e) => {
+    for (const [c, v] of clients) {
+      const ref = e.partId || (String(e.kind).startsWith("ontology.") ? e.id : null);
+      if (ref && !ont.view(v).get(ref)) continue;
+      c.write(`data: ${JSON.stringify(e)}\n\n`);
+    }
+  };
   ont.on((e) => broadcast({ ...e, kind: `ontology.${e.kind}` }));
   copilot.on((e) => broadcast(e));
 
@@ -65,7 +72,7 @@ export function createServer(sys) {
       train,
       alerts: view.list("Alert", (a) => a.state === "active").sort((a, b) => (b.score || 0) - (a.score || 0)),
       proposals: view.list("Proposal", (p) => p.state === "open"),
-      runs: runtime.runs().slice(-15).reverse().map((r) => ({ id: r.id, agent: r.agent, status: r.status, plantTime: r.plantTime, outputs: r.outputs.length, refusals: r.refusals.length, reasoning: r.reasoning.slice(0, 2) })),
+      runs: runtime.runs().filter((r) => view.get(r.id)).slice(-15).reverse().map((r) => ({ id: r.id, agent: r.agent, status: r.status, plantTime: r.plantTime, outputs: r.outputs.length, refusals: r.refusals.length, reasoning: r.reasoning.slice(0, 2) })),
       people,
       chemicals: view.list("Chemical"),
       workOrders: view.list("WorkOrder", (w) => !["closed", "cancelled"].includes(w.state)),
@@ -143,8 +150,8 @@ export function createServer(sys) {
       const b = await body(req);
       try { const s = runtime.setAutonomy(name, b.action, b.level); audit.append({ actor: v.id, actorKind: "person", action: "set_autonomy", ref: name, detail: `${b.action}=${b.level}` }); return s; } catch (e) { throw new HttpError(400, e.message); }
     }],
-    ["GET", /^\/api\/runs$/, () => runtime.runs().slice(-100).reverse()],
-    ["GET", /^\/api\/runs\/([^/]+)$/, (v, m) => runtime.getRun(decodeURIComponent(m[1])) || (() => { throw new HttpError(404, "not found"); })()],
+    ["GET", /^\/api\/runs$/, (v) => { const view = ont.view(v); return runtime.runs().filter((r) => view.get(r.id)).slice(-100).reverse(); }],
+    ["GET", /^\/api\/runs\/([^/]+)$/, (v, m) => { const id = decodeURIComponent(m[1]); if (!ont.view(v).get(id) || !runtime.getRun(id)) throw new HttpError(404, "not found"); return runtime.getRun(id); }],
     ["GET", /^\/api\/proposals$/, (v, m, url) => ont.view(v).list("Proposal", (p) => !url.searchParams.get("state") || p.state === url.searchParams.get("state"))],
     ["POST", /^\/api\/proposals\/([^/]+)\/resolve$/, async (v, m, url, req) => {
       const id = decodeURIComponent(m[1]);
@@ -178,7 +185,7 @@ export function createServer(sys) {
     ["GET", /^\/api\/evals\/([^/]+)$/, (v, m) => runEvals(() => createSystem({ seed: sys.seed }), decodeURIComponent(m[1]))],
     ["GET", /^\/api\/knowledge$/, (v) => { const view = ont.view(v); return { findings: view.list("Finding"), feedback: view.list("Feedback") }; }],
     ["GET", /^\/api\/compliance$/, (v) => ({ items: dropPackEvidence(ctxFor(v)), submissions: ont.list("Submission") })],
-    ["GET", /^\/api\/audit$/, () => ({ verified: audit.verify(), entries: audit.all().slice(-200).reverse() })],
+    ["GET", /^\/api\/audit$/, (v) => { if (rank(v.clearance) < rank("supervisor")) throw new HttpError(403, "supervisor clearance needed for the audit log"); return { verified: audit.verify(), entries: audit.all().slice(-200).reverse() }; }],
     ["POST", /^\/api\/muster$/, async (v, m, url, req) => {
       if (rank(v.clearance) < rank("supervisor")) throw new HttpError(403, "supervisor clearance needed");
       const b = await body(req);
@@ -204,7 +211,11 @@ export function createServer(sys) {
   }
 
   function serveStatic(url, res) {
-    const rel = decodeURIComponent(url.pathname === "/" ? "/index.html" : url.pathname);
+    let rel;
+    try { rel = decodeURIComponent(url.pathname === "/" ? "/index.html" : url.pathname); } catch {
+      res.writeHead(400, { "content-type": "text/plain" });
+      return res.end("bad request");
+    }
     const file = path.resolve(WEB, "." + rel);
     if (!file.startsWith(WEB + path.sep) || !fs.existsSync(file) || !fs.statSync(file).isFile()) {
       res.writeHead(404, { "content-type": "text/plain" });
@@ -219,10 +230,10 @@ export function createServer(sys) {
     if (!url.pathname.startsWith("/api/")) return serveStatic(url, res);
     try {
       if (url.pathname === "/api/events") {
-        viewerOf(req, url);
+        const sv = viewerOf(req, url);
         res.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-cache", connection: "keep-alive" });
         res.write(`data: ${JSON.stringify({ kind: "hello", clock: tel.now() })}\n\n`);
-        clients.add(res);
+        clients.set(res, sv);
         req.on("close", () => clients.delete(res));
         return;
       }
@@ -251,5 +262,5 @@ if (process.argv[1] && path.resolve(process.argv[1]).toLowerCase() === SELF.toLo
   const server = createServer(sys);
   for (const a of ["Shift Handover", "Process Watch", "Asset Watch", "Permit Guard", "Shift Cover", "Drop Pack"]) sys.runtime.run(a, { actingUser: SYSTEM_USER, trigger: { kind: "startup" } });
   setInterval(() => server.tick(1), 2000).unref();
-  server.listen(port, () => console.log(`Water Works OS on http://localhost:${port}  (plant clock ${sys.tel.now()}, Claude ${llmEnabled() ? "on" : "off: deterministic agents"})`));
+  server.listen(port, "127.0.0.1", () => console.log(`Water Works OS on http://localhost:${port}  (plant clock ${sys.tel.now()}, Claude ${llmEnabled() ? "on" : "off: deterministic agents"})`));
 }

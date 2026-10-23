@@ -95,7 +95,7 @@ const LOGIC = {
     }
     for (const id of ["SEN-FIN-cl", "SEN-FIN-ph"]) {
       const s = ctx.get(id), l = ctx.latest(id);
-      if (s && l && ((s.alarmLo != null && l.value < s.alarmLo) || (s.alarmHi != null && l.value > s.alarmHi))) {
+      if (s && l && ((s.alarmLo != null && l.value < s.alarmLo) || (s.alarmHi != null && l.value > s.alarmHi)) && !ctx.list("Alert", (a) => a.targetId === id && a.state === "active").length) {
         ctx.act("raise_alert", { targetId: id, title: `${s.name} out of band: ${l.value} ${s.unit}`, severity: "high", evidence: [id] });
       }
     }
@@ -363,7 +363,7 @@ export function createRuntime({ ont, tel, actions }) {
       r.error = e.message;
     }
     r.endedAt = new Date().toISOString();
-    ont.upsert({ ...r });
+    ont.upsert({ ...r, minClearance: opts.actingUser.clearance });
     runs.push(r);
     if (opts.chain !== false && depth < 6) for (const x of next) run(x.agent, { ...opts, scope: x.scope, mission: null, trigger: { kind: "chain", from: r.id } }, depth + 1);
     return r;

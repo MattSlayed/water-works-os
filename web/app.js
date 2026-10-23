@@ -37,10 +37,10 @@ function mapSvg(m, { compact } = {}) {
   const zones = m.zones.map((z) => {
     const [x, y, w, h] = z.rect;
     const assets = L.assets ? z.assets.map((a) => `<g class="asset ${esc(a.state)}" tabindex="0" role="link" aria-label="${esc(a.tag)} ${esc(a.state)}" data-href="#/asset/${encodeURIComponent(a.id)}">
-        <circle cx="${a.xy[0]}" cy="${a.xy[1]}" r="3.6"/>${L.alerts && a.alert ? `<circle class="ring" cx="${a.xy[0]}" cy="${a.xy[1]}" r="7.5"/>` : ""}
-        ${compact ? "" : `<text x="${a.xy[0] + 5}" y="${a.xy[1] + 2}">${esc(a.tag)}</text>`}</g>`).join("") : "";
-    const ppl = L.people && z.people ? `<text class="ppl" x="${x + w - 6}" y="${y + h - 4}" text-anchor="end">${z.people}</text>` : "";
-    return `<g class="zone ${esc(z.hazard)}"><rect x="${x}" y="${y}" width="${w}" height="${h}"/><title>${esc(z.id)} ${esc(z.name)}</title><text x="${x + 4}" y="${y + 9}">${esc(z.id)}${!compact && w >= 100 ? " " + esc(z.name.split(" ")[0]) : ""}</text>${assets}${ppl}</g>`;
+        <circle cx="${Number(a.xy[0])}" cy="${Number(a.xy[1])}" r="3.6"/>${L.alerts && a.alert ? `<circle class="ring" cx="${Number(a.xy[0])}" cy="${Number(a.xy[1])}" r="7.5"/>` : ""}
+        ${compact ? "" : `<text x="${Number(a.xy[0]) + 5}" y="${Number(a.xy[1]) + 2}">${esc(a.tag)}</text>`}</g>`).join("") : "";
+    const ppl = L.people && z.people ? `<text class="ppl" x="${Number(x) + Number(w) - 6}" y="${Number(y) + Number(h) - 4}" text-anchor="end">${Number(z.people)}</text>` : "";
+    return `<g class="zone ${esc(z.hazard)}"><rect x="${Number(x)}" y="${Number(y)}" width="${Number(w)}" height="${Number(h)}"/><title>${esc(z.id)} ${esc(z.name)}</title><text x="${x + 4}" y="${y + 9}">${esc(z.id)}${!compact && w >= 100 ? " " + esc(z.name.split(" ")[0]) : ""}</text>${assets}${ppl}</g>`;
   }).join("");
   const permits = L.permits ? m.permits.map((p) => { const z = m.zones.find((zz) => zz.assets.some((a) => a.id === p.assetId)); if (!z) return ""; const [x, y, w, h] = z.rect; return `<rect x="${x}" y="${y}" width="${w}" height="${h}" fill="none" stroke="var(--amber)" stroke-width="1.2" stroke-dasharray="4 2"/>`; }).join("") : "";
   return `<svg viewBox="-10 -10 760 200" role="img" aria-label="Site map of ${esc(m.site.name)}">${zones}${permits}</svg>`;
@@ -76,7 +76,7 @@ const views = {
           <section class="panel" aria-label="Proposals"><div class="row"><h2>Awaiting a person · ${c.proposals.length}</h2><a href="#/proposals">Review</a></div><ul class="list">${c.proposals.slice(0, 5).map((p) => `<li><b>${esc(p.action)}</b> <span class="meta">${esc(p.actorId)} · ${esc(p.id)}</span></li>`).join("") || `<li class="empty">Nothing waiting.</li>`}</ul></section>
           <section class="panel" aria-label="Agent activity"><div class="row"><h2>Agent activity</h2><a href="#/agents">Agent Hub</a></div><ul class="list">${c.runs.map((r) => `<li><div class="row"><a href="#/run/${r.id}"><b>${esc(r.agent)}</b></a>${pill(r.status)}</div><div class="meta">${time(r.plantTime)} · ${r.outputs} outputs${r.refusals ? ` · ${r.refusals} refused` : ""}</div>${r.reasoning[0] ? `<div style="font-size:13px">${esc(r.reasoning[0])}</div>` : ""}</li>`).join("")}</ul></section>
           <section class="panel" aria-label="People on site"><h2>People on site by zone</h2><ul class="list">${people || `<li class="empty">Nobody recorded on site.</li>`}</ul></section>
-          <section class="panel" aria-label="Chemicals"><h2>Chemicals</h2><ul class="list">${c.chemicals.map((ch) => `<li class="row"><span>${esc(ch.name)}</span><span class="val">${ch.levelPct}% ${ch.levelPct < ch.reorderPct ? pill("reorder", "medium") : ""}</span></li>`).join("")}</ul></section>
+          <section class="panel" aria-label="Chemicals"><h2>Chemicals</h2><ul class="list">${c.chemicals.map((ch) => `<li class="row"><span>${esc(ch.name)}</span><span class="val">${esc(ch.levelPct)}% ${ch.levelPct < ch.reorderPct ? pill("reorder", "medium") : ""}</span></li>`).join("")}</ul></section>
         </div>
       </div>`;
     bindMap(view);
@@ -132,7 +132,7 @@ const views = {
         const p = partById[selected];
         if (!p) return `<p class="empty">Select a part in the tree or on the model.</p>`;
         const finds = m.findings.filter((f) => f.partId === p.id);
-        return `<h3 style="margin:0 0 8px;font:700 20px var(--cond);color:var(--ink)">${esc(p.name)}</h3><dl class="kv"><dt>DIN · stores</dt><dd>${esc(p.din)} · ${esc(p.erpNo)} · ${p.stock ?? 0} in stores${p.reserved ? `, ${p.reserved} reserved` : ""}</dd><dt>Material</dt><dd>${esc(p.material)}</dd>${p.band ? `<dt>Band</dt><dd>${esc(p.band.measure)} ${p.band.lo}–${p.band.hi} ${esc(p.band.unit)}</dd>` : ""}<dt>Steps</dt><dd>${m.procedure.filter((s) => s.partNames.includes(p.name)).map((s) => "PS " + s.step).join(", ") || "—"}</dd></dl>
+        return `<h3 style="margin:0 0 8px;font:700 20px var(--cond);color:var(--ink)">${esc(p.name)}</h3><dl class="kv"><dt>DIN · stores</dt><dd>${esc(p.din)} · ${esc(p.erpNo)} · ${esc(p.stock ?? 0)} in stores${p.reserved ? `, ${esc(p.reserved)} reserved` : ""}</dd><dt>Material</dt><dd>${esc(p.material)}</dd>${p.band ? `<dt>Band</dt><dd>${esc(p.band.measure)} ${esc(p.band.lo)}–${esc(p.band.hi)} ${esc(p.band.unit)}</dd>` : ""}<dt>Steps</dt><dd>${m.procedure.filter((s) => s.partNames.includes(p.name)).map((s) => "PS " + s.step).join(", ") || "—"}</dd></dl>
           ${finds.map((f) => `<p class="meta">Finding ${esc(f.id)}: ${esc(f.text)}</p>`).join("")}
           <form id="tagf" style="margin-top:10px"><label class="field">Tag this part<textarea id="tnote" rows="2" required></textarea></label><label class="field">Reading${p.band ? ` (${esc(p.band.unit)})` : ""}<input id="tread" inputmode="decimal"></label><button class="btn primary">Save tag</button></form>`;
       },

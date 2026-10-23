@@ -88,6 +88,7 @@ export function createOntology({ objects = [], links = [] } = {}) {
   const view = (viewer) => {
     const r = rank(viewer && viewer.clearance);
     const visible = (o) => {
+      if (o.minClearance && rank(o.minClearance) > r) return false;
       const z = zoneOf(o);
       if (!z) return true;
       const zone = byId.get(z);
