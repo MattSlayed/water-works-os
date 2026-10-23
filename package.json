@@ -6,7 +6,7 @@
   "description": "Ontology-driven operating system for a synthetic water treatment works (Phase 1 MVP)",
   "engines": { "node": ">=22" },
   "scripts": {
-    "test": "node --test test/",
+    "test": "node --test \"test/*.test.mjs\"",
     "start": "node src/server.mjs"
   }
 }
