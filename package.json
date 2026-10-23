@@ -1,0 +1,12 @@
+{
+  "name": "water-works-os",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Ontology-driven operating system for a synthetic water treatment works (Phase 1 MVP)",
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "test": "node --test test/",
+    "start": "node src/server.mjs"
+  }
+}
