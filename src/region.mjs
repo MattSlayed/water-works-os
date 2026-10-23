@@ -108,3 +108,22 @@ export const PROJECTS = [
     capacityImpact: { stage: "supply", text: "PS-2 on its standby pump only: no spare pumping until 30 Oct" },
     milestones: [ms("M1", "Temporary supply to the standby pump", "2026-10-13", done("2026-10-13")), ms("M2", "New MCC installed", "2026-10-23"), ms("M3", "Duty pump back on the new MCC", "2026-10-30")] }]
 ].map(([id, f]) => [id, { ...f, footprint: { type: "Polygon", coordinates: [f.footprint.map(toLonLat)] } }]);
+
+// ---------- Tagged things (Region design §4.3): vehicles and portable plant, never people ----------
+// route: site metres, home at route[0]. trips: { at: minute of day (UTC), dur: minutes, dir: 1 out | -1 back, day?: window day for a one-off }.
+// run: when portable plant runs, as [fromMinuteOfDay, toMinuteOfDay] daily or { from: window minute }. silentFrom: window minute the tag stops reporting.
+const BOAT_HOME = at(0, DAM.b * 0.9);
+export const TRACKERS = [
+  { id: "TRK-BAK1", kind: "vehicle", name: "Works bakkie 1", boundTo: "Riverbend Works fleet", geofences: [], route: [[600, 190], [600, 1200], [3000, 1200], [3000, 360]], trips: [{ at: 360, dur: 40, dir: 1 }, { at: 720, dur: 40, dir: -1 }] },
+  { id: "TRK-BAK2", kind: "vehicle", name: "Works bakkie 2", boundTo: "Riverbend Works fleet", geofences: [], route: [[600, 190], [600, 1200], [6000, 1200], [6000, 300]], trips: [{ at: 420, dur: 60, dir: 1 }, { at: 780, dur: 60, dir: -1 }], silentFrom: 12 * 1440 + 720 },
+  { id: "TRK-COAG", kind: "vehicle", name: "Coagulant delivery truck", boundTo: "CHEM-COAG", geofences: [], route: [[11500, 1200], [600, 1200], [600, 190], [195, 145]], trips: [{ day: 13, at: 360, dur: 80, dir: 1 }] },
+  { id: "TRK-CL2", kind: "vehicle", name: "Chlorine delivery truck", boundTo: "CHEM-CL2", geofences: [], route: [[11500, 1200], [600, 1200], [600, 190], [500, 40]], trips: [{ day: 11, at: 420, dur: 80, dir: 1 }, { day: 11, at: 600, dur: 80, dir: -1 }] },
+  { id: "TRK-SLUDGE", kind: "vehicle", name: "Sludge tanker", boundTo: "PRJ-SLG", projectId: "PRJ-SLG", geofences: [], route: [[320, 230], [600, 280], [600, 1200], [11000, 1200]], trips: [{ at: 300, dur: 90, dir: 1 }, { at: 480, dur: 90, dir: -1 }] },
+  { id: "TRK-CON1", kind: "vehicle", name: "Contractor vehicle (RES-2 relining)", boundTo: "PRJ-RES2", projectId: "PRJ-RES2", geofences: [], route: [[11000, 1600], [11000, 1200], [11500, 620], [11500, 500]], trips: [{ at: 240, dur: 30, dir: 1 }, { at: 840, dur: 30, dir: -1 }] },
+  { id: "TRK-CON2", kind: "vehicle", name: "Contractor vehicle (raw-water main)", boundTo: "PRJ-RWM", projectId: "PRJ-RWM", geofences: [], route: [[0, 100], [-500, -700], [-600, -950]], trips: [{ at: 270, dur: 15, dir: 1 }, { at: 870, dur: 15, dir: -1 }] },
+  { id: "TRK-BOAT", kind: "vehicle", name: "Sample boat", boundTo: "Riverbend Works lab", geofences: ["WB-RB"], route: [BOAT_HOME, at(-1500, 0)], trips: [{ at: 450, dur: 25, dir: 1 }, { at: 540, dur: 25, dir: -1 }] },
+  { id: "TRK-PP1", kind: "portable", name: "Portable pump PP-1 (dewatering)", boundTo: "PRJ-RES2", projectId: "PRJ-RES2", geofences: ["PRJ-RES2"], route: [[11450, 450]], trips: [], run: [300, 840] },
+  { id: "TRK-PP2", kind: "portable", name: "Portable pump PP-2", boundTo: "PRJ-RWM", projectId: "PRJ-RWM", geofences: ["PRJ-RWM"], route: [[-560, -880], [-450, -700]], trips: [{ day: 13, at: 90, dur: 10, dir: 1 }] },
+  { id: "TRK-GEN", kind: "portable", name: "Mobile genset (PS-2 temporary supply)", boundTo: "PRJ-PS2", projectId: "PRJ-PS2", geofences: ["PRJ-PS2"], route: [[8040, 407]], trips: [], run: { from: 11 * 1440 } },
+  { id: "TRK-KIT", kind: "portable", name: "Sampling kit", boundTo: "Riverbend Works lab", geofences: [], route: [[470, 140]], trips: [] }
+];
