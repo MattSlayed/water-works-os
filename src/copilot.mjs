@@ -25,7 +25,7 @@ export function createCopilot({ ont, tel, actions, runtime, llm = askClaude }) {
       history: (id, k) => (v.get(id) ? tel.history(id, k) : [])
     };
   };
-  const agentActor = (user) => ({ kind: "agent", id: "Technician Copilot", clearance: user.clearance });
+  const agentActor = (user) => ({ kind: "agent", id: "Technician Copilot", clearance: user.clearance, onBehalfOf: user.id });
   const autonomy = (action) => (runtime && runtime.spec("Technician Copilot").autonomy[action]) || "propose";
 
   function open({ assetId, partId, workOrderId, user }) {

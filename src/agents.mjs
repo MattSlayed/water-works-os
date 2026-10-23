@@ -336,7 +336,7 @@ export function createRuntime({ ont, tel, actions }) {
           run.refusals.push({ action, reason: r.reason });
           return call(action, params, r);
         }
-        const r = actions.invoke({ action, params, actor: { kind: "agent", id: spec.name, clearance: opts.actingUser.clearance }, autonomy: spec.autonomy[action] || "propose", runId: run.id, ...meta });
+        const r = actions.invoke({ action, params, actor: { kind: "agent", id: spec.name, clearance: opts.actingUser.clearance, onBehalfOf: opts.actingUser.id }, autonomy: spec.autonomy[action] || "propose", runId: run.id, ...meta });
         if (r.status === "refused") run.refusals.push({ action, reason: r.reason });
         else run.outputs.push({ action, status: r.status, ref: (r.decision || r.proposal).id });
         return call(action, params, { status: r.status, ref: r.decision ? r.decision.id : r.proposal ? r.proposal.id : null, objects: r.decision ? r.decision.objects : [], reason: r.reason });

@@ -84,11 +84,12 @@ export function createOntology({ objects = [], links = [] } = {}) {
     emit({ kind: "remove", id, at: nowIso() });
   };
 
-  // A viewer sees an object unless it sits in a zone above the viewer's clearance.
+  // A viewer sees an object unless it sits in a zone above the viewer's clearance, or names an audience the viewer is not in.
   const view = (viewer) => {
     const r = rank(viewer && viewer.clearance);
     const visible = (o) => {
       if (o.minClearance && rank(o.minClearance) > r) return false;
+      if (o.audience && r < rank("manager") && !o.audience.includes(viewer && viewer.id)) return false;
       const z = zoneOf(o);
       if (!z) return true;
       const zone = byId.get(z);

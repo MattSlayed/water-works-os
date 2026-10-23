@@ -146,7 +146,7 @@ export function createActionService({ ont, audit, clock = wallClock }) {
 
   // Every object a parameter names must exist, be of the right type, and be visible to the actor.
   function validate(action, params, actor) {
-    const view = ont.view({ clearance: actor.clearance });
+    const view = ont.view({ id: actor.onBehalfOf || actor.id, clearance: actor.clearance });
     for (const [key, types] of Object.entries(TARGET_TYPES)) {
       if (params[key] === undefined || params[key] === null) continue;
       if (key === "partIds" && (!Array.isArray(params[key]) || !params[key].length)) return `${key} must be a non-empty list`;

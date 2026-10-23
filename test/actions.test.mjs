@@ -138,3 +138,13 @@ test("actions stamp objects with the injected clock", () => {
   assert.equal(ont.get(r.decision.objects[0]).at, "2026-10-14T07:05:00.000Z");
   assert.equal(r.decision.at, "2026-10-14T07:05:00.000Z");
 });
+
+test("an agent names audience-limited objects only for the person it acts for", () => {
+  const ont = createOntology(generateWorks(7));
+  ont.upsert({ id: "CHN-T", type: "Channel", audience: ["P-028"] });
+  const svc = createActionService({ ont, audit: createAudit() });
+  const forOwner = svc.invoke({ action: "raise_alert", params: { targetId: "CHN-T", title: "t" }, actor: { kind: "agent", id: "Chat Intake", clearance: "technician", onBehalfOf: "P-028" }, autonomy: "act" });
+  assert.equal(forOwner.status, "done", forOwner.reason);
+  const forOther = svc.invoke({ action: "raise_alert", params: { targetId: "CHN-T", title: "t" }, actor: { kind: "agent", id: "Chat Intake", clearance: "technician", onBehalfOf: "P-029" }, autonomy: "act" });
+  assert.equal(forOther.status, "refused");
+});

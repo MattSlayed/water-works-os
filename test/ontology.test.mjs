@@ -62,3 +62,11 @@ test("views are read-only", () => {
   const v = fresh().view(tech);
   assert.equal(v.upsert, undefined);
 });
+
+test("audience limits an object to named viewers and the manager", () => {
+  const o = createOntology({ objects: [{ id: "M1", type: "Message", audience: ["P-028"] }, { id: "M2", type: "Message" }] });
+  assert.ok(o.view({ id: "P-028", clearance: "technician" }).get("M1"));
+  assert.equal(o.view({ id: "P-029", clearance: "engineer" }).get("M1"), null);
+  assert.ok(o.view({ id: "P-001", clearance: "manager" }).get("M1"));
+  assert.ok(o.view({ id: "P-029", clearance: "technician" }).get("M2"));
+});
