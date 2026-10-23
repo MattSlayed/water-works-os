@@ -116,12 +116,16 @@ export function createTrackers({ ont, seed = 7, start = "2026-10-01T00:00:00Z", 
     },
     geofenceEvents: (fromMin, toMin) => allEvents().filter((e) => e.minute > fromMin && e.minute <= toMin),
     // Mirror the latest ping onto each Tracker and add the geofence events the clock has passed (both idempotent).
-    syncTo(o, cursorMin) {
+    syncTo(o, cursorMin, audit = null) {
       for (const t of TRACKERS) {
         const { trackerId, at, ...p } = this.latest(t.id, cursorMin);
-        o.upsert({ id: t.id, type: "Tracker", ...p, pingAt: at });
+        o.upsert({ id: t.id, type: "Tracker", eta: null, ...p, pingAt: at }); // upsert merges, so a finished trip's ETA is cleared explicitly
       }
-      for (const e of allEvents().filter((x) => x.minute <= cursorMin && !o.get(x.id))) { const { minute, ...rest } = e; o.upsert(rest); }
+      for (const e of allEvents().filter((x) => x.minute <= cursorMin && !o.get(x.id))) {
+        const { minute, ...rest } = e;
+        o.upsert(rest);
+        if (audit) audit.append({ actor: "SYNTH-AVL", actorKind: "system", action: "geofence", outcome: rest.kind, objects: [rest.id, rest.trackerId], source: "synthetic", at: rest.at });
+      }
     }
   };
 }

@@ -533,6 +533,7 @@ const LOGIC = {
         }
         for (const f of found) {
           if (ctx.list("GeoDetection", (d) => d.sceneId === s.id && d.aoiId === aoi && d.kind === f.kind).length) continue;
+          if (ctx.list("Proposal", (p) => p.action === "record_detection" && p.state === "open" && p.params.sceneId === s.id && p.params.aoiId === aoi && p.params.kind === f.kind).length) continue;
           const z = Math.round(f.z * 10) / 10, confidence = Math.round(Math.min(0.95, f.kind === "extent_change" ? 0.6 : 0.5 + 0.15 * (f.z - 2)) * (s.cloudPct > 30 ? 0.9 : 1) * 100) / 100;
           const d = ctx.act("record_detection", { sceneId: s.id, aoiId: aoi, kind: f.kind, index: f.index, z, confidence, cloudPct: s.cloudPct });
           if (d.status !== "done") continue;

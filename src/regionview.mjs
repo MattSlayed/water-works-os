@@ -37,8 +37,9 @@ const inside = (o, poly) => Number.isFinite(o.lat) && within([o.lon, o.lat], pol
 const dataEndIso = (sys) => new Date(Date.parse("2026-10-01T00:00:00Z") + sys.trackers.dataEndMin * 60000).toISOString();
 const auditIdOf = (sys, id) => { const e = sys.audit.all().find((x) => (x.objects || []).includes(id)); return e ? e.seq : null; };
 
-function trackerView(sys, t) {
-  return { id: t.id, kind: t.kind, name: t.name, projectId: t.projectId, boundTo: t.boundTo, lat: t.lat, lon: t.lon, zoneId: t.zoneId, pingAt: t.pingAt, speedKmh: t.speedKmh, headingDeg: t.headingDeg,
+function trackerView(sys, t, view) {
+  const bound = sys.ont.get(t.boundTo); // a tag bound to an object the viewer cannot see does not name it
+  return { id: t.id, kind: t.kind, name: t.name, projectId: t.projectId, boundTo: bound && !view.get(bound.id) ? null : t.boundTo, lat: t.lat, lon: t.lon, zoneId: t.zoneId, pingAt: t.pingAt, speedKmh: t.speedKmh, headingDeg: t.headingDeg,
     batteryPct: t.batteryPct, eta: t.eta || null, state: t.state || null, runHours: t.runHours ?? null, fuelPct: t.fuelPct ?? null, signal: pingState(t.pingAt, sys.tel.now(), dataEndIso(sys)) };
 }
 // the latest usable Sentinel-2 scene at or before now, and the NDTI band of an area in it
@@ -54,7 +55,7 @@ export function regionPayload(sys, v, { clipLine = (c) => [c], trails = [], live
   const view = sys.ont.view(v), now = sys.tel.now();
   const region = view.list("Region").map((r) => (r.geometry.type === "LineString" ? { ...r, geometry: { type: "MultiLineString", coordinates: clipLine(r.geometry.coordinates) } } : r));
   const sensorsOf = (id) => sys.tel.sensorsFor(id).filter((s) => view.get(s.id)).map((s) => ({ id: s.id, name: s.name, unit: s.unit, alarmLo: s.alarmLo ?? null, alarmHi: s.alarmHi ?? null, ...(sys.tel.latest(s.id) || {}) }));
-  const trackers = view.list("Tracker").map((t) => trackerView(sys, t));
+  const trackers = view.list("Tracker").map((t) => trackerView(sys, t, view));
   const want = new Set(trails.filter((id) => view.get(id)));
   for (const t of trackers) if (want.has(t.id)) t.trail = sys.trackers.history(t.id, 6, sys.tel.cursor()).filter((p) => !p.zoneId || view.get(p.zoneId)).map((p) => [p.lon, p.lat]);
   const cutoff = Date.parse(now) - 60 * DAY;
@@ -67,6 +68,12 @@ export function regionPayload(sys, v, { clipLine = (c) => [c], trails = [], live
     projects: view.list("Project").map((p) => ({ id: p.id, title: p.title, start: p.start, end: p.end, ownerId: p.ownerId, footprint: p.footprint, capacityImpact: p.capacityImpact,
       status: projectStatus(p, sys.ont.list("ProgressClaim"), view.list("Issue"), now) })),
     detections: view.list("GeoDetection"),
+    // operations to focus on (option A): detection responses, active alerts and open work orders
+    operations: [
+      ...view.list("GeoDetection", (d) => ["suggested", "confirmed"].includes(d.status)).map((d) => ({ kind: "detection", id: d.id, label: `${d.kind} ${d.status} · ${d.sceneId}` })),
+      ...view.list("Alert", (a) => a.state === "active" && !String(a.targetId || "").startsWith("GEO-")).sort((a, b) => (b.score || 0) - (a.score || 0)).slice(0, 10).map((a) => ({ kind: "alert", id: a.id, label: a.title })),
+      ...view.list("WorkOrder", (w) => !["closed", "cancelled"].includes(w.state)).sort((a, b) => Number(b.kind === "sampling") - Number(a.kind === "sampling") || String(a.priority).localeCompare(String(b.priority))).slice(0, 10).map((w) => ({ kind: "workorder", id: w.id, label: `${w.id} ${w.title}` }))
+    ],
     alerts: view.list("Alert", (a) => a.state === "active" && (String(a.targetId || "").startsWith("GEO-") || ["Z13", "Z14", "Z15"].includes(a.zoneId))),
     scenes: view.list("Scene", (s) => s.inWindow || Date.parse(s.acquiredAt) >= cutoff).sort((a, b) => a.acquiredAt.localeCompare(b.acquiredAt))
       .map((s) => ({ id: s.id, mission: s.mission, acquiredAt: s.acquiredAt, cloudPct: s.cloudPct, usable: s.usable, inWindow: s.inWindow, processed: Date.parse(s.acquiredAt) + 3 * 3600000 <= Date.parse(now) })),
@@ -124,7 +131,7 @@ export function supplyRisks(sys, v) {
     rawWater: { band, note: "index, not calibrated", inputs: [
       { name: "NDTI band, dam inflow arm", band: inflow.band, sceneId: inflow.sceneId }, { name: "NDTI band, intake approach", band: intake.band, sceneId: intake.sceneId },
       { name: "Raw-water turbidity at the intake", value: raw && raw.value, unit: "NTU", at: raw && raw.at }, { name: "Open plume detections", value: plumes.map((d) => `${d.id} (${d.status})`) }] },
-    capacity: { ...cap, demandMlD: demand && demand.value, inputs: view.list("Project", (p) => p.start <= day && day <= p.end && p.capacityImpact && Number.isFinite(p.capacityImpact.capacityMlD)).map((p) => ({ projectId: p.id, text: p.capacityImpact.text })) },
+    capacity: { ...cap, demandMlD: demand && demand.value, shortfallMlD: demand ? Math.max(0, Math.round((demand.value - cap.capacityMlD) * 10) / 10) : null, inputs: view.list("Project", (p) => p.start <= day && day <= p.end && p.capacityImpact && Number.isFinite(p.capacityImpact.capacityMlD)).map((p) => ({ projectId: p.id, text: p.capacityImpact.text })) },
     storage: { sites, inputs: impacts, note: "Hours of storage at today's outflow; flagged under 12 h." }
   };
 }
@@ -170,6 +177,12 @@ export function focusOf(sys, v, kind, id) {
   return { kind, id, ids: [...ids], trackerIds: [...trackerIds], zoneIds: [...zoneIds] };
 }
 
+// what a storage project leaves: the reservoir's hours of storage today, from the supply-risk rule
+function storageLine(sys, v, p) {
+  const site = supplyRisks(sys, v).storage.sites.find((s) => s.project === p.id);
+  return site ? `${site.name}: ${site.storageHours} h of storage at today's outflow (${Math.round(site.usableMl)} Ml usable)${site.flagged ? ", under 12 h" : ""}.` : "Counts against storage, not treatment.";
+}
+
 export function projectPanel(sys, v, id) {
   const view = sys.ont.view(v), p = view.get(id), now = sys.tel.now();
   if (!p || p.type !== "Project") return null;
@@ -179,10 +192,10 @@ export function projectPanel(sys, v, id) {
   const cap = treatmentCapacity(sys.ont, day);
   const line = !active ? `Not running today (${p.start} to ${p.end}).`
     : c.capacityMlD ? `Treatment capacity today ${cap.capacityMlD} ML/d (limited by ${cap.limiting}); this project holds ${c.stage} to ${c.capacityMlD} ML/d.`
-    : c.stage === "storage" || c.stage === "supply" ? `Counts against supply and storage, not treatment.` : "No capacity effect.";
+    : c.stage === "storage" ? storageLine(sys, v, p) : c.stage === "supply" ? `${c.text}. Counts against supply, not treatment.` : "No capacity effect.";
   return {
     id: p.id, title: p.title, ownerId: p.ownerId, start: p.start, end: p.end,
-    footprint: { polygon: p.footprint, trackers: view.list("Tracker", (t) => inside(t, p.footprint)).map((t) => trackerView(sys, t)), permits: view.list("Permit", (x) => x.state === "open" && (p.assetIds || []).includes(x.assetId)) },
+    footprint: { polygon: p.footprint, trackers: view.list("Tracker", (t) => inside(t, p.footprint)).map((t) => trackerView(sys, t, view)), permits: view.list("Permit", (x) => x.state === "open" && (p.assetIds || []).includes(x.assetId)) },
     progress: { status, spendZar: spendAt(p, now), budgetZar: p.budgetZar, lastReport: last ? { at: last.at, text: last.text, by: last.by } : null },
     impact: { text: c.text || null, active, outOfService: (p.takesOutOfService || []).map((t) => ({ ...t, name: nameOf(sys.ont.get(t.id)) || t.id })), supplyRisk: line },
     issues: [

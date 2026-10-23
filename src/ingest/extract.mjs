@@ -55,7 +55,7 @@ export function extractPlant(files, ont) {
   };
 
   const elRow = new Map(sheets[EL].map((r, i) => [r.Tag, { ...r, row: i + 2 }]));
-  const zones = ont.list("Zone");
+  const zones = ont.list("Zone", (z) => z.rect); // plant zones; the bulk-line zones carry rects in site metres far off the plant
   const zoneAt = ([x, y]) => zones.find((z) => x >= z.rect[0] && x <= z.rect[0] + z.rect[2] && y >= z.rect[1] && y <= z.rect[1] + z.rect[3]);
   const putZone = (kind, tag, at) => {
     const r = elRow.get(tag);

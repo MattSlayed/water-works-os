@@ -211,7 +211,11 @@ export const ACTIONS = {
       if (doneSteps[doneSteps.length - 1].step !== next.step) throw new Error(`reverse the later steps of ${ex.id} first`);
       ont.upsert({ id: ex.id, type: "Execution", state: "running", finishedAt: null, steps: now.steps.map((s) => (s.step === next.step ? { ...s, state: "todo", at: null, minutes: null, value: null, inBand: null, readingId: null, note: null } : s)) });
       if (readingId) setProps(ont, readingId, { state: "withdrawn" });
-      if (sampleId) { setProps(ont, sampleId, { state: "withdrawn" }); undoDet(); }
+      if (sampleId) {
+        if (ont.get(det.id).status !== "suggested") throw new Error(`${det.id} has been reviewed with this sample; reverse the review first`);
+        setProps(ont, sampleId, { state: "withdrawn" });
+        undoDet();
+      }
       if (undoWo) undoWo();
     };
     return { objects: [ex.id, ...(readingId ? [readingId] : []), ...(sampleId ? [sampleId] : []), ...(last ? [ex.workOrderId] : [])], revert };
@@ -274,6 +278,9 @@ export const ACTIONS = {
   // The works number's outbound side. One reply per inbound message; only Project Watch posts to a group.
   // ---------- Geo Watch (Region design §5.4): detections stay suggested until a person confirms them with a sample ----------
   record_detection: def("act", "act", ["sceneId", "aoiId", "kind", "z"], (ont, p, ctx) => {
+    if (!["plume", "bloom", "extent_change"].includes(p.kind)) throw new Error("kind must be plume, bloom or extent_change");
+    if (!Number.isFinite(p.z)) throw new Error("z must be a number");
+    if (ont.get(p.aoiId).kind !== "aoi") throw new Error(`${p.aoiId} is not an area of interest`);
     const d = create(ont, { id: nextId("GEO"), type: "GeoDetection", sceneId: p.sceneId, aoiId: p.aoiId, kind: p.kind, index: p.index || null, z: p.z, confidence: p.confidence ?? null, cloudPct: p.cloudPct ?? null,
       status: "suggested", reviewedBy: null, reviewedAt: null, sampleIds: [], zoneId: null, at: ctx.now(), note: "index, not calibrated" }, [["SEEN_IN", p.sceneId], ["IN", p.aoiId]]);
     return { objects: [d.id], revert: () => setProps(ont, d.id, { status: "withdrawn" }) };
@@ -284,6 +291,7 @@ export const ACTIONS = {
   }),
   start_sampling_round: def("act", "propose", ["detectionId"], (ont, p, ctx) => {
     const det = ont.get(p.detectionId), who = samplerOf(ont), point = ont.get("AST-SMP-RAW");
+    if (det.status !== "suggested") throw new Error(`${det.id} is already ${det.status}; no sampling round needed`);
     const proc = currentProcedure(ont.list("Procedure"), point && point.template);
     if (!who || !proc) throw new Error("no lab analyst or no released sampling procedure");
     const wo = create(ont, { id: nextId("WO-N"), type: "WorkOrder", assetId: point.id, title: `Raw-water grab sample for ${det.id}`, kind: "sampling", priority: "P2", state: "scheduled", requested: ctx.now(), assigneeId: who.id, source: det.id }, [["TARGETS", point.id], ["ASSIGNED_TO", who.id]]);
@@ -291,12 +299,12 @@ export const ACTIONS = {
     const st = proc.steps[0], area = ont.get(det.aoiId);
     const msg = ACTIONS.send_message.apply(ont, { channelId: `CHN-${who.id}`, text: `Sampling round ${wo.id}: satellite ${det.kind} suggested in the ${area ? area.name.toLowerCase() : det.aoiId} (${det.sceneId}, index not calibrated). Step 1/${proc.steps.length}: ${st.text}. Reply with the turbidity in NTU.` }, ctx);
     return { objects: [wo.id, ex.id, ...msg.objects], revert: () => { revert(); setProps(ont, wo.id, { state: "cancelled" }); } };
-  }),
+  }, "supervisor"),
   review_detection: def("act", "human", ["detectionId", "verdict"], (ont, p, ctx) => {
     const d = ont.get(p.detectionId);
     if (!["confirmed", "rejected"].includes(p.verdict)) throw new Error("verdict must be confirmed or rejected");
     if (d.status !== "suggested") throw new Error(`${d.id} is already ${d.status}`);
-    if (p.verdict === "confirmed" && !(d.sampleIds || []).length) throw new Error("confirm a detection with a sample attached");
+    if (!(d.sampleIds || []).length) throw new Error(`${p.verdict === "confirmed" ? "confirm" : "reject"} a detection with a raw-water sample attached`);
     return { objects: [d.id], revert: setProps(ont, d.id, { status: p.verdict, reviewedBy: actorId(ctx), reviewedAt: ctx.now() }) };
   }, "operator"),
   send_message: def("notify", "act", ["channelId", "text"], (ont, p, ctx) => {

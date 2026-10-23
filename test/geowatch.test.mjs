@@ -46,14 +46,14 @@ test("geo watch: approve the round, the analyst replies by chat, a Sample is rec
   assert.deepEqual([sys.ont.get(det.id).status, sys.ont.get(det.id).reviewedBy], ["confirmed", analyst.id]);
 });
 
-test("geo watch: an agent cannot review a detection; nobody confirms one without a sample", () => {
+test("geo watch: an agent cannot review a detection; nobody confirms or rejects one without a sample", () => {
   const sys = createSystem();
   const det = sys.ont.list("GeoDetection")[0];
   assert.equal(sys.actions.invoke({ action: "review_detection", params: { detectionId: det.id, verdict: "confirmed" }, actor: { kind: "agent", id: "Geo Watch", clearance: "manager", onBehalfOf: "SYSTEM" } }).status, "refused");
   const r = sys.actions.invoke({ action: "review_detection", params: { detectionId: det.id, verdict: "confirmed" }, actor: as(sys, "P-001") });
   assert.equal(r.status, "refused");
   assert.match(r.reason, /sample/);
-  assert.equal(sys.actions.invoke({ action: "review_detection", params: { detectionId: det.id, verdict: "rejected" }, actor: as(sys, "P-001") }).status, "done");
+  assert.equal(sys.actions.invoke({ action: "review_detection", params: { detectionId: det.id, verdict: "rejected" }, actor: as(sys, "P-001") }).status, "refused");
 });
 
 test("geo watch: the raw-water sample does not count as a final-water compliance result", () => {

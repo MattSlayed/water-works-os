@@ -24,12 +24,12 @@ export function parseMessage({ text } = {}, { group = false, awaiting = null, ex
   if (done) return hit("done", 0.9, { step: done[1] ? Number(done[1]) : null, ...reading(done[2], done[3]) });
   const bare = t.match(new RegExp(String.raw`^(${NUM})\s*${UNIT}?$`, "i"));
   if (bare) return execution ? hit("done", 0.9, { step: null, ...reading(bare[1], bare[2]) }) : hit("ask", 0.9, { question: "Which job is that reading for? Reply *start* first." });
-  // a field reading quoted in a sentence ("raw 88 NTU at intake jetty") while a job is running
-  const ntu = execution && t.match(new RegExp(String.raw`(${NUM})\s*NTU\b`, "i"));
-  if (ntu) return hit("done", 0.85, { step: null, ...reading(ntu[1], "NTU") });
   const issue = t.match(/^issue[:\s]+(.+)$/i);
   if (issue) return hit("issue", 0.9, { title: issue[1].trim() });
   if (/\?\s*$/.test(t) || /^(what|how|why|where|which|when|who|can|should)\b/i.test(t)) return hit("question", 0.7, { text: t });
+  // a field reading quoted in a sentence ("raw 88 NTU at intake jetty") while a job is running
+  const ntu = execution && t.match(new RegExp(String.raw`(${NUM})\s*NTU\b`, "i"));
+  if (ntu) return hit("done", 0.85, { step: null, ...reading(ntu[1], "NTU") });
   if (/\b(worn|scored|broken|leak\w*|crack\w*|wrong|missing|seized)\b/i.test(t)) return hit("observation", 0.7, { text: t });
   if (group && WORK.test(t)) return hit("progress", 0.7, { text: t, milestoneHint: ((t.match(MILESTONE) || [null])[0] || "").toLowerCase() || null });
   return hit("offtopic", 0.3);

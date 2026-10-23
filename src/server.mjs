@@ -65,6 +65,7 @@ export function createServer(sys) {
     for (const [c, v] of clients) {
       const ref = e.partId || (String(e.kind).startsWith("ontology.") || e.kind === "message" ? e.id : null);
       if (ref && !ont.view(v).get(ref)) continue;
+      if (e.kind === "ontology.link" && e.to && !ont.view(v).get(e.to)) continue; // the far end of a link may be hidden too
       c.write(`data: ${JSON.stringify(e)}\n\n`);
     }
   };
@@ -410,7 +411,7 @@ export function createServer(sys) {
   function tick(minutes) {
     const before = dueScenes();
     tel.tick(minutes);
-    sys.trackers.syncTo(ont, tel.cursor()); // pings and geofence events reach viewers as pruned ontology updates
+    sys.trackers.syncTo(ont, tel.cursor(), audit); // pings and geofence events reach viewers as pruned ontology updates
     if (dueScenes() > before) runtime.run("Geo Watch", { actingUser: SYSTEM_USER, trigger: { kind: "event", on: "Scene ingested" } });
     if (tel.now().slice(0, 13) !== hour) { hour = tel.now().slice(0, 13); runtime.run("Project Watch", { actingUser: SYSTEM_USER, trigger: { kind: "schedule" } }); }
     if (tel.now().slice(0, 10) !== day) { day = tel.now().slice(0, 10); runtime.run("Procedure Steward", { actingUser: SYSTEM_USER, trigger: { kind: "schedule" } }); }

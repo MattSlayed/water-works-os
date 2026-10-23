@@ -15,8 +15,8 @@ export function createSystem({ seed = 7 } = {}) {
   seedPlant(ont);
   const tel = createTelemetry({ ont, seed, start: "2026-10-01T00:00:00Z" });
   const trackers = createTrackers({ ont, seed, start: "2026-10-01T00:00:00Z", minutes: 14 * 24 * 60 });
-  trackers.syncTo(ont, tel.cursor());
   const audit = createAudit();
+  trackers.syncTo(ont, tel.cursor(), audit);
   const actions = createActionService({ ont, audit, clock: tel.now });
   const runtime = createRuntime({ ont, tel, actions });
   const copilot = createCopilot({ ont, tel, actions, runtime });
