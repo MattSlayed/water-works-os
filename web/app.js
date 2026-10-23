@@ -53,6 +53,25 @@ function bindMap(root) {
   });
 }
 
+// ---------- plant (Phase 3): SVG fallback when WebGL is missing or lost ----------
+function plantSvg(d, m) {
+  const lines = d.lines.flatMap((l) => l.parts.map((p) => `<polyline class="pline ${esc(l.conveyance)}${l.causal ? "" : " util"}" points="${p.map(([x, y]) => `${Number(x)},${Number(y)}`).join(" ")}"><title>${esc(l.lineNumber)} ${esc(l.service)}</title></polyline>`)).join("");
+  const sts = d.structures.map((s) => {
+    const [x, y] = s.centre, shape = s.diameter ? `<circle cx="${Number(x)}" cy="${Number(y)}" r="${Number(s.diameter) / 2}"/>` : `<rect x="${x - s.w / 2}" y="${y - s.l / 2}" width="${Number(s.w)}" height="${Number(s.l)}"/>`;
+    return `<a class="pstruct" href="#/object/${encodeURIComponent(s.id)}" aria-label="${esc(s.tag)} ${esc(s.kind.replace(/_/g, " "))}">${shape}<title>${esc(s.tag)} ${esc(s.kind)}</title></a>`;
+  }).join("");
+  return mapSvg(m, { compact: true }).replace("</svg>", `<g class="plantlayer">${lines}${sts}</g></svg>`);
+}
+function plantSide(it) {
+  if (!it) return `<p class="meta">Select a structure, machine or valve. Pump, blower and chlorine houses open to show their machines.</p>`;
+  const rows = it.kind3d === "machine" ? [["Position", it.positionId], ["In", it.structureId], ["State", it.state], ["Class", it.assetClass], ["Active alerts", it.alerts]]
+    : it.kind3d === "valve" ? [["Kind", it.kind], ["Filter", it.filter], ["Line", it.lineId], ["Normal state", it.normalState], ["Actuated", it.actuated ? "yes" : "no"]]
+    : [["Kind", String(it.kind || "").replace(/_/g, " ")], ["Zone", it.zoneId], ["Floor level", it.baseLevel], ["Top water level", it.twl], ["Volume m³", it.volumeM3], it.diameter ? ["Diameter m", it.diameter] : ["Plan m", it.w ? `${it.w} × ${it.l}` : null]];
+  return `<h2>${esc(it.kind3d)}</h2><h3 style="margin:0 0 8px">${esc(it.tag)}</h3><table>${rows.filter(([, v]) => v != null && v !== "").map(([k, v]) => `<tr><td class="meta">${esc(k)}</td><td>${esc(v)}</td></tr>`).join("")}</table>
+    <div class="btns" style="margin-top:10px"><button class="btn" id="flyto">Fly to</button><a class="btn" href="#/object/${encodeURIComponent(it.id)}">Record</a>${it.assetId ? `<a class="btn primary" href="#/asset/${encodeURIComponent(it.assetId)}">Open twin</a>` : ""}</div>`;
+}
+const plantStates = (d) => Object.fromEntries([...d.machines.filter((m) => m.positionId).map((m) => [m.positionId, { state: m.state, alerts: m.alerts }]), ...d.samplePoints.map((sp) => [sp.id, { reading: sp.reading }])]);
+
 // ---------- views ----------
 const views = {
   async console() {
@@ -104,6 +123,43 @@ const views = {
     const rows = assets.sort((a, b) => String(a.positionTag).localeCompare(String(b.positionTag))).map((a) => `<tr><td><a href="#/asset/${encodeURIComponent(a.id)}"><b>${esc(a.positionTag || a.name)}</b></a></td><td>${esc(a.name)}</td><td>${esc(a.assetClass)}</td><td>${pill(a.state)}</td><td>${a.hero ? pill("3D model", "agent") : ""}</td><td class="meta">${esc(a.zoneId)}</td></tr>`).join("");
     view.innerHTML = `<h2>03 / every machine, ontologised</h2><h1>Assets and twin</h1><p class="sub">Hero assets open in the Asset Workbench with a 3D breakdown and the Technician Copilot.</p>
       <section class="panel"><table><thead><tr><th>Tag</th><th>Name</th><th>Class</th><th>State</th><th>Model</th><th>Zone</th></tr></thead><tbody>${rows}</tbody></table></section>`;
+  },
+
+  async plant(id) {
+    const [d, m] = await Promise.all([api("/api/plant"), api("/api/map")]);
+    state.plant?.dispose();
+    state.plant = null;
+    state.plantRev = d.model.id;
+    view.innerHTML = `<div class="row"><div><h2>03 / the works as drawn · plant model rev ${esc(d.model.rev)} · released ${time(d.model.release && d.model.release.at)} by ${esc(d.model.release && d.model.release.by)}</h2><h1>Plant</h1></div>
+        <div class="btns"><a class="btn" href="#/map">Site map</a></div></div>
+      <div class="plantwrap"><section class="panel stage3d plant" aria-label="3D plant"><div class="disclose badge">${esc(d.model.disclosure)}</div></section>
+        <aside class="side"><section class="panel" id="psel" aria-live="polite">${plantSide(null)}</section></aside></div>`;
+    const stage = $(".stage3d.plant"), side = $("#psel");
+    const fallback = (why) => {
+      state.plant?.dispose();
+      state.plant = null;
+      stage.innerHTML = `<div class="disclose badge">${esc(d.model.disclosure)}</div><div class="plantsvg">${plantSvg(d, m)}</div><p class="meta" style="padding:0 10px">${esc(why)} Showing the site plan with structure outlines and line paths; each structure links to its record.</p>`;
+      bindMap(stage);
+    };
+    const { mountPlant, webglAvailable } = await import("/plant.js");
+    if (!webglAvailable()) return fallback("3D is not available in this browser.");
+    const show = (it) => {
+      side.innerHTML = plantSide(it);
+      $("#flyto")?.addEventListener("click", () => state.plant?.flyTo(it.id));
+    };
+    try {
+      state.plant = mountPlant(stage, { ...d, zones: m.zones }, { onSelect: show, onLost: () => fallback("The 3D view lost its graphics context."), onSlow: () => state.plant?.setMode("blueprint") });
+    } catch (e) { return fallback(`3D could not start (${e.message}).`); }
+    const hitOf = (x) => x.id === id || x.positionId === id;
+    if (id && state.plant.flyTo(id)) {
+      const mc = d.machines.find(hitOf);
+      show(mc ? { ...mc, kind3d: "machine" } : { ...(d.structures.find(hitOf) || d.valves.find(hitOf)), kind3d: d.structures.some(hitOf) ? "structure" : "valve" });
+    }
+  },
+  async refreshPlant() {
+    const d = await api("/api/plant");
+    if (d.model.id !== state.plantRev) return views.plant();
+    state.plant?.setStates(plantStates(d));
   },
 
   async asset(id) {
@@ -467,6 +523,7 @@ async function route() {
   const [, name = "console", arg] = location.hash.match(/^#\/([^/]+)\/?(.*)$/) || [];
   document.querySelectorAll("[data-nav]").forEach((a) => a.classList.toggle("active", a.dataset.nav === name || a.dataset.nav === `${name}s` || (name === "run" && a.dataset.nav === "agents")));
   if (name !== "asset") { state.twin?.dispose(); state.twin = null; state.copilot = null; }
+  if (name !== "plant") { state.plant?.dispose(); state.plant = null; }
   const fn = views[name];
   if (!fn) { view.innerHTML = `<h1>Not found</h1>`; return; }
   try { await fn(arg ? decodeURIComponent(arg) : undefined); } catch (e) { view.innerHTML = `<h1>${e.status === 404 ? "Not found, or not visible to you" : "Something went wrong"}</h1><p class="sub">${esc(e.message)}</p>`; }
@@ -522,6 +579,7 @@ function connect() {
       const live = e.kind === "clock" ? ["console", "map"] : ["console", "map", "chat", "issues"];
       const typing = document.activeElement.closest?.("form") || $("#say")?.value || $("#stepval")?.value;
       if (live.includes(name) && !typing) views[name](arg ? decodeURIComponent(arg) : undefined);
+      if (name === "plant" && state.plant) views.refreshPlant().catch(() => {});
       try { const c = await api("/api/proposals?state=open"); $("#prop-count").textContent = c.length || ""; } catch {}
     }, 1500);
   };

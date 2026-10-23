@@ -52,3 +52,15 @@ test("three.js 0.160.0 is vendored: served locally, no CDN in the import map, ad
     }
   }
 });
+
+test("plant view: route, nav and module are wired", async () => {
+  const html = await (await fetch(base + "/")).text();
+  assert.ok(html.includes('data-nav="plant"'));
+  const app = await (await fetch(base + "/app.js")).text();
+  assert.ok(app.includes("async plant("));
+  const r = await fetch(base + "/plant.js");
+  assert.equal(r.status, 200);
+  assert.match(r.headers.get("content-type"), /javascript/);
+  const src = await r.text();
+  for (const s of ["export function mountPlant", "flyTo", "highlight", "setMode", "setStates", "dispose", "forceContextLoss", "__plant"]) assert.ok(src.includes(s), s);
+});

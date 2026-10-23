@@ -41,7 +41,8 @@ export function materialise(model) {
   const mid = model.id, bound = (tag) => model.bindings[tag]?.id || null, items = new Map(model.items.map((i) => [i.tag, i]));
   const out = [];
   for (const { kind, tag, fields } of model.items) {
-    const { binding, ...f } = fields, base = { id: plantId(mid, kind, tag), modelId: mid, tag };
+    const { binding, ...f } = fields, label = String(f.kind || f.service || kind).replace(/_/g, " ");
+    const base = { id: plantId(mid, kind, tag), modelId: mid, tag, name: `${tag} · ${label} (rev ${model.rev})` };
     if (kind === "structure") out.push({ ...base, type: "Structure", ...f, positionId: bound(tag) });
     else if (kind === "machine") out.push({ ...base, type: "MachinePlacement", positionId: bound(tag), structureId: plantId(mid, "structure", f.structure), offset: f.offset, rotDeg: 0, zoneId: f.zoneId });
     else if (kind === "line") out.push({ ...base, type: "Line", lineNumber: tag, ...f, fromId: f.from && plantId(mid, "structure", f.from), toId: f.to && plantId(mid, "structure", f.to), zones: f.path ? zonesOn(f.path) : [] });

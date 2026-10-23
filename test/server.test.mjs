@@ -244,3 +244,12 @@ test("ingest needs engineer; ingest, review and release over HTTP move the plant
   assert.match(r.json.model.disclosure, /rev B \(drawing set RB-DS rev B\)/);
   assert.ok(r.json.lines.some((l) => l.lineNumber === "RB-L-601"));
 });
+
+test("plant payload carries sample readings with alarm limits and machine alert counts", async () => {
+  const r = await call("/api/plant");
+  const sp = r.json.samplePoints.find((s) => s.tag === "SP-15CQ07");
+  assert.equal(sp.reading.id, "SEN-F07-turb");
+  assert.equal(typeof sp.reading.value, "number");
+  assert.equal(sp.reading.alarmHi, 0.5);
+  assert.ok(r.json.machines.every((m) => !m.assetId || Number.isInteger(m.alerts)));
+});

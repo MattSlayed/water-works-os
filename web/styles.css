@@ -163,3 +163,17 @@ main:focus { outline: none; }
 .pill.recorded, .pill.confirmed, .pill.reporting { color: var(--green); } .pill.asked, .pill.claim, .pill.listening { color: var(--amber); } .pill.noted, .pill.dropped, .pill.superseded { color: var(--muted); }
 @media (max-width: 1100px) { .board { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 720px) { .chatgrid, .board { grid-template-columns: minmax(0, 1fr); } .chatgrid > :first-child { order: 2; } }
+
+/* Plant view (Phase 3): 3D stage, labels, disclosure badge, SVG fallback. */
+.plantwrap { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 12px; height: calc(100vh - 150px); min-height: 520px; }
+.stage3d.plant .badge { z-index: 2; background: rgba(10, 23, 42, 0.78); color: var(--text); padding: 4px 8px; border: 1px solid var(--line); max-width: calc(100% - 20px); }
+.plabel { font: 600 11px var(--mono); color: var(--ink); background: rgba(10, 23, 42, 0.85); border: 1px solid var(--line); padding: 2px 6px; white-space: nowrap; transform: translateY(-8px); }
+.plabel.sel { border-color: var(--teal); color: var(--teal); }
+.plantsvg { padding: 34px 10px 6px; }
+.plantsvg svg { width: 100%; height: auto; }
+.plantlayer .pline { fill: none; stroke: var(--teal); stroke-width: 0.8; }
+.plantlayer .pline.channel { stroke-width: 1.4; }
+.plantlayer .pline.util { stroke-dasharray: 2 1.5; stroke: var(--muted); stroke-width: 0.5; }
+.plantlayer .pstruct rect, .plantlayer .pstruct circle { fill: rgba(96, 165, 250, 0.12); stroke: var(--ink); stroke-width: 0.5; }
+.plantlayer .pstruct:hover rect, .plantlayer .pstruct:hover circle, .plantlayer .pstruct:focus rect, .plantlayer .pstruct:focus circle { fill: rgba(251, 191, 36, 0.3); }
+@media (max-width: 1100px) { .plantwrap { grid-template-columns: minmax(0, 1fr); height: auto; } .stage3d.plant { height: 460px; } }

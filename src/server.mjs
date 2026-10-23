@@ -161,9 +161,10 @@ export function createServer(sys) {
     }
     const machines = of("MachinePlacement").map((p) => {
       const a = ont.list("Asset", (x) => x.positionId === p.positionId)[0];
-      return { ...p, ...(a && view.get(a.id) ? { assetId: a.id, state: a.state, assetClass: a.assetClass } : {}) };
+      return { ...p, ...(a && view.get(a.id) ? { assetId: a.id, state: a.state, assetClass: a.assetClass, alerts: view.list("Alert", (al) => al.assetId === a.id && al.state === "active").length } : {}) };
     });
-    return { model: { id: m.id, rev: m.rev, status: m.status, release: m.release, georef: m.georef, disclosure: disclosureFor(m.rev) }, structures: of("Structure"), machines, lines, valves: of("Valve"), samplePoints: of("SamplePoint"), bounds: siteBounds() };
+    return { model: { id: m.id, rev: m.rev, status: m.status, release: m.release, georef: m.georef, disclosure: disclosureFor(m.rev) }, structures: of("Structure"), machines, lines, valves: of("Valve"),
+      samplePoints: of("SamplePoint").map((sp) => { const s = sp.sensorId && view.get(sp.sensorId); return { ...sp, reading: s ? latest(s) : null }; }), bounds: siteBounds() };
   }
   // One revision with its cells, less the cells of items in (or drawn through, or attached to) a hidden zone.
   function modelDetail(v, id) {
