@@ -95,3 +95,14 @@ test("final: a machine's upstream is its structure's upstream", () => {
   assert.ok(ids(up).includes(S("20UBA01")) && ids(up).includes(S("15HFA07")));
   assert.deepEqual(upstreamOf("POS-HLP-B", g), up);
 });
+
+test("plume: raw-water turbidity onset falls inside the intake→F07 travel window; F07 stays local", () => {
+  const n = sys.tel.cursor() + 1, day = 1440, from = 10 * day;
+  const hist = (id) => sys.tel.history(id, n).slice(from);
+  const raw = onsetMinute(hist("SEN-RAW-turb"), { baseline: day, period: day }); // day 10 is the baseline; the daily swing is removed
+  const f07 = onsetMinute(hist("SEN-F07-headloss"), { baseline: 2 * day, period: 1800 });
+  assert.ok(raw >= 1.8 * day && raw <= 1.95 * day, `raw onset at day 10 + ${(raw / day).toFixed(3)}`);
+  const [path] = processPaths(S("10UPA01"), S("15HFA07"), g);
+  const w = travelWindow(path, g, { flowMlD: 120 });
+  assert.ok(w.onsetH * 60 <= f07 - raw && f07 - raw <= w.tailH * 60, `F07 ${f07 - raw} min after raw; window ${w.onsetH}-${w.tailH} h`);
+});

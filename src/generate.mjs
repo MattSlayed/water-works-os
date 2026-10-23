@@ -3,6 +3,7 @@
 import { createHash } from "node:crypto";
 import { stepRequires } from "./functions.mjs";
 import { ZONES, toLonLat } from "./layout.mjs";
+import { makeScenes } from "./scenes.mjs";
 import { REGION, REMOTE_ZONES, REMOTE_SITES, SITE_XY, PROJECTS, TRACKERS, zoneGeo, zoneAtLocal } from "./region.mjs";
 
 export const CLOCK = "2026-10-15T00:00:00Z";
@@ -465,6 +466,8 @@ export function generateWorks(seed = 7) {
     add({ id, type: "Project", contractorEmployer: "Synthetic Contractor (Pty) Ltd", assetIds: [], assetId: null, channelId: null, autoSubmit: false, ...f }, "SYNTH-ERP");
   }
   // Tags on vehicles and portable plant (Region design §4.3); their pings come from src/trackers.mjs
+  // a year of Sentinel scene statistics, grids for the telemetry window (Region design §5)
+  for (const sc of makeScenes({ seed })) add(sc, "SYNTH-EO");
   for (const t of TRACKERS) add({ id: t.id, type: "Tracker", kind: t.kind, name: t.name, boundTo: t.boundTo, projectId: t.projectId || null, geofences: t.geofences }, "SYNTH-AVL");
   link("CHN-GRP-CL3", "CHANNEL_OF", "PRJ-CL3");
   const msg = (id, channelId, from, at, text, extra = {}) => add({ id, type: "Message", channelId, direction: from === "WORKS" ? "out" : "in", from, at, text, media: [], audience: byId(channelId).audience, ...extra }, "CHANNEL-STUB");

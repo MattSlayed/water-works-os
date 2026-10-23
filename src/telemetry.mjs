@@ -78,6 +78,8 @@ export function createTelemetry({ ont, seed = 7, start = "2026-10-01T00:00:00Z",
       }
       if (tag === "DP-2" && d > 12 && s.key === "flow" && Math.floor(i / 47) % 5 === 0) x *= 0.35;
       if (s.id === "SEN-FW-turb" && d > 12) x += 0.05 * Math.min(1, (d - 12) / 2);
+      // the storm plume reaches the intake on day 11.85 (Region design §5.3): a contributing cause, the filters absorb it
+      if (s.id === "SEN-RAW-turb" && d >= 11.85) x += 65 * Math.min(1, (d - 11.85) / 0.6) * (d > 13 ? Math.exp(-(d - 13) / 2) : 1);
       v[i] = Math.max(0, x);
     }
     series.set(s.id, v);
