@@ -6,7 +6,7 @@ An ontology-driven operating system for a **synthetic** water treatment works (R
 ## Run it
 
 ```bash
-npm test          # 211 tests: generator, ontology, telemetry, functions, actions, agents + evals, copilot, chat, drawings, parsers, plant model, process graph, API, web
+npm test          # 266 tests: generator, ontology, telemetry, functions, actions, agents + evals, copilot, chat, drawings, parsers, plant model, process graph, region, trackers, scenes, Geo Watch, live mode, API, web
 npm start         # http://localhost:8830  (plant clock advances 1 minute every 2 seconds)
 ```
 
@@ -50,6 +50,13 @@ Phase 2, Workforce Intelligence (design: `docs/superpowers/specs/2026-10-23-work
 | Plant model revisions: seeded rev A, live ingest of newer sheets with review marks carried forward, cell review, four-eyes release with a content hash, revision-scoped plant objects, Issues for accepted disagreements | `src/plant.mjs`, `src/actions.mjs` | Phase 3 design §4.3–4.5 |
 | Process graph over the released model: upstream and downstream sets with split shares, all simple paths, travel windows (onset, mean, tail), change-onset detection | `src/functions.mjs` | Phase 3 design §4.6 |
 | Plant view: physical 3D (sky, sun shadows baked once, procedural materials, click-down into pump houses, states, alerts, band-tinted filter water) and blueprint (hidden-line, process lines by service, flow arrows, x-ray, skeletal map, upstream highlight with travel-window captions); SVG fallback without WebGL; server-side pruning that cuts lines at hidden zones; revision review and release screen | `web/plant.js`, `web/app.js`, `src/server.mjs` | Phase 3 design §5, §7 |
+| Region geography in WGS84 (catchment, Riverbend Dam, river, intake, raw-water main, bulk line, roads, areas of interest), bulk-line zones Z13–Z15, remote pump stations, reservoirs and valve chambers with telemetry; spatial functions (within, distance, along a line, objects in an area) | `src/region.mjs`, `src/functions.mjs` | Region design §4.1–4.2 |
+| Tagged vehicles and portable plant: pings every minute moving and five parked, live/stale/lost by age, allowed areas with geofence events; people are never tracked | `src/trackers.mjs` | Region design §4.3 |
+| Seven projects with footprints, budget and spend, what they take out of service; treatment capacity as the bottleneck stage | `src/region.mjs`, `src/regionview.mjs` | Region design §4.4 |
+| Synthetic Sentinel-2 and Sentinel-1 scenes: a year of statistics in the Planetary Computer shape, 90-day baselines, banded grids (index, not calibrated), the day-10 storm plume reaching the intake as a contributing cause of F07 | `src/scenes.mjs`, `src/telemetry.mjs` | Region design §5.1–5.3 |
+| Geo Watch (agent 19): suggested detections, alert, coagulant-dose and sampling-round proposals, the round by chat, a Sample, human confirm or reject | `src/agents.mjs`, `src/actions.mjs` | Region design §5.4 |
+| Optional live mode (`GEO_LIVE=1`): Sentinel-2 index statistics from Microsoft Planetary Computer over `data/geo/live-aoi.geojson`; tests use captured fixtures | `src/geolive.mjs` | Region design §5.5 |
+| Region view: Since you left, Today's supply risks, scene timeline, layers and filters, clustering, projects and operations tab with the four-part project panel, operation focus, Enter plant; offline basemap fallback; phone layout; server-side pruning | `web/region.js`, `web/app.js`, `src/server.mjs` | Region design §6–7 |
 
 Phase 3, project 1 — the plant from its drawings (design: `docs/superpowers/specs/2026-10-23-plant-blueprint-twin-design.md`):
 
@@ -65,6 +72,26 @@ Phase 3, project 1 — the plant from its drawings (design: `docs/superpowers/sp
   15CQ13, which matches no sensor.
 - **J16, phone (P-004):** at under 720 px wide the Plant opens in blueprint; a tap selects an item and links its record.
 - With WebGL off, the Plant shows the site plan with structure outlines and line paths, each linking to its record.
+
+Phase 3, project 2 — the Region map and satellite layer (design: `docs/superpowers/specs/2026-10-23-region-map-satellite-design.md`):
+
+- **J17, the 07:00 view (P-001):** Region. *Since you left* lists the suggested plume, PP-2 off the raw-water main site
+  and the slipped main milestone; *Today's supply risks* shows raw water raised, 30 ML/d out of service (clarification
+  limits the works to 90) and RES-2 under 12 h.
+- **J18, plume response (P-008, then P-005):** click the plume: the panel opens, the day-11 NDTI grid lights the inflow arm
+  and focus shows the sample boat, the intake and the coagulant truck with its ETA. Approve Geo Watch's sampling round in
+  Proposals. As **P-005**, Chat: reply `raw 88 NTU at intake jetty`; a Sample is recorded. Back on Region, **Confirm**.
+- **J19, project check (P-004):** Projects tab → RES-2 relining: the footprint, the contractor and PP-1 on site, R 1.90 m
+  of R 2.40 m, storage −50% until 14 Nov, and the open issue with its log entry.
+- **J20, into the plant (P-002):** zoom in over the works → **Enter plant** opens the Plant on the intake pump house;
+  Back returns to the same map.
+- **J21, technician (P-028):** nothing from the PS-2 MCC room (Z15) reaches the map, the panel, focus or the stream.
+- **J22, offline:** with no tiles the map draws every layer on a plain background and says "basemap offline".
+- Live mode: `GEO_LIVE=1 npm start` fetches real Sentinel-2 statistics for the example area (a rough outline of
+  Rietvlei Dam) and shows them as their own line; they are never mixed into the synthetic works.
+
+Leaflet 1.9.4 (BSD-2-Clause) is vendored under `web/vendor/leaflet@1.9.4/` from the npm tarball; OpenStreetMap tiles load
+in the browser only, with attribution.
 
 three.js 0.160.0 (MIT) is vendored under `web/vendor/three@0.160.0/` from the npm tarball, so the console needs no CDN;
 it is not a package dependency. Regenerate the drawing set with `node scripts/make-drawings.mjs`.
@@ -83,9 +110,12 @@ Design prototypes for the same screens: https://claude.ai/artifact/LwS7u1g2MyCjY
 - Real CAD, survey or point-cloud geometry: the plant is template geometry generated from a synthetic drawing set, and
   every rendering says so. Roads are not drawn (the GA's road polylines are not extracted into the model). P&ID symbol
   recognition from images is not attempted; the readers take the documented text subsets only.
+- Real GPS or vehicle-tracking feeds, satellite imagery tiles, InSAR (no EGMS/OPERA coverage of South Africa), flood maps,
+  and calibrated water quality from satellites: indices stay indices. Tracking people is out by design.
 - ERP write-back and any control-system write (PRD BR-06).
 - Authentication: the acting user is a header for the demo. Do not expose this server beyond localhost.
 
 Implementation plans: `docs/superpowers/plans/2026-10-23-water-works-os-phase1.md`,
-`docs/superpowers/plans/2026-10-23-workforce-intelligence-phase2.md` and
-`docs/superpowers/plans/2026-10-23-plant-blueprint-twin.md`.
+`docs/superpowers/plans/2026-10-23-workforce-intelligence-phase2.md`,
+`docs/superpowers/plans/2026-10-23-plant-blueprint-twin.md` and
+`docs/superpowers/plans/2026-10-23-region-map-satellite.md`.
