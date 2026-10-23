@@ -202,7 +202,8 @@ function walk(start, g, up, { depth = 20, mode = "normal" } = {}) {
     }
   };
   step(id0, 1, 0, new Set([id0]));
-  return [...res.values()].map((r) => ({ ...r, share: Math.round(r.share * 1e4) / 1e4 }));
+  // a dose reaching the node by two routes still acts on all of its water: shares cap at 1
+  return [...res.values()].map((r) => ({ ...r, share: Math.round(Math.min(1, r.share) * 1e4) / 1e4 }));
 }
 export const upstreamOf = (id, g, opts) => walk(id, g, true, opts);
 export const downstreamOf = (id, g, opts) => walk(id, g, false, opts);

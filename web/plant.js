@@ -7,6 +7,9 @@ import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { CSS2DRenderer, CSS2DObject } from "three/addons/renderers/CSS2DRenderer.js";
 import { Sky } from "three/addons/objects/Sky.js";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
+import { LineSegments2 } from "three/addons/lines/LineSegments2.js";
+import { LineSegmentsGeometry } from "three/addons/lines/LineSegmentsGeometry.js";
+import { LineMaterial } from "three/addons/lines/LineMaterial.js";
 
 const DATUM = 1450; // level (m) drawn at y = 0
 const GROUND = 1448;
@@ -19,6 +22,9 @@ const BAND_COLOR = { in: 0x2b7a83, near: 0x8f8a3c, over: 0x7a4a26, none: 0x2a6b7
 // Machine look by position-tag prefix: [length, width, height] of the unit on its plinth.
 const MACHINE = { RWP: [2.2, 1.0, 1.1], BWP: [2.0, 0.9, 1.0], HLP: [2.6, 1.1, 1.2], SLP: [1.2, 0.6, 0.7], DP: [0.9, 0.6, 0.7], BLW: [1.6, 1.0, 1.2], CL: [1.0, 1.0, 0.9], CHL: [0.6, 0.4, 0.9], GEN: [3.2, 1.2, 1.8] };
 const SUN = { azimuthDeg: 110, elevationDeg: 35 };
+// Blueprint process-line colours by service, read on navy.
+const SERVICE_COLOR = { raw: 0xd4a373, coagulated: 0xe9c46a, flocculated: 0xf4a261, settled: 0x8ecae6, filtered: 0x48cae4, chlorinated: 0x90e0ef, final: 0x00b4d8,
+  "backwash supply": 0x4ade80, "supernatant return": 0xc8b6ff, coagulant: 0xff70a6, polymer: 0xff9770, lime: 0xf1f5f9, "chlorine (vacuum)": 0xffd670 };
 
 export const bandOf = (r) => (!r || r.alarmHi == null || r.value == null ? "none" : r.value <= r.alarmHi * 0.7 ? "in" : r.value <= r.alarmHi ? "near" : "over");
 
@@ -384,7 +390,8 @@ export function mountPlant(container, data, { mode = "physical", quality = "medi
   const mkLabel = (cls) => { const el = document.createElement("div"); el.className = `plabel ${cls}`; const o = new CSS2DObject(el); o.visible = false; scene.add(o); return o; };
   const hoverLabel = mkLabel("hover"), selLabel = mkLabel("sel");
   const nameOf = (e) => (e.kind === "machine" ? `${e.item.tag}${e.item.state ? ` · ${e.item.state}` : ""}` : e.kind === "valve" ? `${e.item.tag} · ${e.item.kind}` : `${e.item.tag} · ${e.item.kind.replace(/_/g, " ")}`);
-  const place = (lab, e) => { lab.element.textContent = nameOf(e); const b = new THREE.Box3().setFromObject(e.proxy); lab.position.set((b.min.x + b.max.x) / 2, b.max.y + 1.5, (b.min.z + b.max.z) / 2); lab.visible = true; };
+  const dims = (it) => [it.diameter ? `Ø${it.diameter} m` : it.w ? `${it.w} × ${it.l} m` : "", it.baseLevel != null ? `floor ${it.baseLevel}` : "", it.twl != null ? `TWL ${it.twl}` : "", it.height ? `h ${it.height} m` : ""].filter(Boolean).join(" · ");
+  const place = (lab, e) => { lab.element.textContent = nameOf(e) + (lab === selLabel && api.mode === "blueprint" && e.kind === "structure" ? ` · ${dims(e.item)}` : ""); const b = new THREE.Box3().setFromObject(e.proxy); lab.position.set((b.min.x + b.max.x) / 2, b.max.y + 1.5, (b.min.z + b.max.z) / 2); lab.visible = true; };
   let open = null, selected = null, selBox = null;
   const setOpen = (sid) => {
     for (const [id, b] of buildings) for (const mesh of [b.walls, b.roof]) {
@@ -414,7 +421,7 @@ export function mountPlant(container, data, { mode = "physical", quality = "medi
     ndc.set(((ev.clientX - r.left) / r.width) * 2 - 1, -((ev.clientY - r.top) / r.height) * 2 + 1);
     ray.setFromCamera(ndc, camera);
     // machines inside a closed building cannot be picked through its walls
-    const cands = proxies.filter((p) => p.userData.kind !== "machine" || p.userData.structureId === open || !buildings.has(p.userData.structureId));
+    const cands = proxies.filter((p) => api.mode === "blueprint" || p.userData.kind !== "machine" || p.userData.structureId === open || !buildings.has(p.userData.structureId));
     const hits = ray.intersectObjects(cands, false);
     const inner = hits.find((x) => x.object.userData.kind !== "structure");
     return (inner || hits[0])?.object.userData.id || null;
@@ -431,6 +438,131 @@ export function mountPlant(container, data, { mode = "physical", quality = "medi
   });
   renderer.domElement.addEventListener("webglcontextlost", (ev) => { ev.preventDefault(); onLost?.(); });
 
+  // ---- blueprint mode (design §5.3): navy ground, hidden-line edges, process lines by service with flow arrows ----
+  const NAVY = 0x0b1d36, EDGE = 0x9cc3ff;
+  let bp = null;
+  const bpOpts = { xray: false, skeletal: false };
+  function buildBlueprint() {
+    const g = new THREE.Group(), occ = [], edges = [], foot = [];
+    const ring = (cxz, y, pts) => { for (let i = 0; i < pts.length; i++) { const [a, b] = [pts[i], pts[(i + 1) % pts.length]]; foot.push(new THREE.Vector3(cxz.x + a[0], y, cxz.z + a[1]), new THREE.Vector3(cxz.x + b[0], y, cxz.z + b[1])); } };
+    for (const s of data.structures) {
+      const b = P(s.centre[0], s.centre[1], s.baseLevel), R = (s.diameter || 0) / 2;
+      const geo = (s.diameter ? new THREE.CylinderGeometry(R, R, s.height, 40) : new THREE.BoxGeometry(s.w, s.height, s.l)).translate(b.x, b.y + s.height / 2, b.z);
+      occ.push(geo); edges.push(new THREE.EdgesGeometry(geo, 30));
+      ring(b, b.y + 0.02, s.diameter ? Array.from({ length: 40 }, (_, i) => [R * Math.cos((i / 40) * Math.PI * 2), R * Math.sin((i / 40) * Math.PI * 2)]) : [[-s.w / 2, -s.l / 2], [s.w / 2, -s.l / 2], [s.w / 2, s.l / 2], [-s.w / 2, s.l / 2]]);
+    }
+    for (const e of new Set(byId.values())) if (e.kind === "machine") {
+      const box = new THREE.Box3().setFromObject(e.proxy), sz = box.getSize(new THREE.Vector3()), c = box.getCenter(new THREE.Vector3());
+      edges.push(new THREE.EdgesGeometry(new THREE.BoxGeometry(sz.x, sz.y, sz.z).translate(c.x, c.y, c.z)));
+    }
+    const occluder = new THREE.Mesh(mergeGeometries(occ), new THREE.MeshBasicMaterial({ color: NAVY, polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1 }));
+    const edgeLines = new THREE.LineSegments(mergeGeometries(edges), new THREE.LineBasicMaterial({ color: EDGE, transparent: true, opacity: 0.9 }));
+    const footLines = new THREE.LineSegments(new THREE.BufferGeometry().setFromPoints(foot), new THREE.LineBasicMaterial({ color: EDGE, transparent: true, opacity: 0.7 }));
+    footLines.visible = false;
+    for (const x of [...occ, ...edges]) x.dispose();
+    // process lines (causal) as wide lines coloured by service; utilities thin and dashed
+    const pos = [], col = [], arrows = [], dashed = [], c = new THREE.Color();
+    for (const l of data.lines) for (const part of l.parts) for (let i = 1; i < part.length; i++) {
+      const a = P(...part[i - 1]), b = P(...part[i]);
+      if (a.distanceTo(b) < 0.05) continue;
+      if (!l.causal) { dashed.push(a, b); continue; }
+      c.setHex(SERVICE_COLOR[l.service] ?? 0xe8eef6);
+      pos.push(a.x, a.y, a.z, b.x, b.y, b.z); col.push(c.r, c.g, c.b, c.r, c.g, c.b);
+      if (a.distanceTo(b) > 10) arrows.push({ p: a.clone().lerp(b, 0.5), d: b.clone().sub(a).normalize(), c: c.clone() });
+    }
+    const proc = new LineSegments2(new LineSegmentsGeometry().setPositions(pos).setColors(col), new LineMaterial({ vertexColors: true, linewidth: 3, transparent: true }));
+    proc.material.resolution.set(w(), h());
+    const util = new THREE.LineSegments(new THREE.BufferGeometry().setFromPoints(dashed), new THREE.LineDashedMaterial({ color: 0x94a3b8, dashSize: 1.5, gapSize: 1.2, transparent: true, opacity: 0.8 }));
+    util.computeLineDistances();
+    const arrowMesh = new THREE.InstancedMesh(new THREE.ConeGeometry(0.9, 2.6, 8), new THREE.MeshBasicMaterial({ transparent: true }), Math.max(1, arrows.length));
+    const o = new THREE.Object3D(), up = new THREE.Vector3(0, 1, 0);
+    arrows.forEach((a, i) => { o.position.copy(a.p); o.quaternion.setFromUnitVectors(up, a.d); o.updateMatrix(); arrowMesh.setMatrixAt(i, o.matrix); arrowMesh.setColorAt(i, a.c); });
+    arrowMesh.count = arrows.length;
+    const zoneLines = [];
+    for (const z of zones) { const [x, y, zw, zh] = z.rect, gl = (grade.get(z.id) ?? GROUND) + 0.02; for (const [p, q] of [[[x, y], [x + zw, y]], [[x + zw, y], [x + zw, y + zh]], [[x + zw, y + zh], [x, y + zh]], [[x, y + zh], [x, y]]]) zoneLines.push(P(p[0], p[1], gl), P(q[0], q[1], gl)); }
+    const zoneOutline = new THREE.LineSegments(new THREE.BufferGeometry().setFromPoints(zoneLines), new THREE.LineDashedMaterial({ color: 0x3b82f6, dashSize: 3, gapSize: 2, transparent: true, opacity: 0.6 }));
+    zoneOutline.computeLineDistances();
+    const grid = new THREE.GridHelper(2000, 200, 0x1e3a8a, 0x14284a);
+    grid.position.y = GROUND - DATUM;
+    g.add(grid, zoneOutline, occluder, edgeLines, footLines, util, proc, arrowMesh);
+    // labels: equipment always; valves and instruments past a zoom threshold or when selected; decluttered on a 48 px grid
+    const tags = [];
+    for (const e of new Set(byId.values())) {
+      const el = document.createElement("div");
+      el.className = `plabel bp ${e.kind}`;
+      el.textContent = e.item.tag;
+      const lab = new CSS2DObject(el), b = new THREE.Box3().setFromObject(e.proxy);
+      lab.position.set((b.min.x + b.max.x) / 2, b.max.y + 0.8, (b.min.z + b.max.z) / 2);
+      g.add(lab);
+      tags.push({ lab, e, minor: e.kind === "valve", pr: e.kind === "valve" ? 1 : e.kind === "machine" ? 2 : 3 });
+    }
+    for (const sp of data.samplePoints) {
+      const host = byId.get(sp.structureId) || [...byId.values()].find((x) => x.kind === "structure" && x.item.id === lineFrom.get(sp.lineId));
+      if (!host) continue;
+      const el = document.createElement("div"), lab = new CSS2DObject(el), b = new THREE.Box3().setFromObject(host.proxy);
+      el.className = "plabel bp instrument"; el.textContent = sp.instrument;
+      lab.position.set(b.max.x, b.min.y + 1, b.max.z);
+      g.add(lab);
+      tags.push({ lab, e: { item: { id: sp.id } }, minor: true, pr: 1 });
+    }
+    g.visible = false;
+    scene.add(g);
+    return { g, occluder, edgeLines, footLines, proc, util, arrowMesh, tags, overlay: null };
+  }
+  const declutter = () => {
+    if (!bp) return;
+    const near = camera.position.distanceTo(controls.target) < 140, taken = new Set(), v = new THREE.Vector3(), W = w(), H = h();
+    const rank = (t) => (t.e.item.id === selected ? 9 : t.e.item.alerts > 0 ? 8 : t.pr);
+    for (const t of [...bp.tags].sort((a, b) => rank(b) - rank(a))) {
+      let show = !t.minor || near || t.e.item.id === selected;
+      if (show) {
+        v.copy(t.lab.position).project(camera);
+        const key = `${Math.floor(((v.x + 1) / 2) * W / 48)}:${Math.floor(((1 - v.y) / 2) * H / 48)}`;
+        if (v.z > 1 || taken.has(key)) show = false; else taken.add(key);
+      }
+      t.lab.visible = show;
+    }
+  };
+  const applyMode = (m) => {
+    const blue = m === "blueprint";
+    if (blue && !bp) bp = buildBlueprint();
+    phys.visible = !blue; sky.visible = !blue;
+    for (const lab of [hoverLabel, selLabel]) lab.element.classList.toggle("bp", blue);
+    if (bp) { bp.g.visible = blue; bp.occluder.visible = blue && !bpOpts.xray && !bpOpts.skeletal; bp.edgeLines.visible = !bpOpts.skeletal; bp.footLines.visible = bpOpts.skeletal; bp.arrowMesh.visible = !bpOpts.skeletal; }
+    scene.background = blue ? new THREE.Color(NAVY) : null;
+    scene.fog = blue ? null : physFog;
+    renderer.toneMapping = blue ? THREE.NoToneMapping : THREE.ACESFilmicToneMapping;
+  };
+  const physFog = scene.fog;
+
+  // ---- cross-fade between modes: two render targets composited on a full-screen quad (≈300 ms; instant under reduced motion) ----
+  let fade = null, rtA = null, rtB = null;
+  const quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMaterial({
+    uniforms: { a: { value: null }, b: { value: null }, k: { value: 0 }, ea: { value: 0 }, eb: { value: 0 } },
+    vertexShader: "varying vec2 vUv; void main() { vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }",
+    // render targets hold linear, untone-mapped colour: tone-map the physical pass (ACES fit), mix, then encode sRGB
+    fragmentShader: `uniform sampler2D a; uniform sampler2D b; uniform float k; uniform float ea; uniform float eb; varying vec2 vUv;
+      vec3 aces(vec3 x) { return clamp((x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14), 0.0, 1.0); }
+      vec3 tone(vec3 c, float e) { return e > 0.0 ? aces(c * e) : c; }
+      vec3 srgb(vec3 c) { return mix(c * 12.92, 1.055 * pow(c, vec3(1.0 / 2.4)) - 0.055, step(vec3(0.0031308), c)); }
+      void main() { gl_FragColor = vec4(srgb(mix(tone(texture2D(a, vUv).rgb, ea), tone(texture2D(b, vUv).rgb, eb), k)), 1.0); }`,
+    depthTest: false, depthWrite: false
+  }));
+  const quadScene = new THREE.Scene(), quadCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+  quadScene.add(quad);
+  const renderTo = (rt, m) => { applyMode(m); renderer.setRenderTarget(rt); renderer.render(scene, camera); };
+  const drawFade = (now) => {
+    const size = renderer.getDrawingBufferSize(new THREE.Vector2());
+    for (const k of ["rtA", "rtB"]) { const rt = k === "rtA" ? rtA : rtB; if (!rt || rt.width !== size.x || rt.height !== size.y) { rt?.dispose(); const n = new THREE.WebGLRenderTarget(size.x, size.y, { type: THREE.HalfFloatType }); if (k === "rtA") rtA = n; else rtB = n; } }
+    const t = Math.min(1, (now - fade.t0) / 300);
+    renderTo(rtA, fade.from); renderTo(rtB, fade.to);
+    renderer.setRenderTarget(null);
+    const u = quad.material.uniforms, ex = (m) => (m === "physical" ? renderer.toneMappingExposure : 0);
+    u.a.value = rtA.texture; u.b.value = rtB.texture; u.k.value = t * t * (3 - 2 * t); u.ea.value = ex(fade.from); u.eb.value = ex(fade.to);
+    renderer.render(quadScene, quadCam);
+    if (t >= 1) { applyMode(fade.to); fade = null; }
+  };
+
   // ---- render on demand; a continuous loop only while water, rakes or alerts move and motion is allowed ----
   let dirty = true, raf = 0, last = performance.now(), frames = [], fly = null;
   const invalidate = () => { dirty = true; };
@@ -440,7 +572,7 @@ export function mountPlant(container, data, { mode = "physical", quality = "medi
   const loop = (now) => {
     raf = requestAnimationFrame(loop);
     const dt = Math.min(0.1, (now - last) / 1000);
-    if (frames.length < 30 && now !== last) { frames.push(now - last); if (frames.length === 30) { const s = [...frames].sort((a, b) => a - b); if (s[15] > 33) onSlow?.(s[15]); } }
+    if (frames.length < 30 && now !== last) { frames.push(now - last); if (frames.length === 30) { const s = [...frames].sort((a, b) => a - b); if (s[15] > 33 && api.mode === "physical") onSlow?.(s[15]); } }
     last = now;
     const moving = !reduced && api.mode === "physical";
     if (fly) {
@@ -455,11 +587,29 @@ export function mountPlant(container, data, { mode = "physical", quality = "medi
       for (const ring of alertRings.values()) { const s = 1 + 0.25 * Math.sin(now / 250); ring.scale.set(s, 1, s); }
     }
     controls.update();
-    if (dirty || moving) { renderer.render(scene, camera); labels.render(scene, camera); dirty = false; info(); }
+    if (fade) { drawFade(now); labels.render(scene, camera); info(); return; }
+    if (dirty || moving) {
+      if (api.mode === "blueprint") declutter();
+      renderer.render(scene, camera); labels.render(scene, camera); dirty = false; info();
+    }
   };
-  const ro = new ResizeObserver(() => { camera.aspect = w() / h(); camera.updateProjectionMatrix(); renderer.setSize(w(), h()); labels.setSize(w(), h()); invalidate(); });
+  const ro = new ResizeObserver(() => { camera.aspect = w() / h(); camera.updateProjectionMatrix(); renderer.setSize(w(), h()); labels.setSize(w(), h()); bp?.proc.material.resolution.set(w(), h()); invalidate(); });
   ro.observe(container);
+  applyMode(mode);
   raf = requestAnimationFrame(loop);
+
+  // Upstream overlay: lines whose both ends are highlighted, drawn wide and bright over everything else.
+  const overlayFor = (ids) => {
+    const set = new Set(ids), pos = [];
+    for (const l of data.lines) if (l.causal && set.has(l.fromId) && set.has(l.toId)) for (const part of l.parts) for (let i = 1; i < part.length; i++) { const a = P(...part[i - 1]), b = P(...part[i]); pos.push(a.x, a.y + 0.3, a.z, b.x, b.y + 0.3, b.z); }
+    if (!pos.length) return null;
+    const m = new LineSegments2(new LineSegmentsGeometry().setPositions(pos), new LineMaterial({ color: 0xfbbf24, linewidth: 5, depthTest: false, transparent: true }));
+    m.material.resolution.set(w(), h()); m.renderOrder = 10;
+    scene.add(m);
+    return m;
+  };
+  let overlay = null;
+  const captions = new Map();
 
   const api = {
     mode,
@@ -474,13 +624,54 @@ export function mountPlant(container, data, { mode = "physical", quality = "medi
       select(e.item.id, { silent: true });
       return true;
     },
+    // Fit the camera to a set of items (an explicit request, like flyTo).
+    frame(ids = []) {
+      const box = new THREE.Box3();
+      for (const id of ids) { const e = byId.get(id); if (e) box.expandByObject(e.proxy); }
+      if (box.isEmpty()) return false;
+      const c = box.getCenter(new THREE.Vector3()), r = Math.max(20, box.getSize(new THREE.Vector3()).length() * 0.75);
+      const dir = camera.position.clone().sub(controls.target).normalize(), tp = c.clone().add(dir.multiplyScalar(r / Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) * 0.6));
+      tp.y = Math.max(tp.y, c.y + r * 0.5);
+      if (reduced) { controls.target.copy(c); camera.position.copy(tp); invalidate(); } else fly = { t0: performance.now(), ms: 700, ft: controls.target.clone(), fp: camera.position.clone(), tt: c, tp };
+      return true;
+    },
+    // Highlight a set (e.g. an upstream walk); dim fades everything else in blueprint mode.
     highlight(ids = [], { dim = false } = {}) {
       while (highlights.length) { const h2 = highlights.pop(); scene.remove(h2); h2.dispose(); }
-      for (const id of ids) { const e = byId.get(id); if (e) highlights.push(boxFor(e, 0xa78bfa)); }
+      if (overlay) { scene.remove(overlay); overlay.geometry.dispose(); overlay.material.dispose(); overlay = null; }
+      for (const id of ids) { const e = byId.get(id); if (e) highlights.push(boxFor(e, 0xfbbf24)); }
+      overlay = ids.length ? overlayFor(ids) : null;
       api.dimmed = dim && ids.length > 0;
+      if (api.dimmed && api.mode !== "blueprint") api.setMode("blueprint");
+      if (bp) for (const m of [bp.edgeLines.material, bp.proc.material, bp.util.material, bp.arrowMesh.material]) m.opacity = api.dimmed ? 0.22 : m === bp.edgeLines.material ? 0.9 : 1;
       invalidate();
     },
-    setMode(m) { api.mode = m; invalidate(); return api.mode; },
+    // A CSS2D caption on an item (null text removes it; caption(null) clears all).
+    caption(id, text) {
+      if (id == null) { for (const c of captions.values()) { scene.remove(c); c.element.remove(); } captions.clear(); invalidate(); return; }
+      const old = captions.get(id);
+      if (old) { scene.remove(old); old.element.remove(); captions.delete(id); }
+      const e = byId.get(id);
+      if (!e || !text) { invalidate(); return; }
+      const el = document.createElement("div");
+      el.className = "plabel cap"; el.textContent = text;
+      const c = new CSS2DObject(el), b = new THREE.Box3().setFromObject(e.proxy);
+      c.position.set((b.min.x + b.max.x) / 2, b.max.y + 4, (b.min.z + b.max.z) / 2);
+      scene.add(c); captions.set(id, c);
+      invalidate();
+    },
+    setMode(m) {
+      if (m !== "physical" && m !== "blueprint") return api.mode;
+      if (m === api.mode) return m;
+      if (m === "blueprint" && !bp) bp = buildBlueprint();
+      if (!reduced) fade = { from: api.mode, to: m, t0: performance.now() };
+      else applyMode(m);
+      api.mode = m;
+      invalidate();
+      return m;
+    },
+    // Blueprint toggles: xray (see through solids) and skeletal (process lines, footprints and labels only).
+    setOption(name, on) { if (name in bpOpts) { bpOpts[name] = !!on; applyMode(api.mode); invalidate(); } return { ...bpOpts }; },
     // Client coordinates of an item's centre, for tests and tours.
     screenOf(id) {
       const e = byId.get(id);
@@ -505,6 +696,7 @@ export function mountPlant(container, data, { mode = "physical", quality = "medi
       for (const p of proxies) p.geometry.dispose();
       scene.traverse((o) => { if (o.geometry) o.geometry.dispose(); for (const m of [].concat(o.material || [])) { for (const k of ["map", "normalMap"]) m[k]?.dispose?.(); m.dispose(); } });
       for (const t of Object.values(tex)) t.dispose();
+      quad.geometry.dispose(); quad.material.dispose(); rtA?.dispose(); rtB?.dispose();
       envRT.dispose(); pmrem.dispose(); envSky.geometry.dispose(); envSky.material.dispose();
       renderer.dispose(); renderer.forceContextLoss(); renderer.domElement.remove(); labels.domElement.remove();
       delete window.__plant;

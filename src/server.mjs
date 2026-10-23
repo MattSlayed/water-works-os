@@ -215,7 +215,11 @@ export function createServer(sys) {
     }],
     ["GET", /^\/api\/plant\/graph\/(upstream|downstream)\/([^/]+)$/, (v, m, url) => {
       const g = plantGraph(v), id = nodeOf(g, decodeURIComponent(m[2])), mode = url.searchParams.get("mode") === "backwash" ? "backwash" : "normal";
-      return { id, mode, items: (m[1] === "upstream" ? upstreamOf : downstreamOf)(id, g, { mode }) };
+      const items = (m[1] === "upstream" ? upstreamOf : downstreamOf)(id, g, { mode });
+      // where the walk starts in the works: structures with no flow in and a main-stream flow out (not a recycle or a dose)
+      const flowIn = (n) => (g.in.get(n) || []).some((e) => e.kind === "flow" && (mode === "backwash" || e.mode !== "intermittent"));
+      const sources = items.filter((x) => !x.recycle && g.nodes.get(x.id)?.type === "Structure" && !flowIn(x.id) && (g.out.get(x.id) || []).some((e) => e.kind === "flow" && !e.recycle)).map((x) => x.id);
+      return { id, mode, items, sources };
     }],
     ["GET", /^\/api\/plant\/graph\/paths$/, (v, m, url) => {
       const g = plantGraph(v), from = nodeOf(g, url.searchParams.get("from")), to = nodeOf(g, url.searchParams.get("to"));
@@ -225,8 +229,9 @@ export function createServer(sys) {
       const g = plantGraph(v), from = nodeOf(g, url.searchParams.get("from")), to = nodeOf(g, url.searchParams.get("to"));
       const [path] = processPaths(from, to, g);
       if (!path) throw new HttpError(404, "no process path between them");
-      const flowMlD = Number(url.searchParams.get("flow")) || (tel.latest("SEN-RAW-flow") || {}).value || 120;
-      return { path, window: travelWindow(path, g, { flowMlD, lagMin: Number(url.searchParams.get("lag")) || 0 }) };
+      const given = Number(url.searchParams.get("flow")), meas = (tel.latest("SEN-RAW-flow") || {}).value;
+      const flowMlD = given || Math.round(meas * 10) / 10 || 120;
+      return { path, flowMlD, measured: !given && !!meas, window: travelWindow(path, g, { flowMlD, lagMin: Number(url.searchParams.get("lag")) || 0 }) };
     }],
     ["GET", /^\/api\/objects$/, (v, m, url) => { const view = ont.view(v); const q = url.searchParams.get("q"); const type = url.searchParams.get("type"); return (q ? view.search(q, 50) : view.list(type || null)).filter((o) => !type || o.type === type).slice(0, 500); }],
     ["GET", /^\/api\/objects\/([^/]+)$/, (v, m) => objectPayload(v, decodeURIComponent(m[1]))],

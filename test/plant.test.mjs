@@ -70,7 +70,7 @@ test("rev B: ingest, carried-forward marks, refusals, four-eyes release", () => 
 
   // Review Focus 2: unresolved AMBIGUOUS, last reviewer, stale hash.
   assert.match(run(sys, "release_plant_model", { modelId: "PM-RB-B", hash: hash() }, "P-001").reason, /unreviewed/);
-  assert.equal(run(sys, "review_cells", { modelId: "PM-RB-B", marks: [{ key: "RB-L-421X|presence", value: "superseded route; removed" }] }, "P-002").status, "done");
+  assert.equal(run(sys, "review_cells", { modelId: "PM-RB-B", marks: [{ key: "RB-L-421X|presence", value: "excluded" }] }, "P-002").status, "done");
   assert.match(run(sys, "release_plant_model", { modelId: "PM-RB-B", hash: hash() }, "P-002").reason, /last reviewer/);
   assert.match(run(sys, "release_plant_model", { modelId: "PM-RB-B", hash: "0".repeat(64) }, "P-001").reason, /stale/);
   assert.match(run(sys, "release_plant_model", { modelId: "PM-RB-B", hash: hash() }, "P-004").reason, /engineer/);
@@ -86,6 +86,8 @@ test("rev B: ingest, carried-forward marks, refusals, four-eyes release", () => 
     assert.equal(ont.get(`PM-RB-A:LIN-RB-L-${f}`), null);
   }
   assert.equal(JSON.stringify(ont.get("POS-HLP-B")), hlpB);
+  assert.equal(ont.get("PM-RB-B:LIN-RB-L-421X"), null, "a presence cell resolved as excluded keeps the item out of the release");
+  assert.ok(ont.get("PM-RB-B:LIN-RB-L-421"));
 
   // A reviewed AMBIGUOUS cell citing an existing record raises one Issue, once.
   const issues = () => ont.list("Issue", (i) => i.title === "Drawing disagrees with record: 15CQ13|binding");

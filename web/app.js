@@ -68,8 +68,9 @@ function plantSide(it) {
     : it.kind3d === "valve" ? [["Kind", it.kind], ["Filter", it.filter], ["Line", it.lineId], ["Normal state", it.normalState], ["Actuated", it.actuated ? "yes" : "no"]]
     : [["Kind", String(it.kind || "").replace(/_/g, " ")], ["Zone", it.zoneId], ["Floor level", it.baseLevel], ["Top water level", it.twl], ["Volume m³", it.volumeM3], it.diameter ? ["Diameter m", it.diameter] : ["Plan m", it.w ? `${it.w} × ${it.l}` : null]];
   return `<h2>${esc(it.kind3d)}</h2><h3 style="margin:0 0 8px">${esc(it.tag)}</h3><table>${rows.filter(([, v]) => v != null && v !== "").map(([k, v]) => `<tr><td class="meta">${esc(k)}</td><td>${esc(v)}</td></tr>`).join("")}</table>
-    <div class="btns" style="margin-top:10px"><button class="btn" id="flyto">Fly to</button><a class="btn" href="#/object/${encodeURIComponent(it.id)}">Record</a>${it.assetId ? `<a class="btn primary" href="#/asset/${encodeURIComponent(it.assetId)}">Open twin</a>` : ""}</div>`;
+    <div class="btns" style="margin-top:10px"><button class="btn" id="flyto">Fly to</button>${it.kind3d !== "valve" ? `<button class="btn" id="upstream">Show upstream</button>` : ""}<a class="btn" href="#/object/${encodeURIComponent(it.id)}">Record</a>${it.assetId ? `<a class="btn primary" href="#/asset/${encodeURIComponent(it.assetId)}">Open twin</a>` : ""}</div>`;
 }
+const SHARE = { 0.25: "¼", 0.5: "½", 0.0833: "1/12", 0.3333: "⅓" };
 const plantStates = (d) => Object.fromEntries([...d.machines.filter((m) => m.positionId).map((m) => [m.positionId, { state: m.state, alerts: m.alerts }]), ...d.samplePoints.map((sp) => [sp.id, { reading: sp.reading }])]);
 
 // ---------- views ----------
@@ -131,8 +132,9 @@ const views = {
     state.plant = null;
     state.plantRev = d.model.id;
     view.innerHTML = `<div class="row"><div><h2>03 / the works as drawn · plant model rev ${esc(d.model.rev)} · released ${time(d.model.release && d.model.release.at)} by ${esc(d.model.release && d.model.release.by)}</h2><h1>Plant</h1></div>
-        <div class="btns"><a class="btn" href="#/map">Site map</a></div></div>
-      <div class="plantwrap"><section class="panel stage3d plant" aria-label="3D plant"><div class="disclose badge">${esc(d.model.disclosure)}</div></section>
+        <div class="btns"><a class="btn" href="#/plantmodels">Revisions and review</a><a class="btn" href="#/map">Site map</a></div></div>
+      <div class="plantwrap"><section class="panel stage3d plant" aria-label="3D plant"><div class="disclose badge">${esc(d.model.disclosure)}</div>
+        <div class="plantbar" role="group" aria-label="View"><button class="btn" data-pmode="physical">Physical</button><button class="btn" data-pmode="blueprint">Blueprint</button><button class="btn" data-popt="xray">X-ray</button><button class="btn" data-popt="skeletal">Skeletal map</button><button class="btn" id="pclear">Clear</button></div></section>
         <aside class="side"><section class="panel" id="psel" aria-live="polite">${plantSide(null)}</section></aside></div>`;
     const stage = $(".stage3d.plant"), side = $("#psel");
     const fallback = (why) => {
@@ -143,13 +145,44 @@ const views = {
     };
     const { mountPlant, webglAvailable } = await import("/plant.js");
     if (!webglAvailable()) return fallback("3D is not available in this browser.");
+    const enc = encodeURIComponent;
+    const upstream = async (it) => {
+      const u = await api(`/api/plant/graph/upstream/${enc(it.id)}`);
+      state.plant.caption(null);
+      state.plant.highlight([it.id, ...u.items.map((x) => x.id)], { dim: true });
+      state.plant.frame([it.id, ...u.items.map((x) => x.id)]);
+      bar();
+      for (const x of u.items) if (x.id.includes(":STR-") && x.share > 0 && x.share < 1) state.plant.caption(x.id, `share ${SHARE[x.share] || x.share}`);
+      let cap = "";
+      if (u.sources[0]) {
+        const w = await api(`/api/plant/graph/window?from=${enc(u.sources[0])}&to=${enc(it.id)}`);
+        cap = `onset ≈ ${w.window.onsetH} h, mean ≈ ${w.window.meanH} h (design values at ${w.flowMlD} ML/d ${w.measured ? "measured" : "assumed"})`;
+        state.plant.caption(it.id, cap);
+      }
+      $("#upinfo")?.remove();
+      side.insertAdjacentHTML("beforeend", `<div id="upinfo" style="margin-top:10px"><h2>Upstream of ${esc(it.tag)}</h2><p class="meta">${u.items.length} items on causal lines; recycle edges marked, not crossed.${cap ? ` From the intake: ${esc(cap)}.` : ""}</p>
+        <ul class="list">${u.items.filter((x) => x.id.includes(":STR-") || x.id.startsWith("POS-")).map((x) => `<li class="row"><span>${esc(x.id.replace(/^PM-RB-[A-Z]:STR-/, ""))}${x.recycle ? " " + pill("recycle", "noted") : ""}</span><span class="val">${SHARE[x.share] || x.share}</span></li>`).join("")}</ul></div>`);
+    };
     const show = (it) => {
       side.innerHTML = plantSide(it);
+      if (!it) return;
       $("#flyto")?.addEventListener("click", () => state.plant?.flyTo(it.id));
+      $("#upstream")?.addEventListener("click", () => upstream(it).catch((e) => toast(e.message)));
+    };
+    // weak devices and phones open in blueprint (design §5.4)
+    const weak = innerWidth < 720 || (navigator.deviceMemory && navigator.deviceMemory <= 4);
+    const bar = () => {
+      stage.querySelectorAll("[data-pmode]").forEach((b) => b.setAttribute("aria-pressed", String(state.plant?.mode === b.dataset.pmode)));
+      stage.querySelectorAll("[data-popt]").forEach((b) => { b.hidden = state.plant?.mode !== "blueprint"; });
     };
     try {
-      state.plant = mountPlant(stage, { ...d, zones: m.zones }, { onSelect: show, onLost: () => fallback("The 3D view lost its graphics context."), onSlow: () => state.plant?.setMode("blueprint") });
+      state.plant = mountPlant(stage, { ...d, zones: m.zones }, { mode: weak ? "blueprint" : "physical", onSelect: show, onLost: () => fallback("The 3D view lost its graphics context."), onSlow: () => { state.plant?.setMode("blueprint"); bar(); } });
     } catch (e) { return fallback(`3D could not start (${e.message}).`); }
+    const opts = { xray: false, skeletal: false };
+    stage.querySelectorAll("[data-pmode]").forEach((b) => b.addEventListener("click", () => { state.plant.setMode(b.dataset.pmode); bar(); }));
+    stage.querySelectorAll("[data-popt]").forEach((b) => b.addEventListener("click", () => { opts[b.dataset.popt] = !opts[b.dataset.popt]; state.plant.setOption(b.dataset.popt, opts[b.dataset.popt]); b.setAttribute("aria-pressed", String(opts[b.dataset.popt])); }));
+    $("#pclear").addEventListener("click", () => { state.plant.highlight([]); state.plant.caption(null); $("#upinfo")?.remove(); });
+    bar();
     const hitOf = (x) => x.id === id || x.positionId === id;
     if (id && state.plant.flyTo(id)) {
       const mc = d.machines.find(hitOf);
@@ -160,6 +193,65 @@ const views = {
     const d = await api("/api/plant");
     if (d.model.id !== state.plantRev) return views.plant();
     state.plant?.setStates(plantStates(d));
+  },
+
+  async plantmodels(id) {
+    const enc = encodeURIComponent, eng = ["engineer", "manager"].includes(state.me.clearance);
+    if (!id) {
+      const [ms, dws] = await Promise.all([api("/api/plant/models"), api("/api/objects?type=Drawing")]);
+      const received = dws.filter((d) => d.status === "received");
+      view.innerHTML = `<div class="row"><div><h2>03 / drawing set → plant model</h2><h1>Plant model revisions</h1></div>
+          <div class="btns"><a class="btn" href="#/plant">Plant</a>${eng && received.length ? `<button class="btn primary" id="ingest">Ingest received drawings (${received.length})</button>` : ""}</div></div>
+        <section class="panel"><table><thead><tr><th>Model</th><th>Status</th><th>Cells</th><th>Unreviewed</th><th>Released</th><th>Drawings</th></tr></thead><tbody>${ms.map((m) => `<tr><td><a href="#/plantmodels/${enc(m.id)}"><b>${esc(m.id)}</b></a></td><td>${pill(m.status, m.status === "released" ? "done" : m.status === "superseded" ? "noted" : "proposed")}</td><td class="val">${m.cells}</td><td>${Object.entries(m.unreviewed).map(([g, n]) => `${esc(g)} ${n}`).join(" · ") || "none"}</td><td class="meta">${m.release ? `${time(m.release.at)} by ${esc(m.release.by)}` : ""}</td><td class="meta">${m.sources.map((x) => `${esc(x.number)} ${esc(x.rev)}`).join(", ")}</td></tr>`).join("")}</tbody></table></section>
+        <section class="panel" style="margin-top:12px"><h2>Received, not yet ingested</h2><ul class="list">${received.map((d) => `<li>${link(d.id, d.name)}</li>`).join("") || `<li class="empty">None.</li>`}</ul></section>`;
+      $("#ingest")?.addEventListener("click", async (e) => {
+        e.target.disabled = true;
+        try { const m = await api("/api/plant/ingest", { method: "POST", body: { drawingIds: received.map((d) => d.id) } }); location.hash = `#/plantmodels/${enc(m.id)}`; } catch (err) { toast(err.message); e.target.disabled = false; }
+      });
+      return;
+    }
+    const [m, comps] = await Promise.all([api(`/api/plant/models/${enc(id)}`), api("/api/objects?type=Competency")]);
+    const today = (state.me && $("#clock").textContent.slice(0, 10)) || "";
+    const canRelease = comps.some((c) => c.personId === state.me.id && c.competency === "c-model" && (!today || c.validTo >= today));
+    const open = ["draft", "in_review"].includes(m.status);
+    const order = { AMBIGUOUS: 0, INFERRED: 1, EXTRACTED: 2 };
+    const cells = [...m.cells].sort((a, b) => (!!a.reviewed - !!b.reviewed) || order[a.grade] - order[b.grade] || a.key.localeCompare(b.key));
+    const todo = cells.filter((c) => !c.reviewed);
+    const sheets = Object.entries(todo.filter((c) => c.grade === "EXTRACTED").reduce((acc, c) => ((acc[c.sheet] = (acc[c.sheet] || 0) + 1), acc), {}));
+    const val = (v) => (typeof v === "string" ? v : JSON.stringify(v));
+    const row = (c) => `<tr class="${c.grade === "AMBIGUOUS" ? "amb" : c.grade === "INFERRED" ? "inf" : ""}" data-key="${esc(c.key)}"><td class="mono">${esc(c.key)}</td><td class="meta">${esc(c.sheet)}</td><td>${pill(c.grade, c.grade === "AMBIGUOUS" ? "medium" : c.grade === "INFERRED" ? "agent" : "low")}</td><td class="mono cv">${esc(val(c.value)).slice(0, 80)}</td><td class="why">${esc(c.reasoning)}</td>
+      <td>${c.reviewed ? `<span class="meta">${esc(c.reviewed.by)} ${time(c.reviewed.at)}</span>` : open && eng ? `<div class="btns"><button class="btn" data-accept="${esc(c.key)}">Accept</button><button class="btn" data-correct="${esc(c.key)}">Correct</button>${c.field === "presence" ? `<button class="btn" data-exclude="${esc(c.key)}" title="Not on site: left out of the released model">Exclude</button>` : ""}</div>` : ""}</td></tr>`;
+    view.innerHTML = `<div class="row"><div><h2>03 / review · ${esc(m.status)} · ${m.cells} cells · hash ${esc(m.packageHash.slice(0, 12))}</h2><h1>${esc(m.id)}</h1></div>
+        <div class="btns"><a class="btn" href="#/plantmodels">All revisions</a><a class="btn" href="#/plant">Plant</a>${open && eng ? `<button class="btn primary" id="release" title="${canRelease ? "Four eyes: someone other than the last reviewer releases" : "You do not hold c-model; the server will refuse"}">Release</button>` : ""}</div></div>
+      <p class="sub">${esc(m.disclosure)} · ${todo.length} cells to review (${todo.filter((c) => c.grade === "AMBIGUOUS").length} ambiguous, ${todo.filter((c) => c.grade === "INFERRED").length} inferred). Extracted cells may be accepted per sheet; inferred and ambiguous cells one by one. Release needs a second person who holds c-model.</p>
+      <div id="relmsg" role="status"></div>
+      ${open && eng && sheets.length ? `<div class="btns" style="margin:8px 0">${sheets.map(([sh, n]) => `<button class="btn" data-sheet="${esc(sh)}">Accept extracted · ${esc(sh)} (${n})</button>`).join("")}</div>` : ""}
+      <section class="panel"><div class="row"><h2>To review · ${todo.length}</h2><label class="field" style="min-width:260px">Filter cells<input id="cf" type="search" placeholder="tag, field or sheet"></label></div>
+        <table class="cells"><thead><tr><th>Cell</th><th>Sheet</th><th>Grade</th><th>Value</th><th>Reasoning</th><th></th></tr></thead><tbody id="todo">${todo.slice(0, 400).map(row).join("") || `<tr><td colspan="6" class="empty">Nothing left to review.</td></tr>`}</tbody></table></section>
+      <section class="panel" style="margin-top:12px"><h2>Reviewed · ${cells.length - todo.length}</h2><table class="cells"><tbody id="done">${cells.filter((c) => c.reviewed).slice(0, 150).map(row).join("")}</tbody></table>${cells.length - todo.length > 150 ? `<p class="meta">Showing 150; filter to find others.</p>` : ""}</section>`;
+    const act = async (params) => { try { await api("/api/actions/review_cells", { method: "POST", body: { params: { modelId: id, ...params } } }); views.plantmodels(id); } catch (err) { toast(err.message); } };
+    view.querySelectorAll("[data-sheet]").forEach((b) => b.addEventListener("click", () => act({ accept: "EXTRACTED", sheet: b.dataset.sheet })));
+    view.querySelectorAll("[data-accept]").forEach((b) => b.addEventListener("click", () => act({ marks: [{ key: b.dataset.accept }] })));
+    view.querySelectorAll("[data-exclude]").forEach((b) => b.addEventListener("click", () => act({ marks: [{ key: b.dataset.exclude, value: "excluded" }] })));
+    view.querySelectorAll("[data-correct]").forEach((b) => b.addEventListener("click", () => {
+      const tr = b.closest("tr"), c = m.cells.find((x) => x.key === b.dataset.correct), td = tr.querySelector(".cv");
+      td.innerHTML = `<input aria-label="Corrected value for ${esc(c.key)}" value="${esc(val(c.value))}"><button class="btn primary" style="margin-top:4px">Save</button>`;
+      td.querySelector("button").addEventListener("click", () => { const raw = td.querySelector("input").value; let v = raw; try { v = JSON.parse(raw); } catch {} act({ marks: [{ key: c.key, value: v }] }); });
+      td.querySelector("input").focus();
+    }));
+    $("#cf").addEventListener("input", (e) => {
+      const q = e.target.value.toLowerCase();
+      $("#todo").innerHTML = todo.filter((c) => !q || `${c.key} ${c.sheet}`.toLowerCase().includes(q)).slice(0, 400).map(row).join("");
+      $("#done").innerHTML = cells.filter((c) => c.reviewed && (!q || `${c.key} ${c.sheet}`.toLowerCase().includes(q))).slice(0, 150).map(row).join("");
+    });
+    $("#release")?.addEventListener("click", async (e) => {
+      e.target.disabled = true;
+      try {
+        await api("/api/actions/release_plant_model", { method: "POST", body: { params: { modelId: id, hash: m.packageHash } } });
+        toast(`${id} released.`);
+        location.hash = "#/plant";
+      } catch (err) { $("#relmsg").innerHTML = `<p class="sub" style="color:var(--amber)">Release refused: ${esc(err.message)}</p>`; e.target.disabled = false; }
+    });
   },
 
   async asset(id) {
@@ -521,7 +613,7 @@ const views = {
 // ---------- router, shell, live events ----------
 async function route() {
   const [, name = "console", arg] = location.hash.match(/^#\/([^/]+)\/?(.*)$/) || [];
-  document.querySelectorAll("[data-nav]").forEach((a) => a.classList.toggle("active", a.dataset.nav === name || a.dataset.nav === `${name}s` || (name === "run" && a.dataset.nav === "agents")));
+  document.querySelectorAll("[data-nav]").forEach((a) => a.classList.toggle("active", a.dataset.nav === name || a.dataset.nav === `${name}s` || (name === "plantmodels" && a.dataset.nav === "plant") || (name === "run" && a.dataset.nav === "agents")));
   if (name !== "asset") { state.twin?.dispose(); state.twin = null; state.copilot = null; }
   if (name !== "plant") { state.plant?.dispose(); state.plant = null; }
   const fn = views[name];

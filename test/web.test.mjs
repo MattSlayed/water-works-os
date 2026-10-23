@@ -64,3 +64,10 @@ test("plant view: route, nav and module are wired", async () => {
   const src = await r.text();
   for (const s of ["export function mountPlant", "flyTo", "highlight", "setMode", "setStates", "dispose", "forceContextLoss", "__plant"]) assert.ok(src.includes(s), s);
 });
+
+test("blueprint mode and the plant model review view are wired", async () => {
+  const app = await (await fetch(base + "/app.js")).text();
+  for (const s of ["async plantmodels(", "Show upstream", "Ingest received drawings", "Accept extracted", "release_plant_model"]) assert.ok(app.includes(s), s);
+  const src = await (await fetch(base + "/plant.js")).text();
+  for (const s of ["setMode(m)", "buildBlueprint", "LineSegments2", "setOption", "caption("]) assert.ok(src.includes(s), s);
+});

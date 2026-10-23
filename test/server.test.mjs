@@ -208,10 +208,15 @@ test("graph routes run over the viewer's pruned model", async () => {
   const up = await call(`/api/plant/graph/upstream/${encodeURIComponent("POS-F07")}`);
   assert.equal(up.status, 200);
   assert.equal(up.json.items.filter((x) => /STR-14UGE0\d$/.test(x.id)).length, 4);
+  assert.deepEqual(up.json.sources, ["PM-RB-A:STR-10UPA01"]);
   assert.equal((await call(`/api/plant/graph/upstream/${encodeURIComponent("PM-RB-A:STR-16UGH01")}`, { as: techId() })).status, 404);
   const w = await call(`/api/plant/graph/window?from=${encodeURIComponent("PM-RB-A:STR-10UPA01")}&to=POS-F07&flow=120`);
   assert.equal(w.status, 200);
   assert.ok(w.json.window.meanH > 3 && w.json.path.length > 5);
+  assert.deepEqual([w.json.flowMlD, w.json.measured], [120, false]);
+  const wm = await call(`/api/plant/graph/window?from=${encodeURIComponent("PM-RB-A:STR-10UPA01")}&to=POS-F07`);
+  assert.equal(wm.json.measured, true);
+  assert.ok(wm.json.flowMlD > 0 && wm.json.window.basis.includes(`Q=${wm.json.flowMlD} ML/d`));
   const p = await call(`/api/plant/graph/paths?from=${encodeURIComponent("PM-RB-A:STR-13UGB01")}&to=POS-F07`);
   assert.equal(p.json.paths.length, 4);
   assert.ok((await call("/api/plant/graph/downstream/POS-DP-2")).json.items.some((x) => x.id.endsWith("STR-13UGB01")));

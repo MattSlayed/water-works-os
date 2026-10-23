@@ -75,3 +75,9 @@ test("timing argument: F07 is a local fault; DP-2 is real but not its cause", ()
     .filter((f) => onsetMinute(hist(`SEN-${f}-turb`), opts) !== null || onsetMinute(hist(`SEN-${f}-headloss`), opts) !== null);
   assert.ok(others.length < 2, `other filters with an onset: ${others}`);
 });
+
+test("shares never exceed 1, even when a dose reaches a node by two routes", () => {
+  const up = upstreamOf(S("15HFA07"), g);
+  assert.ok(up.every((x) => x.share <= 1), JSON.stringify(up.filter((x) => x.share > 1)));
+  assert.equal(up.find((x) => x.id === S("12UHB01")).share, 1);
+});

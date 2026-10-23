@@ -177,3 +177,15 @@ main:focus { outline: none; }
 .plantlayer .pstruct rect, .plantlayer .pstruct circle { fill: rgba(96, 165, 250, 0.12); stroke: var(--ink); stroke-width: 0.5; }
 .plantlayer .pstruct:hover rect, .plantlayer .pstruct:hover circle, .plantlayer .pstruct:focus rect, .plantlayer .pstruct:focus circle { fill: rgba(251, 191, 36, 0.3); }
 @media (max-width: 1100px) { .plantwrap { grid-template-columns: minmax(0, 1fr); height: auto; } .stage3d.plant { height: 460px; } }
+.plabel.bp { background: rgba(11, 29, 54, 0.8); color: #cfe0ff; border-color: rgba(156, 195, 255, 0.35); font-weight: 500; }
+.plabel.bp.valve, .plabel.bp.instrument { font-size: 10px; color: #9cc3ff; }
+.plabel.cap { background: rgba(251, 191, 36, 0.14); border-color: var(--amber); color: var(--amber); }
+.plantbar { display: flex; gap: 6px; flex-wrap: wrap; position: absolute; right: 10px; top: 8px; z-index: 2; }
+.plantbar .btn[aria-pressed="true"] { border-color: var(--teal); color: var(--teal); }
+.cells td { vertical-align: top; }
+.cells tr.amb td { background: rgba(251, 191, 36, 0.10); }
+.cells tr.inf td:first-child { border-left: 2px solid var(--violet); }
+.cells tr.amb td:first-child { border-left: 2px solid var(--amber); }
+.cells .why { max-width: 420px; color: var(--muted); font-size: 12px; }
+.cells input { width: 100%; background: var(--bg); border: 1px solid var(--line); padding: 2px 6px; }
+@media (max-width: 720px) { .plantbar { top: auto; bottom: 8px; left: 8px; right: 8px; } .plantbar .btn { padding: 4px 8px; font-size: 13px; } }
