@@ -306,6 +306,138 @@ const views = {
     view.querySelectorAll("[data-reverse]").forEach((b) => b.addEventListener("click", async () => { try { await api(`/api/decisions/${encodeURIComponent(b.dataset.reverse)}/reverse`, { method: "POST" }); toast("Reversed."); views.object(id); } catch (e) { toast(e.message); } }));
   },
 
+  // ---------- workforce intelligence (Phase 2) ----------
+  async chat(id) {
+    const chans = await api("/api/channels");
+    const ch = chans.find((c) => c.id === id) || chans.find((c) => c.personId === state.user) || chans[0];
+    if (!ch) { view.innerHTML = `<h1>Chat</h1><p class="empty">No chats are visible to you.</p>`; return; }
+    const [msgs, exs] = await Promise.all([api(`/api/channels/${encodeURIComponent(ch.id)}/messages`), api(`/api/executions?personId=${encodeURIComponent(state.user)}`)]);
+    const member = (ch.members || []).includes(state.user);
+    const ex = !ch.groupName && member ? exs.find((e) => e.state === "running") : null;
+    let job = "";
+    if (ex) {
+      const pr = (await api(`/api/procedures/${encodeURIComponent(ex.procedureId)}`)).procedure;
+      const st = pr.steps.find((s) => s.step === ex.steps.find((x) => x.state === "todo").step);
+      const r = st.requires.reading;
+      job = `<section class="panel" aria-label="Running job"><div class="row"><h2>Job · ${esc(ex.workOrderId)} · ${esc(pr.title)} v${esc(ex.procedureVersion)}</h2>${pill(`${ex.steps.filter((s) => s.state === "done").length}/${ex.steps.length} done`, "running")}</div>
+        <p><b>Step ${esc(st.step)}.</b> ${esc(st.text)}${st.requires.permit ? ` ${pill("permit and isolation", "medium")}` : ""}</p>
+        <form id="step" class="btns">${r ? `<label class="field" style="margin:0">${esc(r.measure)} (${esc(r.unit)})<input id="stepval" inputmode="decimal" required></label>` : ""}<button class="btn primary">Done</button></form>
+        <ol class="steps">${ex.steps.map((s) => `<li class="${esc(s.state)}">${esc((pr.steps.find((x) => x.step === s.step) || {}).text)}${s.minutes != null ? ` <span class="meta">${esc(s.minutes)} min${s.value != null ? ` · ${esc(s.value)}` : ""}</span>` : ""}</li>`).join("")}</ol></section>`;
+    }
+    const who = (m) => (m.direction === "out" ? m.sentBy || "Works number" : m.fromName);
+    const bubble = (m) => `<div class="msg ${m.direction === "in" && m.from === state.user ? "me" : ""} ${esc(m.direction)}"><div class="meta">${esc(who(m))} · ${time(m.at)}${m.direction === "in" && m.outcome ? ` ${pill(m.outcome)}` : ""}</div>${esc(m.text)}${m.media && m.media.length ? `<div class="cite">${m.media.map(esc).join(" · ")}</div>` : ""}</div>`;
+    view.innerHTML = `<h2>09 / the works number</h2><h1>Chat</h1><p class="sub">A stand-in for WhatsApp: a message here does what a message to the works number does.${ch.groupName ? " The works number reads this group and only posts the Friday status." : ""}</p>
+      <div class="grid chatgrid">
+        <section class="panel" aria-label="Chats"><h2>Chats</h2><ul class="list">${chans.map((c) => `<li><a href="#/chat/${encodeURIComponent(c.id)}"${c.id === ch.id ? ' aria-current="page"' : ""}><b>${esc(c.label)}</b></a><div class="meta">${c.last ? esc(c.last.text.slice(0, 60)) : "no messages"}</div></li>`).join("")}</ul></section>
+        <div class="grid">${job}
+          <section class="panel" aria-label="Messages"><h2>${esc(ch.label)}${ch.groupName ? ` ${pill("listening", "medium")}` : ""}</h2><div class="chat phone" id="thread">${msgs.map(bubble).join("") || `<p class="empty">No messages yet. Try "start".</p>`}</div>
+            ${member ? `<form id="compose" class="btns"><label class="sr" for="say">Message</label><input id="say" autocomplete="off" style="flex:1" placeholder="${ch.groupName ? "Post to the group" : "Try start, done, or ask a question"}"><button class="btn primary">Send</button></form>` : `<p class="meta">Read only: you are not in this chat.</p>`}</section>
+        </div>
+      </div>`;
+    const send = async (text) => {
+      const res = await fetch(`/api/channels/${encodeURIComponent(ch.id)}/inbound`, { method: "POST", headers: { "content-type": "application/json", "x-channel-sender": state.user }, body: JSON.stringify({ text }) });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(j.error || res.statusText);
+      if (j.outcome === "dropped") toast("Off-topic: not stored.");
+      await views.chat(ch.id);
+      $("#say")?.focus();
+    };
+    $("#compose")?.addEventListener("submit", async (e) => { e.preventDefault(); const t = $("#say").value.trim(); if (!t) return; try { await send(t); } catch (err) { toast(err.message); } });
+    $("#step")?.addEventListener("submit", async (e) => { e.preventDefault(); const v = $("#stepval")?.value.trim(); try { await send(v ? `done ${v}` : "done"); } catch (err) { toast(err.message); } });
+    const th = $("#thread");
+    th.scrollTop = th.scrollHeight;
+  },
+
+  async issues() {
+    const iss = await api("/api/issues");
+    const next = { open: "triaged", triaged: "in_work", in_work: "done" };
+    const card = (i) => `<li><b>${esc(i.title)}</b><div class="meta">${link(i.id)}${i.assetId ? ` · ${link(i.assetId)}` : ""}${i.projectId ? ` · <a href="#/project/${encodeURIComponent(i.projectId)}">${esc(i.projectId)}</a>` : ""}${i.procedureId ? ` · <a href="#/procedure/${encodeURIComponent(i.procedureId)}">step ${esc(i.step)}</a>` : ""} · ${esc(i.raisedBy)} · ${time(i.at)}</div>${next[i.state] ? `<div class="btns"><button class="btn" data-move="${esc(i.id)}" data-to="${next[i.state]}">Move to ${esc(next[i.state].replace("_", " "))}</button></div>` : ""}</li>`;
+    view.innerHTML = `<h2>10 / what stopped the work</h2><h1>Issues</h1>
+      <div class="grid board">${[["open", "Open"], ["triaged", "Triaged"], ["in_work", "In work"], ["done", "Done"]].map(([k, label]) => { const xs = iss.filter((i) => i.state === k); return `<section class="panel" aria-label="${label}"><h2>${label} · ${xs.length}</h2><ul class="list">${xs.map(card).join("") || `<li class="empty">None.</li>`}</ul></section>`; }).join("")}</div>`;
+    view.querySelectorAll("[data-move]").forEach((b) => b.addEventListener("click", async () => {
+      try { await api("/api/actions/update_issue", { method: "POST", body: { params: { issueId: b.dataset.move, patch: { state: b.dataset.to } } } }); toast(`${b.dataset.move} moved to ${b.dataset.to.replace("_", " ")}.`); views.issues(); } catch (e) { toast(e.message); }
+    }));
+  },
+
+  async projects() {
+    const ps = await api("/api/projects");
+    view.innerHTML = `<h2>11 / projects and contracts</h2><h1>Projects</h1>${ps.map((p) => `<section class="panel"><div class="row"><a href="#/project/${encodeURIComponent(p.id)}"><b>${esc(p.title)}</b></a>${p.status.quiet ? pill(`quiet ${p.status.daysSinceReport} days`, "medium") : pill("reporting", "low")}</div>
+      <p class="meta">${esc(p.id)} · ${esc(p.kind)} · ends ${esc(p.end)} · ${esc(p.status.milestones.claimed)} of ${esc(p.status.milestones.total)} milestones claimed, ${esc(p.status.milestones.confirmed)} confirmed · ${esc(p.status.openIssues)} open issue(s)</p></section>`).join("") || `<p class="empty">No projects are visible to you.</p>`}`;
+  },
+
+  async project(id) {
+    const d = await api(`/api/projects/${encodeURIComponent(id)}`);
+    const p = d.project, st = d.status;
+    const canConfirm = ["supervisor", "engineer", "manager"].includes(state.me.clearance);
+    view.innerHTML = `<h2>11 / project</h2><h1>${esc(p.title)}</h1><p class="sub">${esc(p.contractorEmployer || "")} · ${esc(p.start)} to ${esc(p.end)} · last contractor report ${st.lastReportAt ? `${esc(st.daysSinceReport)} days ago` : "never"}${st.quiet ? ` ${pill("quiet", "medium")}` : ""}</p>
+      <div class="grid console">
+        <section class="panel" aria-label="Milestones"><h2>Milestones</h2><table><thead><tr><th>Milestone</th><th>Due</th><th>State</th><th></th></tr></thead><tbody>${p.milestones.map((m) => `<tr><td>${esc(m.id)} ${esc(m.title)}</td><td>${esc(m.due)}${st.overdue.includes(m.id) ? ` ${pill("overdue", "high")}` : ""}</td><td>${m.confirmedAt ? pill("confirmed", "done") : m.claimedAt ? pill("claimed", "proposed") : pill("open")}</td><td>${m.claimedAt && !m.confirmedAt && canConfirm ? `<button class="btn decide" data-confirm="${esc(m.id)}">Confirm</button>` : ""}</td></tr>`).join("")}</tbody></table>
+          <p class="meta">A claim is what the contractor said in the group. A milestone is done when a supervisor confirms it.</p></section>
+        <div class="grid">
+          <section class="panel" aria-label="Claims"><h2>Claims from the group · ${d.claims.length}</h2><ul class="list">${d.claims.slice().reverse().map((c) => `<li><div class="row"><b>${esc(c.milestoneId || "general")}</b>${c.confirmed ? pill("confirmed", "done") : pill("claim")}</div><div>${esc(c.text)}</div><div class="meta">${esc(c.by)} · ${time(c.at)}${c.evidence.length ? ` · ${c.evidence.map(esc).join(", ")}` : ""}</div></li>`).join("") || `<li class="empty">No claims yet.</li>`}</ul></section>
+          <section class="panel" aria-label="Issues"><h2>Issues · ${d.issues.length}</h2><ul class="list">${d.issues.map((i) => `<li><div class="row"><b>${esc(i.title)}</b>${pill(i.state)}</div><div class="meta">${link(i.id)}</div></li>`).join("") || `<li class="empty">None.</li>`}</ul>${d.channel ? `<div class="btns"><a class="btn" href="#/chat/${encodeURIComponent(d.channel.id)}">Open the group chat</a></div>` : ""}</section>
+        </div>
+      </div>`;
+    view.querySelectorAll("[data-confirm]").forEach((b) => b.addEventListener("click", async () => {
+      try { await api("/api/actions/confirm_milestone", { method: "POST", body: { params: { projectId: p.id, milestoneId: b.dataset.confirm } } }); toast(`${b.dataset.confirm} confirmed.`); views.project(id); } catch (e) { toast(e.message); }
+    }));
+  },
+
+  async procedures() {
+    const ps = await api("/api/procedures");
+    view.innerHTML = `<h2>12 / digitised SOPs</h2><h1>Procedures</h1><section class="panel"><table><thead><tr><th>Procedure</th><th>Version</th><th>State</th><th>Steps</th><th>Source</th></tr></thead><tbody>${ps.map((p) => `<tr><td><a href="#/procedure/${encodeURIComponent(p.id)}">${esc(p.title)}</a></td><td>v${esc(p.version)}</td><td>${pill(p.state, p.state === "released" ? "done" : p.state === "draft" ? "proposed" : "noted")}</td><td>${esc(p.steps)}</td><td>${p.sourceRef ? `${esc(p.sourceRef.system)} rev ${esc(p.sourceRef.revision)}` : ""}${p.sourceBehind ? ` ${pill("source copy behind", "medium")}` : ""}</td></tr>`).join("")}</tbody></table></section>`;
+  },
+
+  async procedure(id) {
+    const d = await api(`/api/procedures/${encodeURIComponent(id)}`);
+    const p = d.procedure, perf = d.perf;
+    const canEdit = state.me.clearance === "engineer" && p.state === "released";
+    const canRelease = state.me.clearance === "manager" && p.state === "draft";
+    const row = (s) => {
+      const f = perf && perf.steps.find((x) => x.step === s.step);
+      const notes = d.notes.filter((x) => x.step === s.step), issues = d.issues.filter((x) => x.step === s.step);
+      return `<tr><td>${esc(s.step)}</td><td>${canEdit ? `<div class="meta">Now: ${esc(s.text)}</div><textarea rows="2" data-step="${esc(s.step)}" aria-label="Step ${esc(s.step)}, new text">${esc(s.text)}</textarea>` : esc(s.text)}${s.requires.permit ? ` ${pill("permit", "medium")}` : ""}${s.requires.reading ? ` ${pill(s.requires.reading.measure, "low")}` : ""}
+        ${notes.length ? `<details><summary class="meta">${notes.length} field note(s)</summary><ul class="list">${notes.map((x) => `<li>${esc(x.text)} <span class="meta">${link(x.id)}</span></li>`).join("")}</ul></details>` : ""}</td>
+        <td>${esc(s.expectedMinutes)} min</td>${perf ? `<td>${f && f.median != null ? `${num(f.median)} min${f.ratio >= 1.5 ? ` ${pill(`${f.ratio}x`, "high")}` : ""}` : "—"}</td>` : ""}<td>${notes.length} / ${issues.length}</td></tr>`;
+    };
+    view.innerHTML = `<h2>12 / procedure</h2><h1>${esc(p.title)} v${esc(p.version)}</h1>
+      <p class="sub">${pill(p.state, p.state === "released" ? "done" : "proposed")} · from ${d.document ? link(d.document.id, d.document.title) : esc(p.documentId)}${d.document && d.document.sourceBehind ? ` ${pill("SharePoint copy behind", "medium")}` : ""} · versions: ${d.versions.map((v) => `<a href="#/procedure/${encodeURIComponent(v.id)}">v${esc(v.version)}</a> ${esc(v.state)}`).join(" · ")}</p>
+      <section class="panel"><table><thead><tr><th>#</th><th>Step</th><th>Expected</th>${perf ? "<th>Median</th>" : ""}<th>Notes / issues</th></tr></thead><tbody>${p.steps.map(row).join("")}</tbody></table>
+        ${canEdit ? `<label class="field">Reason for the new version<textarea id="reason" rows="2"></textarea></label><div class="btns"><button class="btn primary" id="propose">Propose the next version</button></div>` : ""}
+        ${canRelease ? `<p class="meta">Proposed by ${esc(p.proposedBy)}: ${esc(p.reason)}</p><div class="btns"><button class="btn primary" id="release">Release v${esc(p.version)}</button></div>` : ""}</section>`;
+    $("#propose")?.addEventListener("click", async () => {
+      const reason = $("#reason").value.trim();
+      if (!reason) return toast("Give a reason for the new version.");
+      const steps = p.steps.map((s) => ({ text: view.querySelector(`[data-step="${s.step}"]`).value }));
+      try { const r = await api("/api/actions/propose_procedure_version", { method: "POST", body: { params: { procedureId: p.id, steps, reason } } }); toast("Draft proposed. The works manager releases it."); location.hash = `#/procedure/${encodeURIComponent(r.decision.objects[0])}`; } catch (e) { toast(e.message); }
+    });
+    $("#release")?.addEventListener("click", async () => { try { await api("/api/actions/release_procedure", { method: "POST", body: { params: { procedureId: p.id } } }); toast("Released. The SharePoint copy is flagged as behind."); views.procedure(id); } catch (e) { toast(e.message); } });
+  },
+
+  async mywork() {
+    const me = state.me;
+    const [perf, notes] = await Promise.all([api(`/api/performance/person/${encodeURIComponent(me.id)}`), api("/api/objects?type=KnowledgeNote")]);
+    const crew = ["supervisor", "engineer", "manager"].includes(me.clearance) ? await api("/api/performance/crew").catch(() => null) : null;
+    const mine = notes.filter((n) => n.authorId === me.id);
+    const pct = (x) => (x == null ? "—" : `${Math.round(x * 100)}%`);
+    const bar = (s) => `<div class="bar" role="img" aria-label="Median ${esc(s.median)} minutes against ${esc(s.expected)} expected"><span class="${s.ratio >= 1.5 ? "long" : ""}" style="width:${Math.min(100, Math.round((Number(s.ratio) || 0) * 50))}%"></span></div>`;
+    const done = perf.steps.filter((s) => s.median != null);
+    view.innerHTML = `<h2>13 / my work</h2><h1>My work</h1><p class="sub">Your own numbers, for you first. Your supervisor and the engineers see them too. Nobody sees a ranking.</p>
+      <div class="grid console">
+        <section class="panel" aria-label="Time per step"><h2>Time per step against the procedure · ${esc(perf.executions)} job(s)</h2>
+          ${done.length ? `<table><thead><tr><th>Step</th><th>Median</th><th>Expected</th><th><span class="sr">Against expected</span></th></tr></thead><tbody>${done.map((s) => `<tr><td><a href="#/procedure/${encodeURIComponent(s.procedureId)}">${esc(s.step)}. ${esc(s.text)}</a></td><td>${num(s.median)} min</td><td>${esc(s.expected)} min</td><td style="min-width:90px">${bar(s)}</td></tr>`).join("")}</tbody></table><p class="meta">The line marks the expected time.</p>` : `<p class="empty">No finished jobs on record yet.</p>`}</section>
+        <div class="grid">
+          <section class="panel" aria-label="Summary"><h2>Summary</h2><dl class="kv"><dt>Jobs</dt><dd>${esc(perf.executions)}</dd><dt>First time right</dt><dd>${pct(perf.firstTimeRight)}</dd><dt>Issues raised</dt><dd>${esc(perf.issuesRaised)}</dd><dt>Field notes</dt><dd>${esc(perf.notesContributed)}</dd></dl>
+            <label class="consent"><input type="checkbox" id="consent" ${me.autoSubmit ? "checked" : ""}> Let the Scribe submit my job cards without asking</label></section>
+          <section class="panel" aria-label="My field notes"><h2>My field notes · ${mine.length}</h2><ul class="list">${mine.map((n) => `<li>${esc(n.text)}<div class="meta">${link(n.id)} ${n.verified ? pill("verified", "done") : pill("unverified", "medium")}</div></li>`).join("") || `<li class="empty">None yet. Finish a job by chat and answer the last question.</li>`}</ul></section>
+          ${crew ? `<section class="panel" aria-label="Crew rollup"><h2>Crew, by procedure</h2><table><thead><tr><th>Procedure</th><th>Jobs</th><th>First time right</th><th>Long steps</th></tr></thead><tbody>${crew.procedures.map((c) => `<tr><td>${esc(c.title)} v${esc(c.version)}</td><td>${esc(c.executions)}</td><td>${pct(c.firstTimeRight)}</td><td>${c.longSteps.map((s) => `step ${esc(s.step)} (${esc(s.ratio)}x)`).join(", ") || "—"}</td></tr>`).join("")}</tbody></table></section>` : ""}
+        </div>
+      </div>`;
+    $("#consent").addEventListener("change", async (e) => {
+      try { await api("/api/me/consent", { method: "PUT", body: { autoSubmit: e.target.checked } }); state.me.autoSubmit = e.target.checked; toast(e.target.checked ? "The Scribe will submit your job cards." : "The Scribe will ask before submitting."); } catch (err) { toast(err.message); e.target.checked = !e.target.checked; }
+    });
+  },
+
   async audit() {
     const a = await api("/api/audit");
     view.innerHTML = `<h2>10 / every action, chained</h2><h1>Audit log</h1><p class="sub">Hash chain ${a.verified ? pill("verified", "done") : pill("broken", "gap")}</p>
@@ -316,7 +448,7 @@ const views = {
 // ---------- router, shell, live events ----------
 async function route() {
   const [, name = "console", arg] = location.hash.match(/^#\/([^/]+)\/?(.*)$/) || [];
-  document.querySelectorAll("[data-nav]").forEach((a) => a.classList.toggle("active", a.dataset.nav === name || (name === "asset" && a.dataset.nav === "assets") || (name === "run" && a.dataset.nav === "agents")));
+  document.querySelectorAll("[data-nav]").forEach((a) => a.classList.toggle("active", a.dataset.nav === name || a.dataset.nav === `${name}s` || (name === "run" && a.dataset.nav === "agents")));
   if (name !== "asset") { state.twin?.dispose(); state.twin = null; state.copilot = null; }
   const fn = views[name];
   if (!fn) { view.innerHTML = `<h1>Not found</h1>`; return; }
@@ -369,8 +501,8 @@ function connect() {
     clearTimeout(pending);
     // refresh live views only; forms on other views are left alone
     pending = setTimeout(async () => {
-      const name = (location.hash.match(/^#\/([^/]+)/) || [, "console"])[1];
-      if (["console", "map"].includes(name) && !document.activeElement.closest?.("form")) views[name]();
+      const [, name = "console", arg] = location.hash.match(/^#\/([^/]+)\/?(.*)$/) || [];
+      if (["console", "map", "chat", "issues"].includes(name) && !document.activeElement.closest?.("form")) views[name](arg ? decodeURIComponent(arg) : undefined);
       try { const c = await api("/api/proposals?state=open"); $("#prop-count").textContent = c.length || ""; } catch {}
     }, 1500);
   };

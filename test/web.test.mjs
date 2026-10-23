@@ -17,7 +17,7 @@ test("web assets are served with the right types", async () => {
 
 test("index wires the app, the nav and the three.js import map", async () => {
   const html = await (await fetch(base + "/")).text();
-  for (const s of ['src="/app.js"', 'data-nav="console"', 'data-nav="agents"', 'data-nav="proposals"', "three@0.160.0", 'id="role"']) assert.ok(html.includes(s), s);
+  for (const s of ['src="/app.js"', 'data-nav="console"', 'data-nav="agents"', 'data-nav="proposals"', "three@0.160.0", 'id="role"', 'data-nav="chat"', 'data-nav="issues"', 'data-nav="projects"', 'data-nav="procedures"', 'data-nav="mywork"']) assert.ok(html.includes(s), s);
 });
 
 test("static files cannot escape the web folder", async () => {
@@ -29,5 +29,5 @@ test("static files cannot escape the web folder", async () => {
 
 test("every view the app routes to exists in app.js", async () => {
   const js = await (await fetch(base + "/app.js")).text();
-  for (const v of ["console", "map", "assets", "asset", "work", "agents", "run", "proposals", "knowledge", "compliance", "ontology", "search", "object", "audit"]) assert.ok(js.includes(`async ${v}(`), v);
+  for (const v of ["console", "map", "assets", "asset", "work", "agents", "run", "proposals", "knowledge", "compliance", "ontology", "search", "object", "audit", "chat", "issues", "projects", "project", "procedures", "procedure", "mywork"]) assert.ok(js.includes(`async ${v}(`), v);
 });

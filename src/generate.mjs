@@ -472,7 +472,9 @@ export function generateWorks(seed = 7) {
   // Past jobs, as executed against the released procedures: performance has something to read.
   const engineers = people.filter((p) => p.clearance === "engineer").map((p) => p.id);
   const closedWos = objects.filter((o) => o.type === "WorkOrder" && o.state === "closed" && o.assigneeId && byId(o.assetId) && byId(o.assetId).template).sort((a, b) => a.id.localeCompare(b.id));
-  const pumpWos = closedWos.filter((w) => byId(w.assetId).template === "centrifugal_pump").slice(0, 6);
+  const isPump = (w) => byId(w.assetId).template === "centrifugal_pump";
+  const lead = closedWos.filter((w) => isPump(w) && w.assigneeId === millwrights[0].id).slice(0, 3); // the demo artisan has history to show
+  const pumpWos = [...lead, ...closedWos.filter((w) => isPump(w) && !lead.includes(w))].slice(0, 6);
   const otherWos = closedWos.filter((w) => byId(w.assetId).template !== "centrifugal_pump").slice(0, 12 - pumpWos.length);
   [...pumpWos, ...otherWos].forEach((w, i) => {
     const proc = byId(`PRC-${byId(w.assetId).template.toUpperCase()}-v3`);

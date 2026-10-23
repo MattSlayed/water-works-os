@@ -121,7 +121,7 @@ export function createServer(sys) {
   }
 
   const routes = [
-    ["GET", /^\/api\/me$/, (v) => v],
+    ["GET", /^\/api\/me$/, (v) => ({ ...v, autoSubmit: !!ont.get(v.id).autoSubmit, supervisorId: ont.get(v.id).supervisorId || null })],
     ["GET", /^\/api\/people$/, () => ont.list("Person").map((p) => ({ id: p.id, name: p.name, role: p.role, clearance: p.clearance }))],
     ["GET", /^\/api\/console$/, (v) => consolePayload(v)],
     ["GET", /^\/api\/map$/, (v) => mapPayload(v)],

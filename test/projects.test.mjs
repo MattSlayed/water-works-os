@@ -27,6 +27,7 @@ test("seed: channels, the CL-3 contract, chat history, past jobs, issues and fie
   assert.equal(ex.length, 12);
   assert.ok(ex.every((e) => e.state === "done" && e.steps.every((s) => s.minutes > 0)));
   assert.ok(new Set(ex.map((e) => e.personId)).size >= 4);
+  assert.ok(ex.filter((e) => e.personId === "P-028").length >= 2, "the demo artisan has past jobs to show in My work");
   assert.ok(ex.filter((e) => e.procedureId === "PRC-CENTRIFUGAL_PUMP-v3").length >= 5);
   const issues = ont.list("Issue");
   assert.equal(issues.length, 6);

@@ -89,3 +89,12 @@ test("unknown session id throws", async () => {
   const { sys } = setup();
   await assert.rejects(() => sys.copilot.ask("NOPE", "hi"), /session/);
 });
+
+test("when every check for the part is withheld, the answer says so instead of an empty list", async () => {
+  const { sys, hlpb } = setup();
+  const sleeve = sys.ont.list("Part", (p) => p.assetId === hlpb.id && p.name === "Shaft sleeve")[0];
+  const r = await sys.copilot.open({ assetId: hlpb.id, partId: sleeve.id, user: johan }).ask("what next");
+  assert.equal(r.checks.length, 0);
+  assert.match(r.answer, /Next checks: none I can show yet\./);
+  assert.match(r.answer, /withheld/);
+});

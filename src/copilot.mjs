@@ -93,7 +93,7 @@ export function createCopilot({ ont, tel, actions, runtime, llm = askClaude }) {
       const { ins, checks, withheld } = nextChecks(s);
       const why = ins.alerts.map((a) => a.title).join("; ") || "no active alert";
       res = {
-        answer: `Why we are here: ${why}. Next checks:\n${checks.map((c, i) => `${i + 1}. ${c.text}`).join("\n")}${withheld ? `\n${withheld}` : ""}`,
+        answer: `Why we are here: ${why}. Next checks:${checks.length ? `\n${checks.map((c, i) => `${i + 1}. ${c.text}`).join("\n")}` : " none I can show yet."}${withheld ? `\n${withheld}` : ""}`,
         checks, withheld,
         citations: [...(ins.procedure[0] ? [{ id: ins.procedure[0].documentId, label: "SOP" }] : []), ...(ins.manual ? [{ id: ins.manual.id, label: "OEM manual" }] : []), ...ins.findings.map((f) => ({ id: f.id, label: "Similar finding" })), ...ins.alerts.map((a) => ({ id: a.id, label: "Alert" }))],
         lookHere: [...new Set(checks.flatMap((c) => c.parts))].slice(0, 6)
