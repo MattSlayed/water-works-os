@@ -34,6 +34,7 @@ export function createChannels({ ont, tel, actions, runtime, copilot, audit }) {
       prov: { source: "CHANNEL-STUB", source_uri: `stub://${ch.id}/${id}`, source_version: "v1", extracted_at: at, confidence: parsed.confidence }
     });
     ont.link(id, "IN", ch.id);
+    const before = new Set(ont.list("Message", (m) => m.channelId === ch.id && m.direction === "out").map((m) => m.id));
     const run = runtime.run("Chat Intake", { actingUser: user, scope: { messageId: id }, audience: ch.audience || null, trigger: { kind: "message", messageId: id } });
     const reply = (by, params) => actions.invoke({ action: "send_message", params: { channelId: ch.id, inReplyTo: id, ...params }, actor: { kind: "agent", id: by, clearance: user.clearance, onBehalfOf: user.id }, autonomy: "act" });
 
@@ -60,10 +61,11 @@ export function createChannels({ ont, tel, actions, runtime, copilot, audit }) {
 
     const outcome = (run.outputs.find((o) => o.kind === "outcome") || {}).outcome || (run.status === "failed" ? "failed" : "recorded");
     ont.upsert({ id, type: "Message", outcome, runId: run.id });
-    const replies = ont.list("Message", (m) => m.channelId === ch.id && m.direction === "out" && m.inReplyTo === id);
+    const fresh = ont.list("Message", (m) => m.channelId === ch.id && m.direction === "out" && !before.has(m.id));
+    const replies = fresh.filter((m) => m.inReplyTo === id), followUps = fresh.filter((m) => m.inReplyTo !== id);
     emit({ kind: "message", channelId: ch.id, id });
-    for (const r of replies) emit({ kind: "message", channelId: ch.id, id: r.id });
-    return { message: ont.get(id), outcome, replies, runId: run.id };
+    for (const r of fresh) emit({ kind: "message", channelId: ch.id, id: r.id });
+    return { message: ont.get(id), outcome, replies, followUps, runId: run.id };
   }
 
   return { inbound, on: (fn) => listeners.push(fn) };

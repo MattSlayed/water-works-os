@@ -97,3 +97,52 @@ export function bandCheck(part, value) {
   const by = inBand ? 0 : Math.round(Math.abs(v - (v > hi ? hi : lo)) * 1000) / 1000;
   return { inBand, side, by, finding: inBand ? `${measure} ${v} ${unit}, within the band ${lo}–${hi}` : `${measure} ${v} ${unit}, ${by} ${unit} ${side} the band ${lo}–${hi}` };
 }
+
+const median = (a) => {
+  if (!a.length) return null;
+  const s = [...a].sort((x, y) => x - y), m = Math.floor(s.length / 2);
+  return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
+};
+
+// How work goes per step, for one person or one procedure (design §6.1 Performance). Never ranks people.
+export function performanceFor(scope, executions, procedures, issues, notes) {
+  const byPerson = !!scope.personId;
+  const mine = (e) => (byPerson ? e.personId === scope.personId : e.procedureId === scope.procedureId);
+  const done = executions.filter((e) => e.state === "done" && mine(e));
+  const procIds = byPerson ? [...new Set(done.map((e) => e.procedureId))] : [scope.procedureId];
+  const steps = [];
+  for (const pid of procIds) {
+    const proc = procedures.find((p) => p.id === pid);
+    if (!proc) continue;
+    const runs = done.filter((e) => e.procedureId === pid);
+    for (const st of proc.steps) {
+      const med = median(runs.map((e) => (e.steps.find((x) => x.step === st.step) || {}).minutes).filter(Number.isFinite));
+      steps.push({
+        procedureId: pid, step: st.step, text: st.text, expected: st.expectedMinutes, median: med, ratio: med == null ? null : Math.round((med / st.expectedMinutes) * 100) / 100,
+        notes: notes.filter((n) => n.procedureId === pid && n.step === st.step && (!byPerson || n.authorId === scope.personId)).length,
+        issues: issues.filter((i) => i.procedureId === pid && i.step === st.step && (!byPerson || i.raisedBy === scope.personId)).length
+      });
+    }
+  }
+  // first time right: no reading out of band and no issue raised against the job's work order
+  const right = done.filter((e) => !e.steps.some((s) => s.inBand === false) && !issues.some((i) => i.workOrderId && i.workOrderId === e.workOrderId));
+  return {
+    executions: done.length, steps, firstTimeRight: done.length ? Math.round((right.length / done.length) * 100) / 100 : null,
+    issuesRaised: issues.filter((i) => (byPerson ? i.raisedBy === scope.personId : i.procedureId === scope.procedureId)).length,
+    notesContributed: notes.filter((n) => (byPerson ? n.authorId === scope.personId : n.procedureId === scope.procedureId)).length
+  };
+}
+
+// Where a project stands, from its claims (a claim is the contractor's word, not a confirmation).
+export function projectStatus(project, claims, issues, now) {
+  const lastReportAt = claims.filter((c) => c.projectId === project.id).map((c) => c.at).sort().pop() || null;
+  const days = lastReportAt ? Math.floor((Date.parse(now) - Date.parse(lastReportAt)) / 86400000) : null;
+  const ms = project.milestones || [];
+  const today = String(now).slice(0, 10);
+  return {
+    lastReportAt, daysSinceReport: days, quiet: days != null && days >= 3, end: project.end,
+    milestones: { total: ms.length, claimed: ms.filter((m) => m.claimedAt).length, confirmed: ms.filter((m) => m.confirmedAt).length },
+    overdue: ms.filter((m) => m.due < today && !m.confirmedAt).map((m) => m.id),
+    openIssues: issues.filter((i) => i.projectId === project.id && !["done", "dropped"].includes(i.state)).length
+  };
+}

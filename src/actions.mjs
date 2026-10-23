@@ -1,7 +1,7 @@
 // Typed ontology actions, shared by people and agents (PRD §6.3, AD-02), and the action service that applies the
 // autonomy dial (BR-04, BR-05, FR-AGT-004) and writes Decisions, Proposals and Feedback (FR-GOV-002).
 import { rank } from "./ontology.mjs";
-import { currentProcedure, stepLock } from "./functions.mjs";
+import { currentProcedure, stepLock, bandCheck } from "./functions.mjs";
 
 export const LEVELS = ["read", "draft", "notify", "propose", "act"];
 const lv = (l) => LEVELS.indexOf(l);
@@ -91,7 +91,8 @@ export const ACTIONS = {
   rank_alert: def("act", "act", ["alertId", "consequence"], (ont, p, ctx) => ({ objects: [p.alertId], revert: setProps(ont, p.alertId, { consequence: p.consequence, priority: p.priority || null, rankedAt: ctx.now() }) })),
   acknowledge_alert: def("act", "act", ["alertId"], (ont, p, ctx) => ({ objects: [p.alertId], revert: setProps(ont, p.alertId, { state: "acknowledged" }) })),
   notify: def("notify", "act", ["to", "message"], (ont, p, ctx) => {
-    const n = create(ont, { id: nextId("NTF"), type: "Notification", minClearance: ctx.actor.kind === "agent" ? ctx.actor.clearance : null, to: p.to, message: p.message, aboutId: p.aboutId || null, at: ctx.now() });
+    const to = [].concat(p.to).map(String);
+    const n = create(ont, { id: nextId("NTF"), type: "Notification", audience: to.length ? to : null, minClearance: !to.length && ctx.actor.kind === "agent" ? ctx.actor.clearance : null, to, message: p.message, aboutId: p.aboutId || null, at: ctx.now() });
     return { objects: [n.id] };
   }),
   record_reading: def("act", "act", ["targetId", "measure", "value"], (ont, p, ctx) => {
@@ -169,14 +170,15 @@ export const ACTIONS = {
     const value = p.value === undefined || p.value === null || p.value === "" ? null : Number(p.value);
     if (value !== null && !Number.isFinite(value)) throw new Error("the reading must be a number");
     if (need && value === null) throw new Error(`Step ${next.step} needs a reading: ${need.measure} in ${need.unit}`);
-    let readingId = null;
+    let readingId = null, inBand = null;
     if (need) {
       const part = ont.list("Part", (x) => x.assetId === ex.assetId && x.name === need.partName)[0];
+      if (part.band) inBand = bandCheck(part, value).inBand;
       readingId = create(ont, { id: nextId("RDG"), type: "Reading", targetId: part.id, assetId: ex.assetId, measure: need.measure, value, unit: need.unit, workOrderId: ex.workOrderId, executionId: ex.id, at: ctx.now(), source: "field" }, [["OF", part.id]]).id;
     }
     const prevAt = [...ex.steps].reverse().find((s) => s.at)?.at || ex.startedAt;
     const minutes = Math.round((Date.parse(ctx.now()) - Date.parse(prevAt)) / 60000);
-    const steps = ex.steps.map((s) => (s.step === next.step ? { ...s, state: "done", at: ctx.now(), minutes, value, readingId, note: p.note ? String(p.note) : null } : s));
+    const steps = ex.steps.map((s) => (s.step === next.step ? { ...s, state: "done", at: ctx.now(), minutes, value, inBand, readingId, note: p.note ? String(p.note) : null } : s));
     const last = steps.every((s) => s.state === "done");
     const revert = setProps(ont, ex.id, { steps, ...(last ? { state: "done", finishedAt: ctx.now() } : {}) });
     return { objects: [ex.id, ...(readingId ? [readingId] : [])], revert };

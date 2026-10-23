@@ -21,6 +21,9 @@ export const AGENT_SPECS = [
   v({ name: "Drop Pack", purpose: "Keep the Blue Drop evidence pack current and list gaps", trigger: { kind: "schedule", every: "daily" }, tools: ["draft_document"], autonomy: { draft_document: "act" } }),
   v({ name: "Ask", purpose: "Answer questions about the works from the ontology", trigger: { kind: "manual" }, tools: [], autonomy: {} }),
   v({ name: "Chat Intake", purpose: "Turn a message on the works number into job steps, readings, issues, field notes and progress claims, and reply once", trigger: { kind: "event", on: "Inbound message" }, tools: ["start_execution", "complete_step", "raise_issue", "add_knowledge_note", "record_progress_claim", "send_message", "raise_deviation"], autonomy: { start_execution: "act", complete_step: "act", raise_issue: "act", add_knowledge_note: "act", record_progress_claim: "act", send_message: "act", raise_deviation: "propose" } }),
+  v({ name: "Scribe", purpose: "Write the paperwork from what happened: job cards, issue close-outs and weekly project reports; submit only with consent", trigger: { kind: "event", on: "Job finished, issue done, or weekly for a project" }, tools: ["draft_document", "submit_document", "send_message", "notify"], autonomy: { draft_document: "act", submit_document: "act", send_message: "act", notify: "act" } }),
+  v({ name: "Project Watch", purpose: "Keep projects and contracts visible: flag quiet ones daily and post a weekly status to the project group", trigger: { kind: "schedule", every: "daily; Fridays from 15:00 for the weekly status" }, tools: ["send_message", "notify"], autonomy: { send_message: "act", notify: "act" } }),
+  v({ name: "Procedure Steward", purpose: "Point engineers at procedure steps that run long or collect notes and issues", trigger: { kind: "schedule", every: "weekly" }, tools: ["notify"], autonomy: { notify: "act" } }),
   v({ name: "Tag Matcher", purpose: "Match historian tags to positions and report unmatched keys", trigger: { kind: "event", on: "Connector import" }, tools: ["draft_document"], autonomy: { draft_document: "act" } })
 ];
 
@@ -61,6 +64,10 @@ const partIn = (ctx, text, assetId) => {
   const t = String(text || "").toLowerCase();
   return ctx.list("Part", (p) => p.assetId === assetId).find((p) => { const w = p.name.toLowerCase().split(/[\s-]+/).pop(); return w.length >= 4 && new RegExp(`\\b${w}`).test(t); }) || null;
 };
+
+// Monday-based week number, for once-a-week agents (1970-01-01 was a Thursday).
+const weekOf = (iso) => Math.floor((Date.parse(String(iso).slice(0, 10)) / 86400000 + 3) / 7);
+const statusText = (p, st) => `${p.title}: ${st.milestones.claimed} of ${st.milestones.total} milestones claimed, ${st.milestones.confirmed} confirmed. Contract end ${p.end}. ${st.openIssues} open issue(s). Last contractor report ${st.lastReportAt ? `${st.daysSinceReport} days ago (${st.lastReportAt.slice(0, 10)})` : "none"}.${st.overdue.length ? ` Overdue: ${st.overdue.map((id) => (p.milestones.find((m) => m.id === id) || {}).title || id).join(", ")}.` : ""}`;
 
 const LOGIC = {
   // Groups: only progress and issues are written, and the bot stays quiet. One-to-one: one reply per message.
@@ -147,7 +154,8 @@ const LOGIC = {
         const step = (part && (pr.steps.find((s) => s.partNames.includes(part.name)) || {}).step) || pr.steps[pr.steps.length - 1].step;
         ctx.act("add_knowledge_note", { text: f.text, executionId: e.id, procedureId: e.procedureId, assetId: e.assetId, partId: part ? part.id : null, step, messageId: m.id });
         say(`Noted on ${tagOf(e.assetId)}${part ? ` (${part.name})` : ""}, step ${step} of the procedure. The next person will see it.`);
-        return outcome("recorded");
+        outcome("recorded");
+        return [{ agent: "Scribe", scope: { executionId: e.id } }];
       }
       case "observation":
       case "question": {
@@ -387,6 +395,13 @@ const LOGIC = {
 
   Ask(ctx) {
     const q = String(ctx.mission || "");
+    const words = q.toLowerCase().match(/[a-z]{5,}/g) || [];
+    const projects = ctx.list("Project", (p) => q.includes(p.id) || words.some((w) => p.title.toLowerCase().includes(w)));
+    if (projects.length) {
+      const claims = ctx.list("ProgressClaim"), issues = ctx.list("Issue");
+      ctx.output({ kind: "answer", text: projects.map((p) => statusText(p, ctx.fn("projectStatus", p, claims, issues, ctx.now))).join("\n"), cites: [...projects.map((p) => p.id), ...claims.filter((c) => projects.some((p) => p.id === c.projectId)).map((c) => c.id)] });
+      return;
+    }
     const tokens = q.match(/[A-Z]{1,4}-?[A-Z0-9]{1,3}\b|F\d\d/g) || [];
     const objs = [...new Set(tokens)].flatMap((t) => ctx.search(t, 3)).filter((o) => o.type === "Asset" || o.type === "Position");
     const lines = objs.map((o) => {
@@ -399,6 +414,90 @@ const LOGIC = {
     ctx.output({ kind: "answer", text: lines.length ? lines.join("\n") : "I could not find an asset or tag in the question.", cites: objs.map((o) => o.id) });
   },
 
+  "Scribe"(ctx) {
+    const sc = ctx.scope;
+    if (sc.executionId) {
+      const e = ctx.get(sc.executionId);
+      if (!e) return ctx.think("The job is not visible.");
+      const pr = ctx.get(e.procedureId), wo = ctx.get(e.workOrderId), who = ctx.get(e.personId), a = ctx.get(e.assetId);
+      const issues = ctx.list("Issue", (i) => i.workOrderId === e.workOrderId);
+      const notes = ctx.list("KnowledgeNote", (n) => n.executionId === e.id);
+      const total = e.steps.reduce((s, x) => s + (x.minutes || 0), 0);
+      const body = [
+        `Job card: ${wo ? `${wo.id} ${wo.title}` : e.workOrderId} on ${a ? a.positionTag : e.assetId}.`,
+        `Done by ${who ? who.name : e.personId} (${e.personId}) to ${pr.title} v${e.procedureVersion}, ${e.startedAt} to ${e.finishedAt || "open"}, ${total} min.`,
+        ...e.steps.map((s) => {
+          const st = pr.steps.find((x) => x.step === s.step) || {};
+          const r = st.requires && st.requires.reading;
+          return `Step ${s.step}. ${st.text}: ${s.state}${s.minutes != null ? `, ${s.minutes} min` : ""}${s.value != null && r ? `, ${r.measure} ${s.value} ${r.unit}${s.inBand === false ? " (out of band)" : ""}` : ""}`;
+        }),
+        ...(issues.length ? [`Issues: ${issues.map((i) => `${i.id} ${i.title} (${i.state})`).join("; ")}`] : []),
+        ...(notes.length ? [`Field notes: ${notes.map((n) => `${n.id} ${n.text}`).join(" | ")}`] : [])
+      ].join("\n");
+      const d = ctx.act("draft_document", { kind: "job-card", title: `Job card ${e.workOrderId}`, body, aboutId: e.workOrderId, assetId: e.assetId, audience: e.audience, data: { onBehalfOf: e.personId, executionId: e.id } });
+      if (d.status !== "done") return;
+      const draftId = d.objects[0];
+      const ch = ctx.list("Channel", (c) => c.personId === e.personId)[0];
+      if (who && who.autoSubmit) {
+        const s = ctx.act("submit_document", { documentId: draftId, onBehalfOf: e.personId });
+        if (ch) ctx.act("send_message", { channelId: ch.id, text: s.status === "done" ? `Job card ${draftId} for ${e.workOrderId} submitted under your name (you turned on agent submission).` : `Job card ${draftId} is ready but was not submitted: ${s.reason}` });
+      } else if (ch) {
+        ctx.act("send_message", { channelId: ch.id, text: `Job card ${draftId} for ${e.workOrderId} is ready: ${e.steps.filter((s) => s.state === "done").length} steps, ${total} min${issues.length ? `, ${issues.length} issue(s)` : ""}. Submit as is? (yes/no)`, awaiting: { kind: "submit", draftId } });
+      }
+      return;
+    }
+    if (sc.issueId) {
+      const i = ctx.get(sc.issueId);
+      if (!i) return ctx.think("The issue is not visible.");
+      const body = [`Issue ${i.id}: ${i.title}.`, `Raised ${i.at} by ${i.raisedBy}; now ${i.state}.`, i.assetId ? `Asset: ${(ctx.get(i.assetId) || {}).positionTag || i.assetId}.` : null,
+        i.procedureId ? `Procedure ${i.procedureId}, step ${i.step}.` : null, (i.evidence || []).length ? `Evidence: ${i.evidence.join(", ")}.` : null].filter(Boolean).join("\n");
+      ctx.act("draft_document", { kind: "issue-closeout", title: `Close-out ${i.id}`, body, aboutId: i.id, assetId: i.assetId });
+      return;
+    }
+    if (sc.projectId) {
+      const p = ctx.get(sc.projectId);
+      if (!p) return ctx.think("The project is not visible.");
+      const claims = ctx.list("ProgressClaim", (c) => c.projectId === p.id);
+      const st = ctx.fn("projectStatus", p, claims, ctx.list("Issue"), ctx.now);
+      const body = [statusText(p, st), ...p.milestones.map((m) => `${m.id} ${m.title} (due ${m.due}): ${m.confirmedAt ? `confirmed ${m.confirmedAt.slice(0, 10)}` : m.claimedAt ? `claimed ${m.claimedAt.slice(0, 10)}, not confirmed` : "open"}`),
+        ...claims.slice(-5).map((c) => `Claim ${c.id} (${c.at.slice(0, 10)}): ${c.text}`)].join("\n");
+      const d = ctx.act("draft_document", { kind: "weekly-report", title: `Weekly report ${p.id} ${ctx.today}`, body, aboutId: p.id, assetId: p.assetId });
+      if (d.status !== "done") return;
+      if (p.autoSubmit) ctx.act("submit_document", { documentId: d.objects[0], onBehalfOf: p.id });
+      else ctx.act("notify", { to: [p.ownerId], message: `Weekly report ${d.objects[0]} for ${p.title} is ready for you to check and submit.`, aboutId: d.objects[0] });
+    }
+  },
+
+  "Project Watch"(ctx) {
+    const chain = [];
+    const managers = ctx.list("Person", (p) => p.clearance === "manager").map((p) => p.id);
+    const now = new Date(ctx.now);
+    for (const p of ctx.list("Project")) {
+      const st = ctx.fn("projectStatus", p, ctx.list("ProgressClaim"), ctx.list("Issue"), ctx.now);
+      if (st.quiet && !ctx.list("Notification", (n) => n.aboutId === p.id && /quiet/.test(n.message) && n.at.slice(0, 10) === ctx.today).length) {
+        ctx.act("notify", { to: [...new Set([p.ownerId, ...managers])], message: `${p.title} has been quiet for ${st.daysSinceReport} days: no contractor report since ${st.lastReportAt.slice(0, 10)}.`, aboutId: p.id });
+      }
+      const posted = ctx.list("Message", (m) => m.channelId === p.channelId && m.direction === "out" && m.sentBy === "Project Watch" && weekOf(m.at) === weekOf(ctx.now)).length;
+      if (p.channelId && now.getUTCDay() === 5 && now.getUTCHours() >= 15 && !posted) {
+        ctx.act("send_message", { channelId: p.channelId, text: `Weekly status. ${statusText(p, st)}` });
+        chain.push({ agent: "Scribe", scope: { projectId: p.id } });
+      }
+    }
+    return chain;
+  },
+
+  "Procedure Steward"(ctx) {
+    const engineers = ctx.list("Person", (p) => p.role === "reliability_engineer").map((p) => p.id);
+    const all = { executions: ctx.list("Execution"), procedures: ctx.list("Procedure"), issues: ctx.list("Issue"), notes: ctx.list("KnowledgeNote") };
+    for (const pr of all.procedures.filter((p) => p.state === "released")) {
+      const perf = ctx.fn("performanceFor", { procedureId: pr.id }, all.executions, all.procedures, all.issues, all.notes);
+      const long = (s) => s.ratio != null && s.ratio >= 1.5, talked = (s) => s.notes + s.issues >= 3;
+      const flagged = perf.steps.filter((s) => long(s) || talked(s));
+      if (!flagged.length || ctx.list("Notification", (n) => n.aboutId === pr.id && weekOf(n.at) === weekOf(ctx.now)).length) continue;
+      const lines = flagged.map((s) => `step ${s.step} (${s.text}): ${[long(s) ? `median ${s.median} min against ${s.expected} expected (${s.ratio}x)` : null, talked(s) ? `${s.notes} field note(s) and ${s.issues} issue(s)` : null].filter(Boolean).join("; ")}`);
+      ctx.act("notify", { to: engineers, message: `${pr.title} v${pr.version} may need revising: ${lines.join(" · ")}.`, aboutId: pr.id });
+    }
+  },
   "Tag Matcher"(ctx) {
     const unmatched = [];
     for (const s of ctx.list("Sensor", (x) => x.assetId)) {

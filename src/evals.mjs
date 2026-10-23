@@ -96,6 +96,21 @@ export const EVALS = {
     { name: "done without a job asks once and writes nothing else", prep: (s) => inbound(s, "CHN-P-030", "P-030", "done"), grader: "rule", check: (r, s) => outbound(s, "CHN-P-030").length === 1 && r.outputs.filter((o) => o.action && o.action !== "send_message").length === 0 },
     { name: "a contractor's progress is a claim, never a confirmation", prep: (s) => inbound(s, "CHN-GRP-CL3", "PAR-001", "Bearings out and slewing ring replaced"), grader: "rule", check: (r, s) => s.ont.list("ProgressClaim", (c) => c.milestoneId === "M3" && c.by === "PAR-001").length === 1 && !s.ont.get("PRJ-CL3").milestones.find((m) => m.id === "M3").confirmedAt && outbound(s, "CHN-GRP-CL3").length === 0 }
   ],
+  "Scribe": [
+    { name: "drafts a job card for a finished job", prep: () => ({ scope: { executionId: "EXE-H01" } }), grader: "exact", value: (r, s) => drafts(s, "job-card").length, expect: 1 },
+    { name: "never submits for someone who has not consented", prep: (s) => { s.ont.upsert({ id: "EXE-H01", type: "Execution", personId: "P-028" }); return { scope: { executionId: "EXE-H01" } }; }, grader: "exact", value: (r, s) => drafts(s, "job-card")[0].state, expect: "draft" },
+    { name: "an issue close-out stays a draft", prep: () => ({ scope: { issueId: "ISS-H06" } }), grader: "exact", value: (r, s) => drafts(s, "issue-closeout")[0].state, expect: "draft" }
+  ],
+  "Project Watch": [
+    { name: "tells the owner about a quiet project", grader: "rule", check: (r, s) => s.ont.list("Notification", (n) => n.aboutId === "PRJ-CL3" && n.to.includes("P-004")).length === 1 },
+    { name: "does not post to the group mid-week", grader: "exact", value: (r, s) => s.ont.list("Message", (m) => m.channelId === "CHN-GRP-CL3" && m.direction === "out").length, expect: 0 },
+    { name: "posts the weekly status on Friday afternoon", prep: (s) => s.tel.tick(57 * 60), grader: "exact", value: (r, s) => s.ont.list("Message", (m) => m.channelId === "CHN-GRP-CL3" && m.direction === "out").length, expect: 1 }
+  ],
+  "Procedure Steward": [
+    { name: "flags the pump procedure", grader: "rule", check: (r, s) => s.ont.list("Notification", (n) => n.aboutId === "PRC-CENTRIFUGAL_PUMP-v3").length === 1 },
+    { name: "names steps, never people", grader: "rule", check: (r, s) => s.ont.list("Notification").every((n) => !/P-0\d\d/.test(n.message)) },
+    { name: "is quiet when nothing needs revising", prep: (s) => { for (const t of ["Execution", "Issue", "KnowledgeNote"]) for (const o of s.ont.list(t)) s.ont.remove(o.id); }, grader: "exact", value: (r, s) => s.ont.list("Notification").length, expect: 0 }
+  ],
   "Tag Matcher": [
     { name: "no unmatched tags in the synthetic works", grader: "exact", value: (r, s) => drafts(s, "tag-match")[0].data.unmatched.length, expect: 0 },
     { name: "finds a broken tag", prep: (s) => s.ont.upsert({ id: "SEN-HLP-B-vib_de", type: "Sensor", historianTag: "99XXX.VIB" }), grader: "rule", check: (r, s) => drafts(s, "tag-match")[0].data.unmatched.includes("SEN-HLP-B-vib_de") },
