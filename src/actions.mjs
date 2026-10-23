@@ -28,7 +28,7 @@ const create = (ont, obj, linksTo = []) => {
 };
 
 // Parameters that name an object: the type it must be. Every named object must also be visible to the actor.
-const TARGET_TYPES = { procedureId: ["Procedure"], executionId: ["Execution"], issueId: ["Issue"], noteId: ["KnowledgeNote"], personId: ["Person"], projectId: ["Project"], workOrderId: ["WorkOrder"], assetId: ["Asset"], partIds: ["Part"], partId: ["Part"], alertId: ["Alert"], permitId: ["Permit"], assigneeId: ["Person"], holderId: ["Person"], itemId: ["Part", "Chemical"], targetId: null };
+const TARGET_TYPES = { channelId: ["Channel"], messageId: ["Message"], documentId: ["Draft"], onBehalfOf: ["Person", "Project"], procedureId: ["Procedure"], executionId: ["Execution"], issueId: ["Issue"], noteId: ["KnowledgeNote"], personId: ["Person"], projectId: ["Project"], workOrderId: ["WorkOrder"], assetId: ["Asset"], partIds: ["Part"], partId: ["Part"], alertId: ["Alert"], permitId: ["Permit"], assigneeId: ["Person"], holderId: ["Person"], itemId: ["Part", "Chemical"], targetId: null };
 const PATCHABLE = ["title", "priority", "state", "planned", "hours", "closed"];
 const ISSUE_STATES = ["open", "triaged", "in_work", "done", "dropped"];
 // The person an action is done by or for: an agent acts for the person who launched it.
@@ -210,6 +210,40 @@ export const ACTIONS = {
     const undo = setProps(ont, n.id, { verified: true, verifiedBy: ctx.actor.id, promotedTo: f.id });
     return { objects: [n.id, f.id], revert: () => { undo(); setProps(ont, f.id, { verified: false }); } };
   }, "engineer"),
+  // Projects: what a chat says is a claim until a supervisor confirms the milestone.
+  record_progress_claim: def("act", "act", ["projectId", "messageId", "text"], (ont, p, ctx) => {
+    const prj = ont.get(p.projectId);
+    if (p.milestoneId != null && !prj.milestones.some((m) => m.id === p.milestoneId)) throw new Error(`no milestone ${p.milestoneId} on ${prj.id}`);
+    const c = create(ont, { id: nextId("PCL"), type: "ProgressClaim", projectId: prj.id, milestoneId: p.milestoneId || null, messageId: p.messageId, by: actorId(ctx), at: ctx.now(), text: String(p.text), evidence: Array.isArray(p.evidence) ? p.evidence.map(String) : [], confirmed: false }, [["CLAIMS", prj.id], ["FROM", p.messageId]]);
+    const fresh = p.milestoneId && !prj.milestones.find((m) => m.id === p.milestoneId).claimedAt;
+    const undo = fresh ? setProps(ont, prj.id, { milestones: prj.milestones.map((m) => (m.id === p.milestoneId ? { ...m, claimedAt: ctx.now() } : m)) }) : null;
+    return { objects: [c.id, prj.id], revert: () => { setProps(ont, c.id, { state: "withdrawn" }); if (undo) undo(); } };
+  }),
+  confirm_milestone: def("act", "human", ["projectId", "milestoneId"], (ont, p, ctx) => {
+    const prj = ont.get(p.projectId);
+    const m = prj.milestones.find((x) => x.id === p.milestoneId);
+    if (!m) throw new Error(`no milestone ${p.milestoneId} on ${prj.id}`);
+    if (m.confirmedAt) throw new Error(`${m.id} is already confirmed`);
+    const undo = [setProps(ont, prj.id, { milestones: prj.milestones.map((x) => (x.id === m.id ? { ...x, confirmedAt: ctx.now(), confirmedBy: ctx.actor.id } : x)) })];
+    for (const c of ont.list("ProgressClaim", (x) => x.projectId === prj.id && x.milestoneId === m.id && !x.confirmed)) undo.push(setProps(ont, c.id, { confirmed: true }));
+    return { objects: [prj.id], revert: () => undo.forEach((f) => f()) };
+  }, "supervisor"),
+  // The works number's outbound side. One reply per inbound message; only Project Watch posts to a group.
+  send_message: def("notify", "act", ["channelId", "text"], (ont, p, ctx) => {
+    const ch = ont.get(p.channelId);
+    if (ch.groupName && ctx.actor.kind === "agent" && ctx.actor.id !== "Project Watch") throw new Error("only Project Watch posts to a group");
+    if (p.inReplyTo && ont.list("Message", (m) => m.channelId === ch.id && m.direction === "out" && m.inReplyTo === p.inReplyTo).length) throw new Error(`one reply per message: ${p.inReplyTo} already has one`);
+    const m = create(ont, { id: nextId("MSG"), type: "Message", channelId: ch.id, direction: "out", from: "WORKS", sentBy: ctx.actor.id, at: ctx.now(), text: String(p.text), media: [], awaiting: p.awaiting || null, inReplyTo: p.inReplyTo || null, audience: ch.audience || null }, [["IN", ch.id]]);
+    return { objects: [m.id] };
+  }),
+  // Paperwork: an agent submits on someone's behalf only when that person (or the project) has consented.
+  submit_document: def("act", "act", ["documentId", "onBehalfOf"], (ont, p, ctx) => {
+    const d = ont.get(p.documentId), who = ont.get(p.onBehalfOf);
+    if (d.state !== "draft") throw new Error(`${d.id} is ${d.state}`);
+    if (ctx.actor.kind === "agent" && !who.autoSubmit) throw new Error(`no consent to submit on their behalf: ${who.id} has not turned on agent submission`);
+    if (ctx.actor.kind !== "agent" && actorId(ctx) !== who.id && who.ownerId !== actorId(ctx) && !atLeast(ctx, "supervisor")) throw new Error("a person submits their own paperwork");
+    return { objects: [d.id], revert: setProps(ont, d.id, { state: "submitted", submittedBy: ctx.actor.id, submittedFor: who.id, submittedAt: ctx.now() }) };
+  }),
   release_asset_model: def("act", "human", ["assetId", "revision"], (ont, p, ctx) => ({ objects: [p.assetId], revert: setProps(ont, p.assetId, { modelRevision: p.revision }) }), "engineer")
 };
 

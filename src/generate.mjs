@@ -1,5 +1,6 @@
 // Synthetic Riverbend Water Treatment Works (BRD Appendix B). Every name, tag and number is invented.
 // generateWorks(seed) -> { objects, links, clock } — deterministic for a given seed.
+import { createHash } from "node:crypto";
 
 export const CLOCK = "2026-10-15T00:00:00Z";
 
@@ -424,6 +425,97 @@ export function generateWorks(seed = 7) {
     ["REQ-BD-INC", "Blue Drop", "Every SANS 241 non-compliance has a documented response"],
     ["REQ-BD-AM", "Blue Drop", "Planned maintenance completed on critical assets"]
   ]) add({ id, type: "Requirement", framework, criterion }, "CONFIG");
+
+
+  // ---- Workforce intelligence (Phase 2): chat channels, the CL-3 contract, past jobs, issues and field notes ----
+  const byId = (id) => objects.find((o) => o.id === id);
+  const hashNo = (s) => createHash("sha256").update(s).digest("hex");
+  people.forEach((p, i) => {
+    add({ id: `CHN-${p.id}`, type: "Channel", kind: "whatsapp", address: `+27 60 000 ${1000 + i}`, personId: p.id, members: [p.id], audience: [p.id], noticePosted: true }, "CHANNEL-STUB");
+    link(`CHN-${p.id}`, "CHANNEL_OF", p.id);
+  });
+  const cl3 = assets.find((a) => a.positionTag === "CL-3");
+  [["PAR-001", "Contractor site agent"], ["PAR-002", "Contractor fitter"], ["PAR-003", "Contractor fitter"]].forEach(([id, label], i) =>
+    add({ id, type: "Participant", label, employer: "Synthetic Contractor (Pty) Ltd", numberHash: hashNo(`+27 82 555 010${i}`), channelIds: ["CHN-GRP-CL3"] }, "CHANNEL-STUB"));
+  const grp = ["PAR-001", "PAR-002", "PAR-003", "P-004", sups[1].id];
+  add({ id: "CHN-GRP-CL3", type: "Channel", kind: "whatsapp", address: "group:cl3-refurb", groupName: "CL-3 refurb", projectId: "PRJ-CL3", members: grp, audience: grp, noticePosted: true }, "CHANNEL-STUB");
+  const ms = (id, title, due, keywords, extra = {}) => ({ id, title, due, keywords, claimedAt: null, confirmedAt: null, confirmedBy: null, ...extra });
+  add({
+    id: "PRJ-CL3", type: "Project", title: "Clarifier 3 scraper drive refurbishment", kind: "contract", contractorEmployer: "Synthetic Contractor (Pty) Ltd",
+    assetIds: [cl3.id], assetId: cl3.id, start: "2026-09-28", end: "2026-11-06", ownerId: "P-004", channelId: "CHN-GRP-CL3", autoSubmit: false,
+    milestones: [
+      ms("M1", "Isolation and access scaffold", "2026-10-02", ["isolation", "scaffold"], { claimedAt: "2026-10-01T15:10:00Z", confirmedAt: "2026-10-02T08:05:00Z", confirmedBy: sups[1].id }),
+      ms("M2", "Scraper arms and drive removed", "2026-10-09", ["scraper"], { claimedAt: "2026-10-08T16:20:00Z" }),
+      ms("M3", "Bearings and slewing ring replaced", "2026-10-16", ["bearing", "slewing"]),
+      ms("M4", "Scraper arm weld repairs", "2026-10-23", ["weld"]),
+      ms("M5", "Gearbox refurbished and refitted", "2026-10-30", ["gearbox"]),
+      ms("M6", "Commissioning and handover", "2026-11-06", ["commission", "handover"])
+    ]
+  }, "SYNTH-ERP");
+  link("PRJ-CL3", "TARGETS", cl3.id);
+  link("CHN-GRP-CL3", "CHANNEL_OF", "PRJ-CL3");
+  const msg = (id, channelId, from, at, text, extra = {}) => add({ id, type: "Message", channelId, direction: from === "WORKS" ? "out" : "in", from, at, text, media: [], audience: byId(channelId).audience, ...extra }, "CHANNEL-STUB");
+  const progress = { parsed: { kind: "progress", confidence: 0.7 }, outcome: "recorded" };
+  msg("MSG-H01", "CHN-GRP-CL3", "PAR-001", "2026-10-01T15:10:00Z", "Scaffold up and isolation confirmed with your supervisor, ready to start.", { ...progress, media: ["photo:cl3-scaffold.jpg"] });
+  msg("MSG-H02", "CHN-GRP-CL3", "PAR-002", "2026-10-06T07:30:00Z", "Crew on site today, unbolting the drive cover.", progress);
+  msg("MSG-H03", "CHN-GRP-CL3", "PAR-001", "2026-10-08T16:20:00Z", "Scraper arms off and drive removed, pics attached.", { ...progress, media: ["photo:cl3-arms-1.jpg", "photo:cl3-arms-2.jpg"] });
+  msg("MSG-H04", "CHN-GRP-CL3", "P-004", "2026-10-09T09:12:00Z", "When do the new bearings arrive?", { parsed: { kind: "question", confidence: 0.7 }, outcome: "recorded" });
+  msg("MSG-H05", "CHN-GRP-CL3", "PAR-001", "2026-10-10T16:40:00Z", "Parts delivered today, fitting next week.", progress);
+  msg("MSG-H11", `CHN-${millwrights[0].id}`, millwrights[0].id, "2026-10-13T15:30:00Z", "HLP-B DE bearing sounds worn, housing warm to touch.", { parsed: { kind: "observation", confidence: 0.7 }, outcome: "recorded" });
+  msg("MSG-H12", `CHN-${millwrights[0].id}`, "WORKS", "2026-10-13T15:31:00Z", "Logged against HLP-B. Asset Watch has it on alert and the 6-monthly survey is assigned to you.", { inReplyTo: "MSG-H11" });
+  [["PCL-H01", "M1", "MSG-H01"], ["PCL-H02", null, "MSG-H02"], ["PCL-H03", "M2", "MSG-H03"], ["PCL-H05", null, "MSG-H05"]].forEach(([id, milestoneId, messageId]) => {
+    const m = byId(messageId);
+    add({ id, type: "ProgressClaim", projectId: "PRJ-CL3", milestoneId, messageId, by: m.from, at: m.at, text: m.text, evidence: m.media, confirmed: milestoneId === "M1" }, "CHANNEL-STUB");
+    link(id, "CLAIMS", "PRJ-CL3");
+  });
+
+  // Past jobs, as executed against the released procedures: performance has something to read.
+  const engineers = people.filter((p) => p.clearance === "engineer").map((p) => p.id);
+  const closedWos = objects.filter((o) => o.type === "WorkOrder" && o.state === "closed" && o.assigneeId && byId(o.assetId) && byId(o.assetId).template).sort((a, b) => a.id.localeCompare(b.id));
+  const pumpWos = closedWos.filter((w) => byId(w.assetId).template === "centrifugal_pump").slice(0, 6);
+  const otherWos = closedWos.filter((w) => byId(w.assetId).template !== "centrifugal_pump").slice(0, 12 - pumpWos.length);
+  [...pumpWos, ...otherWos].forEach((w, i) => {
+    const proc = byId(`PRC-${byId(w.assetId).template.toUpperCase()}-v3`);
+    const person = byId(w.assigneeId);
+    let t = Date.parse(`${w.closed}T07:00:00Z`);
+    const startedAt = new Date(t).toISOString();
+    const steps = proc.steps.map((s) => {
+      // the heavy-lift withdrawal step runs well over its estimate for everyone: Procedure Steward's case
+      const minutes = Math.max(1, Math.round(s.expectedMinutes * (s.hazard === "Heavy lift" ? 1.6 + r() * 0.3 : 0.8 + r() * 0.4)));
+      t += minutes * 60000;
+      const b = s.requires.reading && T[proc.template].bands[s.requires.reading.partName];
+      return { step: s.step, state: "done", at: new Date(t).toISOString(), minutes, value: b ? +(b[1] + (b[2] - b[1]) * (0.2 + r() * 0.6)).toFixed(3) : null, readingId: null, note: null };
+    });
+    add({ id: `EXE-H${String(i + 1).padStart(2, "0")}`, type: "Execution", workOrderId: w.id, assetId: w.assetId, personId: person.id, procedureId: proc.id, procedureVersion: 3, startedAt, finishedAt: new Date(t).toISOString(), state: "done",
+      audience: [...new Set([person.id, person.supervisorId, ...engineers].filter(Boolean))], steps }, "APP");
+    link(`EXE-H${String(i + 1).padStart(2, "0")}`, "FOR", w.id);
+  });
+
+  // Issues and field notes
+  const partOf = (tag, name) => objects.find((o) => o.type === "Part" && o.id.startsWith(`PRT-${tag}-`) && o.name === name);
+  const astOf = (tag) => assets.find((a) => a.positionTag === tag);
+  const fitter = people.find((p) => p.role === "fitter");
+  const issue = (id, o) => { add({ id, type: "Issue", partId: null, workOrderId: null, projectId: null, procedureId: null, step: null, evidence: [], assigneeId: null, ...o }, "APP"); if (o.assetId) link(id, "ON", o.assetId); };
+  issue("ISS-H01", { title: "Shaft sleeve scored, no spare sleeve in stores", state: "open", raisedBy: millwrights[2].id, assetId: astOf("HLP-C").id, partId: partOf("HLP-C", "Shaft sleeve").id, procedureId: "PRC-CENTRIFUGAL_PUMP-v3", step: 8, at: "2026-09-22T10:00:00Z" });
+  issue("ISS-H02", { title: "SOP step 6 does not say to rig the lifting beam first", state: "triaged", raisedBy: millwrights[1].id, assetId: astOf("RWP-B").id, procedureId: "PRC-CENTRIFUGAL_PUMP-v3", step: 6, at: "2026-08-14T09:00:00Z" });
+  issue("ISS-H03", { title: "Gearbox oil seal leaking on removal", state: "in_work", raisedBy: "PAR-002", assetId: cl3.id, projectId: "PRJ-CL3", assigneeId: "P-004", at: "2026-10-08T17:00:00Z" });
+  issue("ISS-H04", { title: "DP-2 suction line has no air-release valve", state: "open", raisedBy: fitter.id, assetId: astOf("DP-2").id, procedureId: "PRC-DOSING_PUMP-v3", step: 2, at: "2026-10-12T11:00:00Z" });
+  issue("ISS-H05", { title: "Belt guard bolts seized on BLW-A", state: "done", raisedBy: millwrights[3].id, assetId: astOf("BLW-A").id, procedureId: "PRC-BLOWER-v3", step: 3, at: "2026-07-03T08:30:00Z" });
+  issue("ISS-H06", { title: "Wrong gasket size on the HLP-A drawing", state: "done", raisedBy: millwrights[0].id, assetId: astOf("HLP-A").id, at: "2026-06-18T13:00:00Z" });
+  const note = (id, tag, partName, procedureId, step, authorId, at, text) => {
+    const part = partOf(tag, partName);
+    add({ id, type: "KnowledgeNote", text, authorId, partId: part ? part.id : null, assetId: astOf(tag).id, procedureId, step, executionId: null, messageId: null, verified: false, at }, "APP");
+    link(id, "ABOUT", part ? part.id : astOf(tag).id);
+  };
+  note("KN-H01", "HLP-A", "Shaft sleeve", "PRC-CENTRIFUGAL_PUMP-v3", 8, millwrights[0].id, "2025-08-06T14:00:00Z", "Scoring sits under the seal face; wipe and check there before measuring the OD.");
+  note("KN-H02", "RWP-B", "Shaft sleeve", "PRC-CENTRIFUGAL_PUMP-v3", 8, millwrights[2].id, "2026-04-09T11:20:00Z", "Measure the sleeve OD at three points; ours was oval, not undersize.");
+  note("KN-H03", "HLP-C", "Shaft sleeve", "PRC-CENTRIFUGAL_PUMP-v3", 8, millwrights[3].id, "2026-09-22T10:05:00Z", "No spare sleeve in stores. Check stock before you strip the pump.");
+  note("KN-H04", "RWP-A", "Bearing housing", "PRC-CENTRIFUGAL_PUMP-v3", 6, millwrights[1].id, "2026-05-21T09:40:00Z", "Rig the lifting beam over the motor end first or the back pull-out unit fouls the guard rail.");
+  note("KN-H05", "BLW-A", "Belt drive", "PRC-BLOWER-v3", 3, millwrights[3].id, "2026-07-03T08:40:00Z", "Guard bolts seize; soak with penetrating oil the shift before.");
+  note("KN-H06", "BLW-B", "Belt drive", "PRC-BLOWER-v3", 3, millwrights[2].id, "2026-08-27T13:10:00Z", "Belt deflection is easier to read with the tension gauge than by thumb.");
+  note("KN-H07", "DP-1", "Suction check valve", "PRC-DOSING_PUMP-v3", 2, fitter.id, "2026-05-19T15:00:00Z", "Loss of prime was the suction ball, not the diaphragm. Check the ball first.");
+  note("KN-H08", "DP-2", "Suction check valve", "PRC-DOSING_PUMP-v3", 2, fitter.id, "2026-10-12T11:05:00Z", "Air collects at the high point of the suction line; bleed it there.");
+  note("KN-H09", "CL-1", "Worm gearbox", "PRC-CLARIFIER_DRIVE-v3", 3, millwrights[0].id, "2026-03-30T10:00:00Z", "Gearbox oil looked milky: water ingress through the breather. Fit the desiccant breather.");
 
   return { objects, links, clock: CLOCK };
 }
