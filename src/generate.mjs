@@ -1,6 +1,7 @@
 // Synthetic Riverbend Water Treatment Works (BRD Appendix B). Every name, tag and number is invented.
 // generateWorks(seed) -> { objects, links, clock } — deterministic for a given seed.
 import { createHash } from "node:crypto";
+import { stepRequires } from "./functions.mjs";
 
 export const CLOCK = "2026-10-15T00:00:00Z";
 
@@ -261,12 +262,10 @@ export function generateWorks(seed = 7) {
   for (const [tpl, t] of Object.entries(T)) {
     const id = `PRC-${tpl.toUpperCase()}-v3`;
     const steps = t.steps.map(([text, intrusive, partNames, hazard], i) => {
-      const gated = intrusive || /permit to work/i.test(text);
-      const banded = /measure/i.test(text) && partNames.find((n) => t.bands[n]);
-      const b = banded && t.bands[banded];
+      const bandOf = (n) => t.bands[n] && { measure: t.bands[n][0], unit: t.bands[n][3] };
       return {
         id: `${id}-S${String(i + 1).padStart(2, "0")}`, step: i + 1, text, intrusive, partNames, hazard, documentId: docsByTemplate[tpl],
-        requires: { permit: gated, isolation: gated, reading: b ? { partName: banded, measure: b[0], unit: b[3] } : null },
+        requires: stepRequires(text, intrusive, partNames, bandOf),
         expectedMinutes: hazard === "Heavy lift" ? 45 : intrusive ? 25 : 10
       };
     });
@@ -459,7 +458,7 @@ export function generateWorks(seed = 7) {
   msg("MSG-H01", "CHN-GRP-CL3", "PAR-001", "2026-10-01T15:10:00Z", "Scaffold up and isolation confirmed with your supervisor, ready to start.", { ...progress, media: ["photo:cl3-scaffold.jpg"] });
   msg("MSG-H02", "CHN-GRP-CL3", "PAR-002", "2026-10-06T07:30:00Z", "Crew on site today, unbolting the drive cover.", progress);
   msg("MSG-H03", "CHN-GRP-CL3", "PAR-001", "2026-10-08T16:20:00Z", "Scraper arms off and drive removed, pics attached.", { ...progress, media: ["photo:cl3-arms-1.jpg", "photo:cl3-arms-2.jpg"] });
-  msg("MSG-H04", "CHN-GRP-CL3", "P-004", "2026-10-09T09:12:00Z", "When do the new bearings arrive?", { parsed: { kind: "question", confidence: 0.7 }, outcome: "recorded" });
+  msg("MSG-H04", "CHN-GRP-CL3", "PAR-002", "2026-10-08T17:00:00Z", "Issue: gearbox oil seal leaking on removal", { parsed: { kind: "issue", confidence: 0.9 }, outcome: "recorded" });
   msg("MSG-H05", "CHN-GRP-CL3", "PAR-001", "2026-10-10T16:40:00Z", "Parts delivered today, fitting next week.", progress);
   msg("MSG-H11", `CHN-${millwrights[0].id}`, millwrights[0].id, "2026-10-13T15:30:00Z", "HLP-B DE bearing sounds worn, housing warm to touch.", { parsed: { kind: "observation", confidence: 0.7 }, outcome: "recorded" });
   msg("MSG-H12", `CHN-${millwrights[0].id}`, "WORKS", "2026-10-13T15:31:00Z", "Logged against HLP-B. Asset Watch has it on alert and the 6-monthly survey is assigned to you.", { inReplyTo: "MSG-H11" });

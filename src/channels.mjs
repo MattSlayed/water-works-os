@@ -23,7 +23,7 @@ export function createChannels({ ont, tel, actions, runtime, copilot, audit }) {
     const execution = sender.type === "Person" ? ont.list("Execution", (e) => e.personId === sender.id && e.state === "running")[0] || null : null;
     const parsed = parseMessage({ text }, { group: !!ch.groupName, awaiting, execution });
     const id = `MSG-I${String(++seq).padStart(5, "0")}`;
-    if (parsed.kind === "offtopic") {
+    if (parsed.kind === "offtopic" || (ch.groupName && !["progress", "issue"].includes(parsed.kind))) {
       audit.append({ actor: senderId, actorKind: "channel", action: "message", outcome: "dropped", ref: id });
       return { message: null, outcome: "dropped", replies: [], runId: null };
     }

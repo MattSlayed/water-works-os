@@ -113,7 +113,8 @@ test("a contractor's post becomes a claim with photo evidence; a contractor's 'd
   assert.equal(t.sys.ont.get("PRJ-CL3").milestones.find((m) => m.id === "M3").confirmedAt, null);
   const decisions = t.sys.ont.list("Decision").length;
   const d = await t.say("done with the welds, HLP-B is running fine", { ch: "CHN-GRP-CL3", from: "PAR-002" });
-  assert.equal(d.outcome, "noted");
+  assert.equal(d.outcome, "dropped"); // a group keeps only claims and issues (review #25)
+  assert.equal(d.message, null);
   assert.equal(t.sys.ont.list("Decision").length, decisions);
   const i = await t.say("issue: gearbox breather missing", { ch: "CHN-GRP-CL3", from: "PAR-003" });
   assert.equal(i.outcome, "recorded");

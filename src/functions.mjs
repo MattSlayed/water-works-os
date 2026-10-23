@@ -135,7 +135,7 @@ export function performanceFor(scope, executions, procedures, issues, notes) {
 
 // Where a project stands, from its claims (a claim is the contractor's word, not a confirmation).
 export function projectStatus(project, claims, issues, now) {
-  const lastReportAt = claims.filter((c) => c.projectId === project.id).map((c) => c.at).sort().pop() || null;
+  const lastReportAt = claims.filter((c) => c.projectId === project.id && c.state !== "withdrawn").map((c) => c.at).sort().pop() || null;
   const days = lastReportAt ? Math.floor((Date.parse(now) - Date.parse(lastReportAt)) / 86400000) : null;
   const ms = project.milestones || [];
   const today = String(now).slice(0, 10);
@@ -145,4 +145,17 @@ export function projectStatus(project, claims, issues, now) {
     overdue: ms.filter((m) => m.due < today && !m.confirmedAt).map((m) => m.id),
     openIssues: issues.filter((i) => i.projectId === project.id && !["done", "dropped"].includes(i.state)).length
   };
+}
+
+// The parts a step's text names: by full name, or by the last word of the name ("sleeve" -> Shaft sleeve).
+export function partNamesIn(text, names) {
+  const t = String(text).toLowerCase();
+  return names.filter((n) => { const w = n.toLowerCase().split(/[\s-]+/).pop(); return t.includes(n.toLowerCase()) || (w.length >= 4 && new RegExp(`\\b${w}`).test(t)); });
+}
+// What a step needs before it can be signed off, from its text: a permit and isolation, and a reading for a measured part.
+export function stepRequires(text, intrusive, partNames, bandOf) {
+  const gated = !!intrusive || /permit to work/i.test(text);
+  const banded = /measure/i.test(text) && partNames.find((n) => bandOf(n));
+  const b = banded && bandOf(banded);
+  return { permit: gated, isolation: gated, reading: b ? { partName: banded, measure: b.measure, unit: b.unit } : null };
 }

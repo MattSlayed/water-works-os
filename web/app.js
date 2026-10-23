@@ -328,7 +328,7 @@ const views = {
       const r = st.requires.reading;
       job = `<section class="panel" aria-label="Running job"><div class="row"><h2>Job · ${esc(ex.workOrderId)} · ${esc(pr.title)} v${esc(ex.procedureVersion)}</h2>${pill(`${ex.steps.filter((s) => s.state === "done").length}/${ex.steps.length} done`, "running")}</div>
         <p><b>Step ${esc(st.step)}.</b> ${esc(st.text)}${st.requires.permit ? ` ${pill("permit and isolation", "medium")}` : ""}</p>
-        <form id="step" class="btns">${r ? `<label class="field" style="margin:0">${esc(r.measure)} (${esc(r.unit)})<input id="stepval" inputmode="decimal" required></label>` : ""}<button class="btn primary">Done</button></form>
+        <form id="step" class="btns" data-step="${esc(st.step)}">${r ? `<label class="field" style="margin:0">${esc(r.measure)} (${esc(r.unit)})<input id="stepval" inputmode="decimal" required></label>` : ""}<button class="btn primary">Done</button></form>
         <ol class="steps">${ex.steps.map((s) => `<li class="${esc(s.state)}">${esc((pr.steps.find((x) => x.step === s.step) || {}).text)}${s.minutes != null ? ` <span class="meta">${esc(s.minutes)} min${s.value != null ? ` · ${esc(s.value)}` : ""}</span>` : ""}</li>`).join("")}</ol></section>`;
     }
     const who = (m) => (m.direction === "out" ? m.sentBy || "Works number" : m.fromName);
@@ -349,8 +349,17 @@ const views = {
       await views.chat(ch.id);
       $("#say")?.focus();
     };
-    $("#compose")?.addEventListener("submit", async (e) => { e.preventDefault(); const t = $("#say").value.trim(); if (!t) return; try { await send(t); } catch (err) { toast(err.message); } });
-    $("#step")?.addEventListener("submit", async (e) => { e.preventDefault(); const v = $("#stepval")?.value.trim(); try { await send(v ? `done ${v}` : "done"); } catch (err) { toast(err.message); } });
+    const busy = (form, fn) => async (e) => {
+      e.preventDefault();
+      const btn = form.querySelector("button");
+      if (btn.disabled) return;
+      btn.disabled = true;
+      try { await fn(); } catch (err) { toast(err.message); btn.disabled = false; }
+    };
+    const compose = $("#compose"), stepForm = $("#step");
+    compose?.addEventListener("submit", busy(compose, async () => { const t = $("#say").value.trim(); if (t) await send(t); else compose.querySelector("button").disabled = false; }));
+    // the card names its step, so a second tap is refused by the server instead of completing the next step
+    stepForm?.addEventListener("submit", busy(stepForm, async () => { const v = $("#stepval")?.value.trim(); await send(`step ${stepForm.dataset.step} done${v ? ` ${v}` : ""}`); }));
     const th = $("#thread");
     th.scrollTop = th.scrollHeight;
   },
@@ -509,7 +518,9 @@ function connect() {
     // refresh live views only; forms on other views are left alone
     pending = setTimeout(async () => {
       const [, name = "console", arg] = location.hash.match(/^#\/([^/]+)\/?(.*)$/) || [];
-      if (["console", "map", "chat", "issues"].includes(name) && !document.activeElement.closest?.("form")) views[name](arg ? decodeURIComponent(arg) : undefined);
+      const live = e.kind === "clock" ? ["console", "map"] : ["console", "map", "chat", "issues"];
+      const typing = document.activeElement.closest?.("form") || $("#say")?.value || $("#stepval")?.value;
+      if (live.includes(name) && !typing) views[name](arg ? decodeURIComponent(arg) : undefined);
       try { const c = await api("/api/proposals?state=open"); $("#prop-count").textContent = c.length || ""; } catch {}
     }, 1500);
   };

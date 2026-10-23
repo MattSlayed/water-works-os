@@ -6,21 +6,23 @@ const UNIT = String.raw`(mm\/s|mm|°C|kPa|bar|A|h|%)`;
 const WORK = /\b(off|out|removed|fitted|installed|welded|painted|tested|complete|completed|done|delivered|started|starting|tomorrow|today)\b/i;
 const MILESTONE = /scraper|bearing|weld|gearbox|paint|commission/i;
 
+const COMMAND = /^(start\b|(step\s*\d+\s*)?done\b|issue[:\s])/i;
+const NUM = String.raw`\d+(?:[.,]\d+)?`;
+
 const hit = (kind, confidence, fields = {}) => ({ kind, confidence, fields });
-const reading = (num, unit) => ({ value: num == null ? null : Number(num), unit: unit || null });
+const reading = (num, unit) => ({ value: num == null ? null : Number(String(num).replace(",", ".")), unit: unit || null });
 
 export function parseMessage({ text } = {}, { group = false, awaiting = null, execution = null } = {}) {
   const t = String(text ?? "").trim();
   if (!t) return hit("offtopic", 0.3);
-  if (awaiting) {
-    if (/^(yes|y|ok|okay|sure|submit)\b/i.test(t)) return hit("yes", 0.9);
-    if (/^(no|n|nope)\b/i.test(t)) return hit("no", 0.9);
-    if (awaiting.kind === "note") return hit("note", 0.9, { text: t });
-  }
+  // only a bare yes is consent; a reply to the note question is the note unless it is a command or a plain no
+  if (awaiting && /^(yes|y|ok|okay|sure|submit)[.!]?$/i.test(t)) return hit("yes", 0.9);
+  if (awaiting && awaiting.kind === "note" && !COMMAND.test(t)) return /^(no|nope|nothing|n\/a)\b[^?]{0,40}$/i.test(t) ? hit("no", 0.9) : hit("note", 0.9, { text: t });
+  if (awaiting && /^(no|n|nope)[.!]?$/i.test(t)) return hit("no", 0.9);
   if (/^start\b/i.test(t)) return hit("start", 0.9, { workOrderId: (t.match(/\bWO-[\w-]+/i) || [null])[0] });
-  const done = t.match(new RegExp(String.raw`^(?:step\s*(\d+)\s*)?done\b\s*(?:(-?\d+(?:\.\d+)?)\s*${UNIT}?)?`, "i"));
+  const done = t.match(new RegExp(String.raw`^(?:step\s*(\d+)\s*)?done\b\s*(?:(-?${NUM})\s*${UNIT}?)?`, "i"));
   if (done) return hit("done", 0.9, { step: done[1] ? Number(done[1]) : null, ...reading(done[2], done[3]) });
-  const bare = t.match(new RegExp(String.raw`^(\d+(?:\.\d+)?)\s*${UNIT}?$`, "i"));
+  const bare = t.match(new RegExp(String.raw`^(${NUM})\s*${UNIT}?$`, "i"));
   if (bare) return execution ? hit("done", 0.9, { step: null, ...reading(bare[1], bare[2]) }) : hit("ask", 0.9, { question: "Which job is that reading for? Reply *start* first." });
   const issue = t.match(/^issue[:\s]+(.+)$/i);
   if (issue) return hit("issue", 0.9, { title: issue[1].trim() });

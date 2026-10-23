@@ -69,6 +69,16 @@ const partIn = (ctx, text, assetId) => {
 const weekOf = (iso) => Math.floor((Date.parse(String(iso).slice(0, 10)) / 86400000 + 3) / 7);
 const statusText = (p, st) => `${p.title}: ${st.milestones.claimed} of ${st.milestones.total} milestones claimed, ${st.milestones.confirmed} confirmed. Contract end ${p.end}. ${st.openIssues} open issue(s). Last contractor report ${st.lastReportAt ? `${st.daysSinceReport} days ago (${st.lastReportAt.slice(0, 10)})` : "none"}.${st.overdue.length ? ` Overdue: ${st.overdue.map((id) => (p.milestones.find((m) => m.id === id) || {}).title || id).join(", ")}.` : ""}`;
 
+const PROJECT_WORDS = /\b(project|contract|contractor|refurb\w*|milestones?|progress)\b/i;
+const projectsAsked = (ctx, q) => {
+  const words = String(q).toLowerCase().match(/[a-z]{5,}/g) || [];
+  return ctx.list("Project", (p) => String(q).includes(p.id) || (PROJECT_WORDS.test(q) && words.some((w) => p.title.toLowerCase().includes(w))));
+};
+const projectAnswer = (ctx, projects) => {
+  const claims = ctx.list("ProgressClaim"), issues = ctx.list("Issue");
+  return { text: projects.map((p) => statusText(p, ctx.fn("projectStatus", p, claims, issues, ctx.now))).join("\n"), cites: [...projects.map((p) => p.id), ...claims.filter((c) => projects.some((p) => p.id === c.projectId)).map((c) => c.id)] };
+};
+
 const LOGIC = {
   // Groups: only progress and issues are written, and the bot stays quiet. One-to-one: one reply per message.
   "Chat Intake"(ctx) {
@@ -110,7 +120,8 @@ const LOGIC = {
     };
     const tagOf = (id) => (ctx.get(id) || {}).positionTag || id;
 
-    switch (kind) {
+    const card = awaiting && awaiting.kind === "note" ? [{ agent: "Scribe", scope: { executionId: awaiting.executionId } }] : null;
+    const handled = (() => { switch (kind) {
       case "start": {
         if (ex) { say(`You are on ${ex.workOrderId}. ${stepLine(ex)}`); return outcome("asked"); }
         const wos = ctx.list("WorkOrder", (w) => w.assigneeId === me && !["closed", "cancelled"].includes(w.state) && (!f.workOrderId || w.id === f.workOrderId));
@@ -154,11 +165,12 @@ const LOGIC = {
         const step = (part && (pr.steps.find((s) => s.partNames.includes(part.name)) || {}).step) || pr.steps[pr.steps.length - 1].step;
         ctx.act("add_knowledge_note", { text: f.text, executionId: e.id, procedureId: e.procedureId, assetId: e.assetId, partId: part ? part.id : null, step, messageId: m.id });
         say(`Noted on ${tagOf(e.assetId)}${part ? ` (${part.name})` : ""}, step ${step} of the procedure. The next person will see it.`);
-        outcome("recorded");
-        return [{ agent: "Scribe", scope: { executionId: e.id } }];
+        return outcome("recorded");
       }
       case "observation":
       case "question": {
+        const projects = kind === "question" ? projectsAsked(ctx, m.text) : [];
+        if (projects.length) { say(projectAnswer(ctx, projects).text); return outcome("recorded"); }
         const assetId = ex ? ex.assetId : (ctx.list("Asset", (a) => a.positionTag === tagIn(m.text))[0] || {}).id;
         if (!assetId) { say("Which asset is that on? Send the tag, for example HLP-B."); return outcome("asked"); }
         const part = partIn(ctx, m.text, assetId);
@@ -178,7 +190,7 @@ const LOGIC = {
         return outcome("recorded");
       }
       case "no":
-        say(awaiting && awaiting.kind === "submit" ? "Left as a draft. You can change it on the console." : "OK, nothing raised.");
+        say(awaiting && awaiting.kind === "submit" ? "Left as a draft. You can change it on the console." : awaiting && awaiting.kind === "note" ? "OK, no note." : "OK, nothing raised.");
         return outcome("recorded");
       case "issue": {
         const r = ctx.act("raise_issue", { title: f.title, assetId: ex ? ex.assetId : (ctx.list("Asset", (a) => a.positionTag === tagIn(f.title))[0] || {}).id || null, workOrderId: ex ? ex.workOrderId : null, evidence: m.media });
@@ -190,7 +202,8 @@ const LOGIC = {
         return outcome("asked");
       default:
         return outcome("noted");
-    }
+    } })();
+    return card || handled;
   },
 
   "Shift Handover"(ctx) {
@@ -395,11 +408,9 @@ const LOGIC = {
 
   Ask(ctx) {
     const q = String(ctx.mission || "");
-    const words = q.toLowerCase().match(/[a-z]{5,}/g) || [];
-    const projects = ctx.list("Project", (p) => q.includes(p.id) || words.some((w) => p.title.toLowerCase().includes(w)));
+    const projects = projectsAsked(ctx, q);
     if (projects.length) {
-      const claims = ctx.list("ProgressClaim"), issues = ctx.list("Issue");
-      ctx.output({ kind: "answer", text: projects.map((p) => statusText(p, ctx.fn("projectStatus", p, claims, issues, ctx.now))).join("\n"), cites: [...projects.map((p) => p.id), ...claims.filter((c) => projects.some((p) => p.id === c.projectId)).map((c) => c.id)] });
+      ctx.output({ kind: "answer", ...projectAnswer(ctx, projects) });
       return;
     }
     const tokens = q.match(/[A-Z]{1,4}-?[A-Z0-9]{1,3}\b|F\d\d/g) || [];
@@ -596,7 +607,9 @@ export function createRuntime({ ont, tel, actions }) {
       r.error = e.message;
     }
     r.endedAt = new Date().toISOString();
-    ont.upsert({ ...r, minClearance: opts.actingUser.clearance, audience: opts.audience || null });
+    let audience = opts.audience || null;
+    for (const o of r.read.map((id) => ont.get(id)).filter((x) => x && x.audience)) audience = audience ? audience.filter((x) => o.audience.includes(x)) : [...o.audience];
+    ont.upsert({ ...r, minClearance: opts.actingUser.clearance, audience });
     runs.push(r);
     if (opts.chain !== false && depth < 6) for (const x of next) run(x.agent, { ...opts, scope: x.scope, mission: null, trigger: { kind: "chain", from: r.id } }, depth + 1);
     return r;

@@ -1,7 +1,7 @@
 // Typed ontology actions, shared by people and agents (PRD §6.3, AD-02), and the action service that applies the
 // autonomy dial (BR-04, BR-05, FR-AGT-004) and writes Decisions, Proposals and Feedback (FR-GOV-002).
 import { rank } from "./ontology.mjs";
-import { currentProcedure, stepLock, bandCheck } from "./functions.mjs";
+import { currentProcedure, stepLock, bandCheck, partNamesIn, stepRequires } from "./functions.mjs";
 
 export const LEVELS = ["read", "draft", "notify", "propose", "act"];
 const lv = (l) => LEVELS.indexOf(l);
@@ -129,7 +129,17 @@ export const ACTIONS = {
     if (!Array.isArray(p.steps) || !p.steps.length || p.steps.some((s) => !s || typeof s.text !== "string" || !s.text.trim())) throw new Error("steps must be a non-empty list with text");
     const version = Math.max(...ont.list("Procedure", (x) => x.template === cur.template).map((x) => x.version)) + 1;
     const id = `PRC-${cur.template.toUpperCase()}-v${version}`;
-    const steps = p.steps.map((s, i) => ({ ...(cur.steps[i] || {}), text: String(s.text), id: `${id}-S${String(i + 1).padStart(2, "0")}`, step: i + 1 }));
+    const assets = new Set(ont.list("Asset", (a) => a.template === cur.template).map((a) => a.id));
+    const bands = new Map(ont.list("Part", (x) => assets.has(x.assetId)).map((x) => [x.name, x.band]));
+    const bandOf = (n) => bands.get(n) || null;
+    const steps = p.steps.map((s, i) => {
+      const text = String(s.text).trim();
+      const same = cur.steps.find((x) => x.text === text);
+      // shortcut: a new or reworded step is treated as intrusive (locked until permit and isolation); let authors set it when they ask
+      const partNames = same ? same.partNames : partNamesIn(text, [...bands.keys()]);
+      const base = same || { intrusive: true, hazard: null, expectedMinutes: 25 };
+      return { ...base, text, partNames, documentId: cur.documentId, requires: stepRequires(text, base.intrusive, partNames, bandOf), id: `${id}-S${String(i + 1).padStart(2, "0")}`, step: i + 1 };
+    });
     const pr = create(ont, { id, type: "Procedure", template: cur.template, documentId: cur.documentId, title: cur.title, version, state: "draft", steps, basedOn: cur.id, proposedBy: ctx.actor.id, reason: p.reason, created: ctx.now() }, [["PART_OF", cur.documentId], ["REVISES", cur.id]]);
     return { objects: [pr.id], revert: () => setProps(ont, pr.id, { state: "withdrawn" }) };
   }, "engineer"),
@@ -147,6 +157,7 @@ export const ACTIONS = {
     if (actorId(ctx) !== p.personId && !atLeast(ctx, "supervisor")) throw new Error("only the person or a supervisor starts their job");
     const wo = ont.get(p.workOrderId), asset = ont.get(wo.assetId);
     if (["closed", "cancelled"].includes(wo.state)) throw new Error(`${wo.id} is ${wo.state}`);
+    if (wo.assigneeId && wo.assigneeId !== p.personId && !atLeast(ctx, "supervisor")) throw new Error(`${wo.id} is assigned to ${wo.assigneeId}`);
     if (ont.list("Execution", (e) => e.workOrderId === wo.id && e.state === "running").length) throw new Error(`${wo.id} already has a running job`);
     const proc = currentProcedure(ont.list("Procedure"), asset && asset.template);
     if (!proc) throw new Error(`no released procedure for ${wo.id}`);
@@ -180,8 +191,16 @@ export const ACTIONS = {
     const minutes = Math.round((Date.parse(ctx.now()) - Date.parse(prevAt)) / 60000);
     const steps = ex.steps.map((s) => (s.step === next.step ? { ...s, state: "done", at: ctx.now(), minutes, value, inBand, readingId, note: p.note ? String(p.note) : null } : s));
     const last = steps.every((s) => s.state === "done");
-    const revert = setProps(ont, ex.id, { steps, ...(last ? { state: "done", finishedAt: ctx.now() } : {}) });
-    return { objects: [ex.id, ...(readingId ? [readingId] : [])], revert };
+    ont.upsert({ id: ex.id, type: "Execution", steps, ...(last ? { state: "done", finishedAt: ctx.now() } : {}) });
+    const undoWo = last ? setProps(ont, ex.workOrderId, { state: "closed", closed: ctx.now().slice(0, 10) }) : null;
+    const revert = () => {
+      const now = ont.get(ex.id), doneSteps = now.steps.filter((s) => s.state === "done");
+      if (doneSteps[doneSteps.length - 1].step !== next.step) throw new Error(`reverse the later steps of ${ex.id} first`);
+      ont.upsert({ id: ex.id, type: "Execution", state: "running", finishedAt: null, steps: now.steps.map((s) => (s.step === next.step ? { ...s, state: "todo", at: null, minutes: null, value: null, inBand: null, readingId: null, note: null } : s)) });
+      if (readingId) setProps(ont, readingId, { state: "withdrawn" });
+      if (undoWo) undoWo();
+    };
+    return { objects: [ex.id, ...(readingId ? [readingId] : []), ...(last ? [ex.workOrderId] : [])], revert };
   }),
   raise_issue: def("act", "act", ["title"], (ont, p, ctx) => {
     const assetId = p.assetId || (p.partId && ont.get(p.partId).assetId) || null;
@@ -217,18 +236,26 @@ export const ACTIONS = {
     const prj = ont.get(p.projectId);
     if (p.milestoneId != null && !prj.milestones.some((m) => m.id === p.milestoneId)) throw new Error(`no milestone ${p.milestoneId} on ${prj.id}`);
     const c = create(ont, { id: nextId("PCL"), type: "ProgressClaim", projectId: prj.id, milestoneId: p.milestoneId || null, messageId: p.messageId, by: actorId(ctx), at: ctx.now(), text: String(p.text), evidence: Array.isArray(p.evidence) ? p.evidence.map(String) : [], confirmed: false }, [["CLAIMS", prj.id], ["FROM", p.messageId]]);
-    const fresh = p.milestoneId && !prj.milestones.find((m) => m.id === p.milestoneId).claimedAt;
-    const undo = fresh ? setProps(ont, prj.id, { milestones: prj.milestones.map((m) => (m.id === p.milestoneId ? { ...m, claimedAt: ctx.now() } : m)) }) : null;
-    return { objects: [c.id, prj.id], revert: () => { setProps(ont, c.id, { state: "withdrawn" }); if (undo) undo(); } };
+    if (p.milestoneId && !prj.milestones.find((m) => m.id === p.milestoneId).claimedAt) ont.upsert({ id: prj.id, type: "Project", milestones: prj.milestones.map((m) => (m.id === p.milestoneId ? { ...m, claimedAt: ctx.now() } : m)) });
+    // relative revert: withdraw this claim; the milestone's claimedAt becomes the earliest claim left
+    const revert = () => {
+      setProps(ont, c.id, { state: "withdrawn" });
+      if (!p.milestoneId) return;
+      const left = ont.list("ProgressClaim", (x) => x.projectId === prj.id && x.milestoneId === p.milestoneId && x.state !== "withdrawn").map((x) => x.at).sort();
+      ont.upsert({ id: prj.id, type: "Project", milestones: ont.get(prj.id).milestones.map((m) => (m.id === p.milestoneId ? { ...m, claimedAt: left[0] || null } : m)) });
+    };
+    return { objects: [c.id, prj.id], revert };
   }),
   confirm_milestone: def("act", "human", ["projectId", "milestoneId"], (ont, p, ctx) => {
     const prj = ont.get(p.projectId);
     const m = prj.milestones.find((x) => x.id === p.milestoneId);
     if (!m) throw new Error(`no milestone ${p.milestoneId} on ${prj.id}`);
     if (m.confirmedAt) throw new Error(`${m.id} is already confirmed`);
-    const undo = [setProps(ont, prj.id, { milestones: prj.milestones.map((x) => (x.id === m.id ? { ...x, confirmedAt: ctx.now(), confirmedBy: ctx.actor.id } : x)) })];
-    for (const c of ont.list("ProgressClaim", (x) => x.projectId === prj.id && x.milestoneId === m.id && !x.confirmed)) undo.push(setProps(ont, c.id, { confirmed: true }));
-    return { objects: [prj.id], revert: () => undo.forEach((f) => f()) };
+    const setMs = (fields) => ont.upsert({ id: prj.id, type: "Project", milestones: ont.get(prj.id).milestones.map((x) => (x.id === m.id ? { ...x, ...fields } : x)) });
+    setMs({ confirmedAt: ctx.now(), confirmedBy: ctx.actor.id });
+    const claims = ont.list("ProgressClaim", (x) => x.projectId === prj.id && x.milestoneId === m.id && !x.confirmed).map((x) => x.id);
+    for (const id of claims) ont.upsert({ id, type: "ProgressClaim", confirmed: true });
+    return { objects: [prj.id], revert: () => { setMs({ confirmedAt: null, confirmedBy: null }); for (const id of claims) ont.upsert({ id, type: "ProgressClaim", confirmed: false }); } };
   }, "supervisor"),
   // The works number's outbound side. One reply per inbound message; only Project Watch posts to a group.
   send_message: def("notify", "act", ["channelId", "text"], (ont, p, ctx) => {
@@ -243,7 +270,9 @@ export const ACTIONS = {
     const d = ont.get(p.documentId), who = ont.get(p.onBehalfOf);
     if (d.state !== "draft") throw new Error(`${d.id} is ${d.state}`);
     if (ctx.actor.kind === "agent" && !who.autoSubmit) throw new Error(`no consent to submit on their behalf: ${who.id} has not turned on agent submission`);
-    if (ctx.actor.kind !== "agent" && actorId(ctx) !== who.id && who.ownerId !== actorId(ctx) && !atLeast(ctx, "supervisor")) throw new Error("a person submits their own paperwork");
+    const owner = d.data && d.data.onBehalfOf;
+    if (owner && owner !== who.id) throw new Error(`${d.id} belongs to ${owner}`);
+    if (ctx.actor.kind !== "agent" && actorId(ctx) !== who.id && who.ownerId !== actorId(ctx)) throw new Error("a person submits their own paperwork");
     return { objects: [d.id], revert: setProps(ont, d.id, { state: "submitted", submittedBy: ctx.actor.id, submittedFor: who.id, submittedAt: ctx.now() }) };
   }),
   release_asset_model: def("act", "human", ["assetId", "revision"], (ont, p, ctx) => ({ objects: [p.assetId], revert: setProps(ont, p.assetId, { modelRevision: p.revision }) }), "engineer")
@@ -284,6 +313,7 @@ export function createActionService({ ont, audit, clock = wallClock }) {
 
   // A decision or proposal about an audience-limited object (a private chat, a person's job) is limited the same way.
   function audienceFor(params) {
+    if (Array.isArray(params.audience) && params.audience.length) return params.audience.map(String);
     for (const id of Object.keys(TARGET_TYPES).flatMap((k) => (params[k] == null ? [] : [].concat(params[k])))) {
       const o = typeof id === "string" ? ont.get(id) : null;
       if (o && o.audience) return o.audience;
@@ -294,7 +324,7 @@ export function createActionService({ ont, audit, clock = wallClock }) {
   function apply(action, params, actor, extra = {}) {
     const res = ACTIONS[action].apply(ont, params, { actor, now });
     const dec = ont.upsert({ zoneId: zoneFor(params), audience: audienceFor(params),
-      id: nextId("DEC"), type: "Decision", action, params, actorId: actor.id, actorKind: actor.kind, autonomy: extra.autonomy || null,
+      id: nextId("DEC"), type: "Decision", action, params, actorId: actor.id, actorKind: actor.kind, onBehalfOf: actor.onBehalfOf || null, autonomy: extra.autonomy || null,
       approvedBy: extra.approvedBy || null, proposalId: extra.proposalId || null, runId: extra.runId || null,
       assetId: params.assetId || null, objects: res.objects, reversible: !!res.revert, reversed: false, at: now()
     });
@@ -373,9 +403,10 @@ export function createActionService({ ont, audit, clock = wallClock }) {
     if (d.reversed) return refuse("reverse", by, "already reversed");
     if (!by || by.kind !== "person" || !ont.view(by).get(decisionId)) return refuse("reverse", by, "decision not found");
     if (rank(by.clearance) < rank(ACTIONS[d.action].minClearance)) return refuse("reverse", by, `reversing ${d.action} needs ${ACTIONS[d.action].minClearance} clearance`);
+    if ((d.onBehalfOf || d.actorId) !== by.id && rank(by.clearance) < rank("supervisor")) return refuse("reverse", by, "only the person who did it or a supervisor reverses it");
     const f = reverts.get(decisionId);
     if (!f) return refuse("reverse", by, "not reversible");
-    f();
+    try { f(); } catch (e) { return refuse("reverse", by, e.message); }
     reverts.delete(decisionId);
     ont.upsert({ id: decisionId, type: "Decision", reversed: true, reversedBy: by && by.id, reversedAt: now() });
     log({ actor: by && by.id, actorKind: by && by.kind, action: "reverse", outcome: "done", ref: decisionId });
