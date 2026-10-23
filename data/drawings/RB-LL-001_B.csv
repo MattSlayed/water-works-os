@@ -1,0 +1,60 @@
+Line,Service,Conveyance,DN,Width,Depth,From,To,Mode,Causal,Recycle,InjectionAt,Pumped
+RB-L-001,raw,pipe,1000,,,10UPA01,11UGA01,continuous,yes,no,,yes
+RB-L-002,raw,channel,,2,1.2,11UGA01,11GAB01,continuous,yes,no,,no
+RB-L-003,raw,channel,,2,1.2,11GAB01,13UGB01,continuous,yes,no,,no
+RB-L-004,coagulated,channel,,2,1.2,13UGB01,13UGC01,continuous,yes,no,,no
+RB-L-005,flocculated,channel,,2.4,1.4,13UGC01,13UGD01,continuous,yes,no,,no
+RB-L-011,flocculated,pipe,600,,,13UGD01,14UGE01,continuous,yes,no,,no
+RB-L-012,flocculated,pipe,600,,,13UGD01,14UGE02,continuous,yes,no,,no
+RB-L-013,flocculated,pipe,600,,,13UGD01,14UGE03,continuous,yes,no,,no
+RB-L-014,flocculated,pipe,600,,,13UGD01,14UGE04,continuous,yes,no,,no
+RB-L-021,settled,channel,,1.2,1,14UGE01,15UGS01,continuous,yes,no,,no
+RB-L-022,settled,channel,,1.2,1,14UGE02,15UGS01,continuous,yes,no,,no
+RB-L-023,settled,channel,,1.2,1,14UGE03,15UGS01,continuous,yes,no,,no
+RB-L-024,settled,channel,,1.2,1,14UGE04,15UGS01,continuous,yes,no,,no
+RB-L-101,settled,pipe,450,,,15UGS01,15HFA01,continuous,yes,no,,no
+RB-L-102,settled,pipe,450,,,15UGS01,15HFA02,continuous,yes,no,,no
+RB-L-103,settled,pipe,450,,,15UGS01,15HFA03,continuous,yes,no,,no
+RB-L-104,settled,pipe,450,,,15UGS01,15HFA04,continuous,yes,no,,no
+RB-L-105,settled,pipe,450,,,15UGS01,15HFA05,continuous,yes,no,,no
+RB-L-106,settled,pipe,450,,,15UGS01,15HFA06,continuous,yes,no,,no
+RB-L-107,settled,pipe,450,,,15UGS01,15HFA07,continuous,yes,no,,no
+RB-L-108,settled,pipe,450,,,15UGS01,15HFA08,continuous,yes,no,,no
+RB-L-109,settled,pipe,450,,,15UGS01,15HFA09,continuous,yes,no,,no
+RB-L-110,settled,pipe,450,,,15UGS01,15HFA10,continuous,yes,no,,no
+RB-L-111,settled,pipe,450,,,15UGS01,15HFA11,continuous,yes,no,,no
+RB-L-112,settled,pipe,450,,,15UGS01,15HFA12,continuous,yes,no,,no
+RB-L-201,filtered,pipe,450,,,15HFA01,16UGH01,continuous,yes,no,,no
+RB-L-202,filtered,pipe,450,,,15HFA02,16UGH01,continuous,yes,no,,no
+RB-L-203,filtered,pipe,450,,,15HFA03,16UGH01,continuous,yes,no,,no
+RB-L-204,filtered,pipe,450,,,15HFA04,16UGH01,continuous,yes,no,,no
+RB-L-205,filtered,pipe,450,,,15HFA05,16UGH01,continuous,yes,no,,no
+RB-L-206,filtered,pipe,450,,,15HFA06,16UGH01,continuous,yes,no,,no
+RB-L-207,filtered,pipe,450,,,15HFA07,16UGH01,continuous,yes,no,,no
+RB-L-208,filtered,pipe,450,,,15HFA08,16UGH01,continuous,yes,no,,no
+RB-L-209,filtered,pipe,450,,,15HFA09,16UGH01,continuous,yes,no,,no
+RB-L-210,filtered,pipe,400,,,15HFA10,16UGH01,continuous,yes,no,,no
+RB-L-211,filtered,pipe,450,,,15HFA11,16UGH01,continuous,yes,no,,no
+RB-L-212,filtered,pipe,450,,,15HFA12,16UGH01,continuous,yes,no,,no
+RB-L-301,chlorinated,pipe,900,,,16UGH01,20UBA01,continuous,yes,no,,no
+RB-L-302,chlorinated,pipe,900,,,16UGH01,20UBA02,continuous,yes,no,,no
+RB-L-311,final,pipe,900,,,20UBA01,20UMC01,continuous,yes,no,,no
+RB-L-312,final,pipe,900,,,20UBA02,20UMC01,continuous,yes,no,,no
+RB-L-321,final,pipe,1000,,,20UMC01,20UMD01,continuous,yes,no,,yes
+RB-L-401,backwash supply,pipe,600,,,20UBA01,15UMB01,intermittent,yes,no,,yes
+RB-L-402,backwash supply,pipe,600,,,15UMB01,15UGG01,intermittent,yes,no,,yes
+RB-L-411,air scour,pipe,350,,,15UMB01,15UGG01,intermittent,no,no,,no
+RB-L-421,dirty washwater,channel,,1,0.8,15UGG01,17UGW01,intermittent,no,no,,no
+RB-L-431,supernatant return,pipe,250,,,17UGW01,11UGA01,continuous,yes,yes,,no
+RB-L-441,sludge,pipe,150,,,14UGE01,17UGT01,continuous,no,no,,no
+RB-L-442,sludge,pipe,150,,,14UGE02,17UGT01,continuous,no,no,,no
+RB-L-443,sludge,pipe,150,,,14UGE03,17UGT01,continuous,no,no,,no
+RB-L-444,sludge,pipe,150,,,14UGE04,17UGT01,continuous,no,no,,no
+RB-L-501,coagulant,pipe,25,,,13UHA01,13UGB01,continuous,yes,no,13UGB01,no
+RB-L-502,polymer,pipe,25,,,12UHB01,13UGC01,continuous,yes,no,13UGC01,no
+RB-L-503,lime,pipe,50,,,12UHB01,11UGA01,continuous,yes,no,11UGA01,no
+RB-L-511,chlorine (vacuum),pipe,40,,,16UHC01,16UGH01,continuous,yes,no,16UGH01,no
+RB-L-601,filter-to-waste,pipe,300,,,15HFA01,17UGW01,intermittent,no,no,,no
+RB-L-602,filter-to-waste,pipe,300,,,15HFA02,17UGW01,intermittent,no,no,,no
+RB-L-603,filter-to-waste,pipe,300,,,15HFA03,17UGW01,intermittent,no,no,,no
+RB-L-604,filter-to-waste,pipe,300,,,15HFA04,17UGW01,intermittent,no,no,,no

@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<PlantModel SchemaVersion="DEXPI-1.3-subset" Number="RB-PID-02" Revision="A" Title="Coagulant, polymer and lime dosing">
+  <Equipment ID="EQ-13UHA01" TagName="13UHA01" ComponentClass="dosing_house"><GenericAttributes><GenericAttribute Name="KKS" Value="13UHA01"/></GenericAttributes><Nozzle ID="N-13UHA01-1"/></Equipment>
+  <Equipment ID="EQ-DP-1" TagName="DP-1" ComponentClass="machine"><GenericAttributes><GenericAttribute Name="InStructure" Value="13UHA01"/></GenericAttributes></Equipment>
+  <Equipment ID="EQ-DP-2" TagName="DP-2" ComponentClass="machine"><GenericAttributes><GenericAttribute Name="InStructure" Value="13UHA01"/></GenericAttributes></Equipment>
+  <Equipment ID="EQ-12UHB01" TagName="12UHB01" ComponentClass="chemical_store"><GenericAttributes><GenericAttribute Name="KKS" Value="12UHB01"/></GenericAttributes><Nozzle ID="N-12UHB01-1"/></Equipment>
+  <PipingNetworkSegment ID="SEG-RB-L-501" LineNumber="RB-L-501"><GenericAttributes><GenericAttribute Name="Service" Value="coagulant"/><GenericAttribute Name="NominalDiameter" Value="25"/></GenericAttributes><Connection FromID="EQ-13UHA01" ToID="EQ-13UGB01"/></PipingNetworkSegment>
+  <PipingNetworkSegment ID="SEG-RB-L-502" LineNumber="RB-L-502"><GenericAttributes><GenericAttribute Name="Service" Value="polymer"/><GenericAttribute Name="NominalDiameter" Value="25"/></GenericAttributes><Connection FromID="EQ-12UHB01" ToID="EQ-13UGC01"/></PipingNetworkSegment>
+  <PipingNetworkSegment ID="SEG-RB-L-503" LineNumber="RB-L-503"><GenericAttributes><GenericAttribute Name="Service" Value="lime"/><GenericAttribute Name="NominalDiameter" Value="50"/></GenericAttributes><Connection FromID="EQ-12UHB01" ToID="EQ-11UGA01"/></PipingNetworkSegment>
+</PlantModel>

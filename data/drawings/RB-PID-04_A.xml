@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<PlantModel SchemaVersion="DEXPI-1.3-subset" Number="RB-PID-04" Revision="A" Title="Typical clarifier and sludge draw">
+  <Equipment ID="EQ-14UGE01" TagName="14UGE01" ComponentClass="clarifier_circular"><GenericAttributes><GenericAttribute Name="KKS" Value="14UGE01"/></GenericAttributes><Nozzle ID="N-14UGE01-1"/></Equipment>
+  <Equipment ID="EQ-CL-1" TagName="CL-1" ComponentClass="machine"><GenericAttributes><GenericAttribute Name="InStructure" Value="14UGE01"/></GenericAttributes></Equipment>
+  <Equipment ID="EQ-14UGE02" TagName="14UGE02" ComponentClass="clarifier_circular"><GenericAttributes><GenericAttribute Name="KKS" Value="14UGE02"/></GenericAttributes><Nozzle ID="N-14UGE02-1"/></Equipment>
+  <Equipment ID="EQ-CL-2" TagName="CL-2" ComponentClass="machine"><GenericAttributes><GenericAttribute Name="InStructure" Value="14UGE02"/></GenericAttributes></Equipment>
+  <Equipment ID="EQ-14UGE03" TagName="14UGE03" ComponentClass="clarifier_circular"><GenericAttributes><GenericAttribute Name="KKS" Value="14UGE03"/></GenericAttributes><Nozzle ID="N-14UGE03-1"/></Equipment>
+  <Equipment ID="EQ-CL-3" TagName="CL-3" ComponentClass="machine"><GenericAttributes><GenericAttribute Name="InStructure" Value="14UGE03"/></GenericAttributes></Equipment>
+  <Equipment ID="EQ-14UGE04" TagName="14UGE04" ComponentClass="clarifier_circular"><GenericAttributes><GenericAttribute Name="KKS" Value="14UGE04"/></GenericAttributes><Nozzle ID="N-14UGE04-1"/></Equipment>
+  <Equipment ID="EQ-CL-4" TagName="CL-4" ComponentClass="machine"><GenericAttributes><GenericAttribute Name="InStructure" Value="14UGE04"/></GenericAttributes></Equipment>
+  <Equipment ID="EQ-17UGT01" TagName="17UGT01" ComponentClass="thickener"><GenericAttributes><GenericAttribute Name="KKS" Value="17UGT01"/></GenericAttributes><Nozzle ID="N-17UGT01-1"/></Equipment>
+  <Equipment ID="EQ-17UMD01" TagName="17UMD01" ComponentClass="pump_house"><GenericAttributes><GenericAttribute Name="KKS" Value="17UMD01"/></GenericAttributes><Nozzle ID="N-17UMD01-1"/></Equipment>
+  <Equipment ID="EQ-SLP-A" TagName="SLP-A" ComponentClass="machine"><GenericAttributes><GenericAttribute Name="InStructure" Value="17UMD01"/></GenericAttributes></Equipment>
+  <PipingNetworkSegment ID="SEG-RB-L-021" LineNumber="RB-L-021"><GenericAttributes><GenericAttribute Name="Service" Value="settled"/><GenericAttribute Name="NominalDiameter" Value=""/></GenericAttributes><Connection FromID="EQ-14UGE01" ToID="EQ-15UGS01"/></PipingNetworkSegment>
+  <PipingNetworkSegment ID="SEG-RB-L-022" LineNumber="RB-L-022"><GenericAttributes><GenericAttribute Name="Service" Value="settled"/><GenericAttribute Name="NominalDiameter" Value=""/></GenericAttributes><Connection FromID="EQ-14UGE02" ToID="EQ-15UGS01"/></PipingNetworkSegment>
+  <PipingNetworkSegment ID="SEG-RB-L-023" LineNumber="RB-L-023"><GenericAttributes><GenericAttribute Name="Service" Value="settled"/><GenericAttribute Name="NominalDiameter" Value=""/></GenericAttributes><Connection FromID="EQ-14UGE03" ToID="EQ-15UGS01"/></PipingNetworkSegment>
+  <PipingNetworkSegment ID="SEG-RB-L-024" LineNumber="RB-L-024"><GenericAttributes><GenericAttribute Name="Service" Value="settled"/><GenericAttribute Name="NominalDiameter" Value=""/></GenericAttributes><Connection FromID="EQ-14UGE04" ToID="EQ-15UGS01"/></PipingNetworkSegment>
+  <PipingNetworkSegment ID="SEG-RB-L-441" LineNumber="RB-L-441"><GenericAttributes><GenericAttribute Name="Service" Value="sludge"/><GenericAttribute Name="NominalDiameter" Value="150"/></GenericAttributes><Connection FromID="EQ-14UGE01" ToID="EQ-17UGT01"/></PipingNetworkSegment>
+  <PipingNetworkSegment ID="SEG-RB-L-442" LineNumber="RB-L-442"><GenericAttributes><GenericAttribute Name="Service" Value="sludge"/><GenericAttribute Name="NominalDiameter" Value="150"/></GenericAttributes><Connection FromID="EQ-14UGE02" ToID="EQ-17UGT01"/></PipingNetworkSegment>
+  <PipingNetworkSegment ID="SEG-RB-L-443" LineNumber="RB-L-443"><GenericAttributes><GenericAttribute Name="Service" Value="sludge"/><GenericAttribute Name="NominalDiameter" Value="150"/></GenericAttributes><Connection FromID="EQ-14UGE03" ToID="EQ-17UGT01"/></PipingNetworkSegment>
+  <PipingNetworkSegment ID="SEG-RB-L-444" LineNumber="RB-L-444"><GenericAttributes><GenericAttribute Name="Service" Value="sludge"/><GenericAttribute Name="NominalDiameter" Value="150"/></GenericAttributes><Connection FromID="EQ-14UGE04" ToID="EQ-17UGT01"/></PipingNetworkSegment>
+</PlantModel>

@@ -1,0 +1,62 @@
+Tag,Kind,Zone,Structure,Description
+10UPA01,pump_house,Z01,,pump house
+11UGA01,inlet_works,Z02,,inlet works
+11GAB01,parshall_flume,Z02,,parshall flume
+13UGB01,flash_mix,Z03,,flash mix
+13UGC01,flocculator,Z03,,flocculator
+13UGD01,splitter,Z03,,splitter
+13UHA01,dosing_house,Z03,,dosing house
+14UGE01,clarifier_circular,Z04,,clarifier circular
+14UGE02,clarifier_circular,Z04,,clarifier circular
+14UGE03,clarifier_circular,Z04,,clarifier circular
+14UGE04,clarifier_circular,Z04,,clarifier circular
+15HFA01,filter_bed,Z05,,filter bed
+15HFA02,filter_bed,Z05,,filter bed
+15HFA03,filter_bed,Z05,,filter bed
+15HFA04,filter_bed,Z05,,filter bed
+15HFA05,filter_bed,Z05,,filter bed
+15HFA06,filter_bed,Z05,,filter bed
+15HFA07,filter_bed,Z05,,filter bed
+15HFA08,filter_bed,Z05,,filter bed
+15HFA09,filter_bed,Z05,,filter bed
+15HFA10,filter_bed,Z05,,filter bed
+15HFA11,filter_bed,Z05,,filter bed
+15HFA12,filter_bed,Z05,,filter bed
+15UGS01,channel,Z05,,channel
+15UGG01,pipe_gallery,Z05,,pipe gallery
+15UMB01,pump_house,Z05,,pump house
+16UHC01,chlorine_house,Z06,,chlorine house
+16UGH01,contact_tank,Z06,,contact tank
+20UBA01,reservoir_covered,Z07,,reservoir covered
+20UBA02,reservoir_covered,Z07,,reservoir covered
+20UMC01,pump_house,Z07,,pump house
+20UMD01,surge_vessel,Z07,,surge vessel
+17UGW01,washwater_tank,Z08,,washwater tank
+17UGT01,thickener,Z08,,thickener
+17UMD01,pump_house,Z08,,pump house
+12UHB01,chemical_store,Z09,,chemical store
+30UBE01,mcc,Z10,,mcc
+30UBG01,gen_set,Z10,,gen set
+40UYL01,lab,Z11,,lab
+40UYA01,admin,Z12,,admin
+RWP-A,machine,Z01,10UPA01,installed position
+RWP-B,machine,Z01,10UPA01,installed position
+RWP-C,machine,Z01,10UPA01,installed position
+DP-1,machine,Z03,13UHA01,installed position
+DP-2,machine,Z03,13UHA01,installed position
+CL-1,machine,Z04,14UGE01,installed position
+CL-2,machine,Z04,14UGE02,installed position
+CL-3,machine,Z04,14UGE03,installed position
+CL-4,machine,Z04,14UGE04,installed position
+BWP-A,machine,Z05,15UMB01,installed position
+BWP-B,machine,Z05,15UMB01,installed position
+BLW-A,machine,Z05,15UMB01,installed position
+BLW-B,machine,Z05,15UMB01,installed position
+CHL-A,machine,Z06,16UHC01,installed position
+CHL-B,machine,Z06,16UHC01,installed position
+HLP-A,machine,Z07,20UMC01,installed position
+HLP-B,machine,Z07,20UMC01,installed position
+HLP-C,machine,Z07,20UMC01,installed position
+HLP-D,machine,Z07,20UMC01,installed position
+SLP-A,machine,Z08,17UMD01,installed position
+GEN-1,machine,Z10,30UBG01,installed position

@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<PlantModel SchemaVersion="DEXPI-1.3-subset" Number="RB-PID-01" Revision="A" Title="Raw water intake and inlet works">
+  <Equipment ID="EQ-10UPA01" TagName="10UPA01" ComponentClass="pump_house"><GenericAttributes><GenericAttribute Name="KKS" Value="10UPA01"/></GenericAttributes><Nozzle ID="N-10UPA01-1"/></Equipment>
+  <Equipment ID="EQ-RWP-A" TagName="RWP-A" ComponentClass="machine"><GenericAttributes><GenericAttribute Name="InStructure" Value="10UPA01"/></GenericAttributes></Equipment>
+  <Equipment ID="EQ-RWP-B" TagName="RWP-B" ComponentClass="machine"><GenericAttributes><GenericAttribute Name="InStructure" Value="10UPA01"/></GenericAttributes></Equipment>
+  <Equipment ID="EQ-RWP-C" TagName="RWP-C" ComponentClass="machine"><GenericAttributes><GenericAttribute Name="InStructure" Value="10UPA01"/></GenericAttributes></Equipment>
+  <Equipment ID="EQ-11UGA01" TagName="11UGA01" ComponentClass="inlet_works"><GenericAttributes><GenericAttribute Name="KKS" Value="11UGA01"/></GenericAttributes><Nozzle ID="N-11UGA01-1"/></Equipment>
+  <Equipment ID="EQ-11GAB01" TagName="11GAB01" ComponentClass="parshall_flume"><GenericAttributes><GenericAttribute Name="KKS" Value="11GAB01"/></GenericAttributes><Nozzle ID="N-11GAB01-1"/></Equipment>
+  <PipingNetworkSegment ID="SEG-RB-L-001" LineNumber="RB-L-001"><GenericAttributes><GenericAttribute Name="Service" Value="raw"/><GenericAttribute Name="NominalDiameter" Value="1000"/></GenericAttributes><Connection FromID="EQ-10UPA01" ToID="EQ-11UGA01"/></PipingNetworkSegment>
+  <PipingNetworkSegment ID="SEG-RB-L-002" LineNumber="RB-L-002"><GenericAttributes><GenericAttribute Name="Service" Value="raw"/><GenericAttribute Name="NominalDiameter" Value=""/></GenericAttributes><Connection FromID="EQ-11UGA01" ToID="EQ-11GAB01"/></PipingNetworkSegment>
+  <PipingNetworkSegment ID="SEG-RB-L-003" LineNumber="RB-L-003"><GenericAttributes><GenericAttribute Name="Service" Value="raw"/><GenericAttribute Name="NominalDiameter" Value=""/></GenericAttributes><Connection FromID="EQ-11GAB01" ToID="EQ-13UGB01"/></PipingNetworkSegment>
+  <ProcessInstrumentationFunction TagName="10CQ01"><GenericAttributes><GenericAttribute Name="KKS" Value="10CQ01"/><GenericAttribute Name="MeasuredAt" Value="RB-L-001"/></GenericAttributes></ProcessInstrumentationFunction>
+  <ProcessInstrumentationFunction TagName="11CF01"><GenericAttributes><GenericAttribute Name="KKS" Value="11CF01"/><GenericAttribute Name="MeasuredAt" Value="11GAB01"/></GenericAttributes></ProcessInstrumentationFunction>
+</PlantModel>

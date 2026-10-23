@@ -41,6 +41,7 @@ export const STRUCTURES = [
   round("14UGE03", "clarifier_circular", "Z04", 280, 78, 32, { baseLevel: 1456.3, height: 4.8, twl: 1460.8, volumeM3: 3619 }),
   round("14UGE04", "clarifier_circular", "Z04", 330, 78, 32, { baseLevel: 1456.3, height: 4.8, twl: 1460.8, volumeM3: 3619 }),
   ...filters,
+  rect("15UGS01", "channel", "Z05", 380, 60, 4, 40, { baseLevel: 1458.6, height: 2.4, twl: 1460.6 }),
   rect("15UGG01", "pipe_gallery", "Z05", 409, 35, 48, 8, { baseLevel: 1455.5, height: 4 }),
   rect("15UMB01", "pump_house", "Z05", 446, 70, 18, 12, { baseLevel: 1456, height: 6 }),
   rect("16UHC01", "chlorine_house", "Z06", 488, 14, 16, 12, { baseLevel: 1457, height: 5 }),
