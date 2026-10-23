@@ -1,6 +1,6 @@
 # Design: The Region map and satellite layer (Phase 3, project 2 of 3)
 
-Status: **draft for Matthew's approval**, after the builder check.
+Status: **approved by Matthew 2026-10-23**, after the builder check.
 
 Phase 3 has three projects, in this order:
 
