@@ -1,6 +1,7 @@
 // Typed ontology actions, shared by people and agents (PRD §6.3, AD-02), and the action service that applies the
 // autonomy dial (BR-04, BR-05, FR-AGT-004) and writes Decisions, Proposals and Feedback (FR-GOV-002).
 import { rank } from "./ontology.mjs";
+import { currentProcedure, stepLock } from "./functions.mjs";
 
 export const LEVELS = ["read", "draft", "notify", "propose", "act"];
 const lv = (l) => LEVELS.indexOf(l);
@@ -27,8 +28,16 @@ const create = (ont, obj, linksTo = []) => {
 };
 
 // Parameters that name an object: the type it must be. Every named object must also be visible to the actor.
-const TARGET_TYPES = { procedureId: ["Procedure"], workOrderId: ["WorkOrder"], assetId: ["Asset"], partIds: ["Part"], partId: ["Part"], alertId: ["Alert"], permitId: ["Permit"], assigneeId: ["Person"], holderId: ["Person"], itemId: ["Part", "Chemical"], targetId: null };
+const TARGET_TYPES = { procedureId: ["Procedure"], executionId: ["Execution"], issueId: ["Issue"], noteId: ["KnowledgeNote"], personId: ["Person"], projectId: ["Project"], workOrderId: ["WorkOrder"], assetId: ["Asset"], partIds: ["Part"], partId: ["Part"], alertId: ["Alert"], permitId: ["Permit"], assigneeId: ["Person"], holderId: ["Person"], itemId: ["Part", "Chemical"], targetId: null };
 const PATCHABLE = ["title", "priority", "state", "planned", "hours", "closed"];
+const ISSUE_STATES = ["open", "triaged", "in_work", "done", "dropped"];
+// The person an action is done by or for: an agent acts for the person who launched it.
+const actorId = (ctx) => ctx.actor.onBehalfOf || ctx.actor.id;
+const atLeast = (ctx, c) => rank(ctx.actor.clearance) >= rank(c);
+const isolatedPermit = (ont, assetId) => {
+  const permit = ont.list("Permit", (x) => x.assetId === assetId && x.state === "open")[0] || null;
+  return { permit, isolated: !!(permit && (permit.isolations || []).some((i) => i.state === "applied")) };
+};
 
 export const ACTIONS = {
   create_work_order: def("act", "act", ["assetId", "title"], (ont, p, ctx) => {
@@ -132,6 +141,75 @@ export const ACTIONS = {
     if (ont.get(next.documentId)) undo.push(setProps(ont, next.documentId, { sourceBehind: true }));
     return { objects: [next.id, ...(prev ? [prev.id] : [])], revert: () => undo.forEach((f) => f()) };
   }, "manager"),
+  // Digitised work: a job follows the procedure version released when it starts.
+  start_execution: def("act", "act", ["workOrderId", "personId"], (ont, p, ctx) => {
+    if (actorId(ctx) !== p.personId && !atLeast(ctx, "supervisor")) throw new Error("only the person or a supervisor starts their job");
+    const wo = ont.get(p.workOrderId), asset = ont.get(wo.assetId);
+    if (["closed", "cancelled"].includes(wo.state)) throw new Error(`${wo.id} is ${wo.state}`);
+    if (ont.list("Execution", (e) => e.workOrderId === wo.id && e.state === "running").length) throw new Error(`${wo.id} already has a running job`);
+    const proc = currentProcedure(ont.list("Procedure"), asset && asset.template);
+    if (!proc) throw new Error(`no released procedure for ${wo.id}`);
+    // performance data: the person, their own supervisor and engineers (the manager sees everything)
+    const audience = [...new Set([p.personId, ont.get(p.personId).supervisorId, ...ont.list("Person", (x) => x.clearance === "engineer").map((x) => x.id)].filter(Boolean))];
+    const ex = create(ont, { id: nextId("EXE"), type: "Execution", workOrderId: wo.id, assetId: wo.assetId, personId: p.personId, procedureId: proc.id, procedureVersion: proc.version, startedAt: ctx.now(), finishedAt: null, state: "running", audience,
+      steps: proc.steps.map((s) => ({ step: s.step, state: "todo", at: null, minutes: null, value: null, readingId: null, note: null })) }, [["FOR", wo.id], ["FOLLOWS", proc.id], ["BY", p.personId]]);
+    const undoWo = setProps(ont, wo.id, { state: "in_progress" });
+    return { objects: [ex.id, wo.id], revert: () => { setProps(ont, ex.id, { state: "cancelled" }); undoWo(); } };
+  }),
+  complete_step: def("act", "act", ["executionId", "step"], (ont, p, ctx) => {
+    const ex = ont.get(p.executionId);
+    if (actorId(ctx) !== ex.personId && !atLeast(ctx, "supervisor")) throw new Error("only the person on the job or a supervisor completes its steps");
+    if (ex.state !== "running") throw new Error(`${ex.id} is ${ex.state}`);
+    const next = ex.steps.find((s) => s.state === "todo");
+    if (Number(p.step) !== next.step) throw new Error(`the next step is ${next.step}`);
+    const spec = ont.get(ex.procedureId).steps.find((s) => s.step === next.step);
+    const lock = stepLock(spec, isolatedPermit(ont, ex.assetId));
+    if (lock.locked) throw new Error(lock.reason);
+    const need = spec.requires && spec.requires.reading;
+    const value = p.value === undefined || p.value === null || p.value === "" ? null : Number(p.value);
+    if (value !== null && !Number.isFinite(value)) throw new Error("the reading must be a number");
+    if (need && value === null) throw new Error(`Step ${next.step} needs a reading: ${need.measure} in ${need.unit}`);
+    let readingId = null;
+    if (need) {
+      const part = ont.list("Part", (x) => x.assetId === ex.assetId && x.name === need.partName)[0];
+      readingId = create(ont, { id: nextId("RDG"), type: "Reading", targetId: part.id, assetId: ex.assetId, measure: need.measure, value, unit: need.unit, workOrderId: ex.workOrderId, executionId: ex.id, at: ctx.now(), source: "field" }, [["OF", part.id]]).id;
+    }
+    const prevAt = [...ex.steps].reverse().find((s) => s.at)?.at || ex.startedAt;
+    const minutes = Math.round((Date.parse(ctx.now()) - Date.parse(prevAt)) / 60000);
+    const steps = ex.steps.map((s) => (s.step === next.step ? { ...s, state: "done", at: ctx.now(), minutes, value, readingId, note: p.note ? String(p.note) : null } : s));
+    const last = steps.every((s) => s.state === "done");
+    const revert = setProps(ont, ex.id, { steps, ...(last ? { state: "done", finishedAt: ctx.now() } : {}) });
+    return { objects: [ex.id, ...(readingId ? [readingId] : [])], revert };
+  }),
+  raise_issue: def("act", "act", ["title"], (ont, p, ctx) => {
+    const assetId = p.assetId || (p.partId && ont.get(p.partId).assetId) || null;
+    const iss = create(ont, { id: nextId("ISS"), type: "Issue", title: String(p.title), state: "open", raisedBy: actorId(ctx), assetId, partId: p.partId || null, workOrderId: p.workOrderId || null, projectId: p.projectId || null, procedureId: p.procedureId || null, step: p.step ?? null, evidence: Array.isArray(p.evidence) ? p.evidence.map(String) : [], assigneeId: null, at: ctx.now() }, [["ON", assetId], ["ABOUT", p.partId], ["FOR", p.workOrderId], ["IN", p.projectId]]);
+    return { objects: [iss.id], revert: () => setProps(ont, iss.id, { state: "dropped" }) };
+  }),
+  update_issue: def("act", "act", ["issueId", "patch"], (ont, p, ctx) => {
+    const iss = ont.get(p.issueId);
+    const patch = p.patch || {};
+    const keys = Object.keys(patch);
+    if (!keys.length || keys.some((k) => !["state", "assigneeId", "title"].includes(k))) throw new Error("patch may only change: state, assigneeId, title");
+    if (patch.state !== undefined && !ISSUE_STATES.includes(patch.state)) throw new Error(`state must be one of ${ISSUE_STATES.join(", ")}`);
+    if (patch.assigneeId != null && (ont.get(patch.assigneeId) || {}).type !== "Person") throw new Error("assigneeId must be a person");
+    if (patch.title !== undefined && (typeof patch.title !== "string" || !patch.title.trim())) throw new Error("title must be text");
+    if (iss.raisedBy !== actorId(ctx) && !atLeast(ctx, "supervisor")) throw new Error("only the raiser or a supervisor moves an issue");
+    return { objects: [iss.id], revert: setProps(ont, iss.id, { ...patch, updatedAt: ctx.now() }) };
+  }),
+  add_knowledge_note: def("act", "act", ["text"], (ont, p, ctx) => {
+    const part = p.partId ? ont.get(p.partId) : null;
+    const kn = create(ont, { id: nextId("KN"), type: "KnowledgeNote", text: String(p.text), authorId: actorId(ctx), partId: p.partId || null, assetId: p.assetId || (part && part.assetId) || null, procedureId: p.procedureId || null, step: p.step ?? null, executionId: p.executionId || null, messageId: p.messageId || null, verified: false, at: ctx.now() }, [["ABOUT", p.partId || p.assetId], ["ON", p.procedureId]]);
+    return { objects: [kn.id], revert: () => setProps(ont, kn.id, { state: "withdrawn" }) };
+  }),
+  verify_knowledge_note: def("act", "human", ["noteId"], (ont, p, ctx) => {
+    const n = ont.get(p.noteId);
+    if (n.verified) throw new Error(`${n.id} is already verified`);
+    const author = ont.get(n.authorId);
+    const f = create(ont, { id: nextId("FND"), type: "Finding", partId: n.partId, assetId: n.assetId, text: n.text, authorId: n.authorId, authorRole: author ? author.role : null, verified: true, verifiedBy: ctx.actor.id, fromNoteId: n.id, at: ctx.now().slice(0, 10) }, [["ABOUT", n.partId || n.assetId]]);
+    const undo = setProps(ont, n.id, { verified: true, verifiedBy: ctx.actor.id, promotedTo: f.id });
+    return { objects: [n.id, f.id], revert: () => { undo(); setProps(ont, f.id, { verified: false }); } };
+  }, "engineer"),
   release_asset_model: def("act", "human", ["assetId", "revision"], (ont, p, ctx) => ({ objects: [p.assetId], revert: setProps(ont, p.assetId, { modelRevision: p.revision }) }), "engineer")
 };
 

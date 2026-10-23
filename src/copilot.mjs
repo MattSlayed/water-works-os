@@ -3,6 +3,7 @@
 // same insight, and the structured checks, citations and look-here stay deterministic.
 import { assetInsight } from "./agents.mjs";
 import { askClaude } from "./llm.mjs";
+import { bandCheck } from "./functions.mjs";
 
 const SYSTEM = `You are the Technician Copilot at a water treatment works. You talk to an artisan standing at the asset.
 Answer in short, plain sentences. Use only the context provided; cite record ids in brackets, for example [FND-001].
@@ -70,18 +71,17 @@ export function createCopilot({ ont, tel, actions, runtime, llm = askClaude }) {
       const value = Number(num[0]);
       const { lo, hi, measure, unit } = part.band;
       actions.invoke({ action: "record_reading", params: { targetId: part.id, measure, value, unit, workOrderId: s.workOrderId }, actor: agentActor(s.user), autonomy: autonomy("record_reading") });
-      if (value > hi || value < lo) {
-        const side = value > hi ? "over" : "under";
-        const by = Math.round(Math.abs(value - (value > hi ? hi : lo)) * 1000) / 1000;
-        const dev = actions.invoke({ action: "raise_deviation", params: { targetId: part.id, finding: `${measure} ${value} ${unit}, ${by} ${unit} ${side} the band ${lo}–${hi}`, disposition: "re-sleeve or replace; engineer to decide", assetId: part.assetId }, actor: agentActor(s.user), autonomy: autonomy("raise_deviation") });
+      const { inBand, side, by, finding } = bandCheck(part, value);
+      if (!inBand) {
+        const dev = actions.invoke({ action: "raise_deviation", params: { targetId: part.id, finding, disposition: "re-sleeve or replace; engineer to decide", assetId: part.assetId }, actor: agentActor(s.user), autonomy: autonomy("raise_deviation") });
         res = { answer: `${measure} ${value} ${unit} is ${by} ${unit} ${side} the limit (band ${lo}–${hi} ${unit}). Do not reuse it as it is. I have recorded the reading and proposed a deviation for the engineer${dev.proposal ? ` (${dev.proposal.id})` : ""}.`, citations: [{ id: part.id, label: `${part.name} band` }], lookHere: [part.id] };
       } else {
         res = { answer: `${measure} ${value} ${unit} is within the band ${lo}–${hi} ${unit}. I have recorded the reading.`, citations: [{ id: part.id, label: `${part.name} band` }], lookHere: [part.id] };
       }
     } else if (/before|history|happened|last time|previous/.test(ql)) {
-      const ins = s.insight;
-      const lines = [...ins.findings.map((f) => `${f.id} (${f.at}, ${f.authorRole}) on ${ont.get(f.assetId) ? ont.get(f.assetId).positionTag : f.assetId}: ${f.text}`), ...ins.history.map((w) => `${w.id} ${w.title} (${w.state}${w.closed ? `, closed ${w.closed}` : ""})`)];
-      res = { answer: lines.length ? lines.join("\n") : "No earlier work or findings on record for this asset or its siblings.", citations: [...ins.findings.map((f) => ({ id: f.id, label: "Finding" })), ...ins.history.map((w) => ({ id: w.id, label: "Work order" }))], lookHere: ins.findings.map((f) => f.partId).filter((p) => p && ont.get(p) && ont.get(p).assetId === s.assetId) };
+      const ins = (s.insight = assetInsight(ctxFor(s.user), s.assetId, s.partId));
+      const lines = [...ins.findings.map((f) => `${f.id} (${f.at}, ${f.authorRole}) on ${ont.get(f.assetId) ? ont.get(f.assetId).positionTag : f.assetId}: ${f.text}`), ...ins.notes.map((n) => `${n.id} (${n.at.slice(0, 10)}, field note${n.verified ? ", verified" : ""}): ${n.text}`), ...ins.history.map((w) => `${w.id} ${w.title} (${w.state}${w.closed ? `, closed ${w.closed}` : ""})`)];
+      res = { answer: lines.length ? lines.join("\n") : "No earlier work or findings on record for this asset or its siblings.", citations: [...ins.findings.map((f) => ({ id: f.id, label: "Finding" })), ...ins.notes.map((n) => ({ id: n.id, label: "Field note" })), ...ins.history.map((w) => ({ id: w.id, label: "Work order" }))], lookHere: ins.findings.map((f) => f.partId).filter((p) => p && ont.get(p) && ont.get(p).assetId === s.assetId) };
     } else if (/stock|spare|part number|parts/.test(ql)) {
       const parts = ont.list("Part", (p) => p.assetId === s.assetId);
       res = { answer: parts.map((p) => `${p.name}: ${p.erpNo}, ${p.stock ?? 0} in stores${p.reserved ? `, ${p.reserved} reserved` : ""}`).join("\n"), citations: parts.map((p) => ({ id: p.id, label: p.name })), lookHere: [] };

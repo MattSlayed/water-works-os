@@ -87,3 +87,13 @@ export function stepLock(step, { permit, isolated }) {
   if (r.isolation && !isolated) return { locked: true, reason: `Step ${step.step} needs the isolation recorded on the permit first.` };
   return { locked: false, reason: null };
 }
+
+// Where a field reading sits against a part's band; the finding text is what a deviation records.
+export function bandCheck(part, value) {
+  const { lo, hi, measure, unit } = part.band;
+  const v = Number(value);
+  const inBand = v >= lo && v <= hi;
+  const side = inBand ? null : v > hi ? "over" : "under";
+  const by = inBand ? 0 : Math.round(Math.abs(v - (v > hi ? hi : lo)) * 1000) / 1000;
+  return { inBand, side, by, finding: inBand ? `${measure} ${v} ${unit}, within the band ${lo}–${hi}` : `${measure} ${v} ${unit}, ${by} ${unit} ${side} the band ${lo}–${hi}` };
+}

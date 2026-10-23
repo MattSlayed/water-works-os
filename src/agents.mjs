@@ -49,7 +49,8 @@ export function assetInsight(ctx, assetId, partId) {
   const steps = proc ? proc.steps : [];
   const procedure = part ? steps.filter((s) => s.partNames.includes(part.name)) : steps;
   const manual = ctx.list("Document", (d) => d.kind === "manual" && d.template === asset.template)[0] || null;
-  return { asset, part, sensors, alerts, findings, history, deviations, permit, isolated, hazards: zone ? zone.hazard : null, zone, procedure, allSteps: steps, manual };
+  const notes = ctx.list("KnowledgeNote", (n) => n.assetId === assetId && n.state !== "withdrawn");
+  return { asset, part, sensors, alerts, findings, notes, history, deviations, permit, isolated, hazards: zone ? zone.hazard : null, zone, procedure, allSteps: steps, manual };
 }
 
 const LOGIC = {
