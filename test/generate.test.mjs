@@ -13,8 +13,8 @@ test("same seed is deterministic, different seed changes people", () => {
   assert.notEqual(a, b);
 });
 
-test("12 zones and the hero pump positions exist", () => {
-  assert.equal(ofType("Zone").length, 12);
+test("15 zones (12 plant, 3 on the bulk line) and the hero pump positions exist", () => {
+  assert.equal(ofType("Zone").length, 15);
   for (const t of ["HLP-A", "HLP-B", "HLP-C", "HLP-D", "RWP-A", "RWP-B", "RWP-C"]) {
     assert.ok(ofType("Position").some((p) => p.tag === t), `position ${t}`);
   }

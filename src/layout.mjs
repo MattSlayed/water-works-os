@@ -87,3 +87,9 @@ export function toLonLat([x, y]) {
   const [lat0, lon0] = GEOREF.origin;
   return [lon0 + x / (111320 * Math.cos((lat0 * Math.PI) / 180)), lat0 - y / 111320];
 }
+
+// The inverse of toLonLat: WGS84 [lon, lat] to site metres. Region-scale geometry (tens of km) stays within metres.
+export function toLocal([lon, lat]) {
+  const [lat0, lon0] = GEOREF.origin;
+  return [(lon - lon0) * 111320 * Math.cos((lat0 * Math.PI) / 180), (lat0 - lat) * 111320];
+}

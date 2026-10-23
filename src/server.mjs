@@ -119,7 +119,7 @@ export function createServer(sys) {
 
   function mapPayload(v) {
     const view = ont.view(v);
-    const zones = view.list("Zone").map((z) => {
+    const zones = view.list("Zone", (z) => !z.remote).map((z) => {
       const [x, y, w, h] = z.rect;
       const positions = view.list("Position", (p) => p.zoneId === z.id);
       const cols = Math.max(1, Math.ceil(Math.sqrt(positions.length * (w / h))));
@@ -140,6 +140,8 @@ export function createServer(sys) {
 
   // ---------- Plant (design §5.5, §7): the current released model, pruned on the server ----------
   const hiddenZones = (v) => ont.list("Zone", (z) => rank(z.clearance) > rank(v.clearance));
+  // a remote zone covers several yards, so it has rects (site metres) instead of one rect
+  const hiddenRects = (v) => hiddenZones(v).flatMap((z) => z.rects || [z.rect]);
   const currentModel = () => { const m = currentPlantModel(ont); if (!m) throw new HttpError(404, "no released plant model"); return m; };
   const modelSummary = (m) => {
     const open = {};
@@ -147,7 +149,7 @@ export function createServer(sys) {
     return { id: m.id, type: m.type, name: m.name, rev: m.rev, status: m.status, governs: m.governs, release: m.release, packageHash: m.packageHash, sources: m.sources, reviews: m.reviews, cells: m.cells.length, unreviewed: open, ingestedBy: m.ingestedBy || null, disclosure: disclosureFor(m.rev) };
   };
   function plantPayload(v) {
-    const m = currentModel(), view = ont.view(v), rects = hiddenZones(v).map((z) => z.rect);
+    const m = currentModel(), view = ont.view(v), rects = hiddenRects(v);
     const objs = ont.list(null, (o) => o.modelId === m.id), seen = (id) => !!(id && view.get(id));
     const of = (t) => objs.filter((o) => o.type === t && view.get(o.id));
     // Lines are cut at a hidden zone's edge rather than dropped whole; endpoints the viewer may not see are blanked.
@@ -170,7 +172,7 @@ export function createServer(sys) {
   function modelDetail(v, id) {
     const m = ont.get(id);
     if (!m || m.type !== "PlantModel") throw new HttpError(404, "not found");
-    const hz = hiddenZones(v), ids = new Set(hz.map((z) => z.id)), rects = hz.map((z) => z.rect), hidden = new Set();
+    const hz = hiddenZones(v), ids = new Set(hz.map((z) => z.id)), rects = hiddenRects(v), hidden = new Set();
     for (const { tag, fields: f } of m.items) {
       const through = f.path && f.path.some((p, i) => i > 0 && rects.some((r) => segInside(f.path[i - 1], p, r)));
       if (ids.has(f.zoneId) || through || [f.from, f.to, f.at, f.structure, f.filter, f.injectionAt, f.instrument, f.measuredAt].some((t) => hidden.has(t))) hidden.add(tag);

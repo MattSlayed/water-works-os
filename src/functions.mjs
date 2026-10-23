@@ -1,5 +1,6 @@
 // Function tools: models and logic exposed to people and agents alike (PRD §6.4).
 // shortcut: transparent heuristics over the synthetic data; upgrade to trained models with a registry and backtests (FR-ANL-006).
+import { toLocal, toLonLat } from "./layout.mjs";
 
 const clamp01 = (x) => Math.max(0, Math.min(1, Number.isFinite(x) ? x : 0));
 const mean = (a) => (a.length ? a.reduce((s, x) => s + x, 0) / a.length : 0);
@@ -251,4 +252,44 @@ export function onsetMinute(values = [], { baseline = 120, rel = 0.25, period } 
   const med = median(values.slice(0, baseline)), tol = rel * (Math.abs(med) || 1);
   for (let i = Math.max(baseline, period || 0); i < values.length; i++) if (Math.abs(values[i] - (period ? values[i - period] : med)) > tol) return i;
   return null;
+}
+
+// ---------- Spatial functions (Region design §4.1): WGS84 [lon, lat], a local flat projection on the plant origin ----------
+const segDist = (p, a, b) => {
+  const dx = b[0] - a[0], dy = b[1] - a[1], L2 = dx * dx + dy * dy;
+  const t = L2 ? Math.max(0, Math.min(1, ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / L2)) : 0;
+  return { d: Math.hypot(p[0] - (a[0] + t * dx), p[1] - (a[1] + t * dy)), t };
+};
+export const distanceM = (a, b) => { const p = toLocal(a), q = toLocal(b); return Math.hypot(p[0] - q[0], p[1] - q[1]); };
+
+// Inside a Polygon (first ring); a point on an edge or vertex counts as inside.
+export function within(point, polygon) {
+  const ring = (polygon && polygon.coordinates && polygon.coordinates[0] || []).map(toLocal), p = toLocal(point);
+  let inside = false;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    const a = ring[i], b = ring[j];
+    if (segDist(p, a, b).d < 0.01) return true;
+    if ((a[1] > p[1]) !== (b[1] > p[1]) && p[0] < ((b[0] - a[0]) * (p[1] - a[1])) / (b[1] - a[1]) + a[0]) inside = !inside;
+  }
+  return inside;
+}
+
+// The nearest point on a line: distance off the line, distance along it from the start, and the segment index.
+export function nearestAlong(coords, point) {
+  const pts = coords.map(toLocal), p = toLocal(point);
+  let best = { distanceM: Infinity, alongM: 0, index: 0 }, run = 0;
+  for (let i = 0; i < pts.length - 1; i++) {
+    const { d, t } = segDist(p, pts[i], pts[i + 1]), len = Math.hypot(pts[i + 1][0] - pts[i][0], pts[i + 1][1] - pts[i][1]);
+    if (d < best.distanceM) best = { distanceM: d, alongM: run + t * len, index: i };
+    run += len;
+  }
+  return best;
+}
+
+// The objects inside an area: anything with lat/lon, a Point geometry, or a site-metre centre. Unknown areas give [].
+export function objectsIn(ont, areaId, types = null) {
+  const area = ont.get(areaId);
+  if (!area || !area.geometry || area.geometry.type !== "Polygon" || (types && !types.length)) return [];
+  const where = (o) => (Number.isFinite(o.lat) && Number.isFinite(o.lon) ? [o.lon, o.lat] : o.geometry && o.geometry.type === "Point" ? o.geometry.coordinates : Array.isArray(o.centre) ? toLonLat(o.centre) : null);
+  return ont.list(null, (o) => o.id !== areaId && (!types || types.includes(o.type))).filter((o) => { const p = where(o); return p && within(p, area.geometry); });
 }

@@ -3,6 +3,7 @@
 import { createHash } from "node:crypto";
 import { stepRequires } from "./functions.mjs";
 import { ZONES } from "./layout.mjs";
+import { REGION, REMOTE_ZONES, zoneGeo } from "./region.mjs";
 
 export const CLOCK = "2026-10-15T00:00:00Z";
 
@@ -188,6 +189,12 @@ export function generateWorks(seed = 7) {
     add({ id, type: "Zone", code: id, name, clearance, hazard, rect: [x, y, w, h] }, "SYNTH-GIS");
     link("SITE-RB", "HAS_ZONE", id);
   }
+  // The region (Region design §4.1): bulk-line zones carry several rects in site metres, and Region geometry in WGS84.
+  for (const [id, name, clearance, hazard, rects] of REMOTE_ZONES) {
+    add({ id, type: "Zone", code: id, name, clearance, hazard, remote: true, rects, geo: zoneGeo(rects) }, "SYNTH-GIS");
+    link("SITE-RB", "HAS_ZONE", id);
+  }
+  for (const r of REGION) add({ id: r.id, type: "Region", kind: r.kind, name: r.name, geometry: r.geometry, zoneId: null }, "SYNTH-GIS");
 
   STAGES.forEach(([stage, zoneId, name], i) => {
     const id = `PU-${stage}`;
