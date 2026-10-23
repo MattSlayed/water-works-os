@@ -31,3 +31,24 @@ test("every view the app routes to exists in app.js", async () => {
   const js = await (await fetch(base + "/app.js")).text();
   for (const v of ["console", "map", "assets", "asset", "work", "agents", "run", "proposals", "knowledge", "compliance", "ontology", "search", "object", "audit", "chat", "issues", "projects", "project", "procedures", "procedure", "mywork"]) assert.ok(js.includes(`async ${v}(`), v);
 });
+
+test("three.js 0.160.0 is vendored: served locally, no CDN in the import map, addon imports resolve", async () => {
+  const fs = await import("node:fs"), path = await import("node:path"), { fileURLToPath } = await import("node:url");
+  const r = await fetch(base + "/vendor/three@0.160.0/three.module.js");
+  assert.equal(r.status, 200);
+  assert.match(r.headers.get("content-type"), /javascript/);
+  assert.ok((await r.text()).includes("REVISION = '160'")); // read the body so the socket closes
+  const html = await (await fetch(base + "/")).text();
+  assert.ok(!html.includes("cdn.jsdelivr"));
+  assert.ok(html.includes('"three": "/vendor/three@0.160.0/three.module.js"') && html.includes('"three/addons/": "/vendor/three@0.160.0/addons/"'));
+  const root = new URL("../web/vendor/three@0.160.0/", import.meta.url);
+  const addons = ["controls/OrbitControls.js", "renderers/CSS2DRenderer.js", "lines/Line2.js", "lines/LineMaterial.js", "lines/LineSegments2.js", "lines/LineSegmentsGeometry.js", "lines/LineGeometry.js", "utils/BufferGeometryUtils.js", "objects/Sky.js", "environments/RoomEnvironment.js"];
+  for (const a of addons) {
+    const file = new URL(`addons/${a}`, root);
+    assert.ok(fs.existsSync(file), a);
+    for (const [, spec] of fs.readFileSync(file, "utf8").matchAll(/from\s+['"]([^'"]+)['"]/g)) {
+      if (spec === "three") continue;
+      assert.ok(fs.existsSync(path.resolve(path.dirname(fileURLToPath(file)), spec)), `${a} imports ${spec}`);
+    }
+  }
+});

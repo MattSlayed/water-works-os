@@ -96,7 +96,12 @@ export function mountTwin(container, parts, { onSelect } = {}) {
       camera.position.copy(target).add(new THREE.Vector3(1.2, 0.8, 1.6));
       api.select(id);
     },
-    dispose() { cancelAnimationFrame(raf); ro.disconnect(); controls.dispose(); renderer.dispose(); renderer.domElement.remove(); }
+    // Free GPU memory and the WebGL context: browsers cap live contexts, and each route change mounts a new twin.
+    dispose() {
+      cancelAnimationFrame(raf); ro.disconnect(); controls.dispose();
+      scene.traverse((o) => { if (o.geometry) o.geometry.dispose(); for (const m of [].concat(o.material || [])) m.dispose(); });
+      renderer.dispose(); renderer.forceContextLoss(); renderer.domElement.remove();
+    }
   };
   paint();
   return api;
