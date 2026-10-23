@@ -43,7 +43,8 @@ function mapSvg(m, { compact } = {}) {
     return `<g class="zone ${esc(z.hazard)}"><rect x="${Number(x)}" y="${Number(y)}" width="${Number(w)}" height="${Number(h)}"/><title>${esc(z.id)} ${esc(z.name)}</title><text x="${x + 4}" y="${y + 9}">${esc(z.id)}${!compact && w >= 100 ? " " + esc(z.name.split(" ")[0]) : ""}</text>${assets}${ppl}</g>`;
   }).join("");
   const permits = L.permits ? m.permits.map((p) => { const z = m.zones.find((zz) => zz.assets.some((a) => a.id === p.assetId)); if (!z) return ""; const [x, y, w, h] = z.rect; return `<rect x="${x}" y="${y}" width="${w}" height="${h}" fill="none" stroke="var(--amber)" stroke-width="1.2" stroke-dasharray="4 2"/>`; }).join("") : "";
-  return `<svg viewBox="-10 -10 760 200" role="img" aria-label="Site map of ${esc(m.site.name)}">${zones}${permits}</svg>`;
+  const [bx, by, bX, bY] = m.bounds || [0, 0, 750, 190];
+  return `<svg viewBox="${bx - 10} ${by - 10} ${bX - bx + 20} ${bY - by + 20}" role="img" aria-label="Site map of ${esc(m.site.name)}">${zones}${permits}</svg>`;
 }
 function bindMap(root) {
   root.querySelectorAll("[data-href]").forEach((g) => {

@@ -2,6 +2,7 @@
 // generateWorks(seed) -> { objects, links, clock } — deterministic for a given seed.
 import { createHash } from "node:crypto";
 import { stepRequires } from "./functions.mjs";
+import { ZONES } from "./layout.mjs";
 
 export const CLOCK = "2026-10-15T00:00:00Z";
 
@@ -19,20 +20,7 @@ function rng(seed) {
 const prov = (source, uri) => ({ source, source_uri: uri, source_version: "v1", extracted_at: CLOCK, confidence: 1 });
 
 // Zones: x,y,w,h in metres on the site plan. clearance = minimum viewer clearance.
-const ZONES = [
-  ["Z01", "Raw water intake and pump station", 0, 0, 90, 60, "technician", "none"],
-  ["Z02", "Inlet works", 100, 0, 60, 60, "technician", "none"],
-  ["Z03", "Coagulation and flocculation", 170, 0, 80, 60, "technician", "chemical"],
-  ["Z04", "Clarification", 260, 0, 120, 90, "technician", "none"],
-  ["Z05", "Filtration", 390, 0, 130, 90, "technician", "none"],
-  ["Z06", "Disinfection", 530, 0, 60, 60, "supervisor", "chlorine"],
-  ["Z07", "Clear water and high-lift", 600, 0, 120, 90, "technician", "none"],
-  ["Z08", "Sludge handling", 260, 110, 120, 60, "technician", "confined-space"],
-  ["Z09", "Chemical store", 170, 80, 80, 50, "operator", "chemical"],
-  ["Z10", "MCC and electrical", 390, 110, 70, 50, "supervisor", "electrical"],
-  ["Z11", "Laboratory", 470, 110, 50, 50, "technician", "none"],
-  ["Z12", "Admin and control room", 530, 110, 80, 50, "technician", "none"]
-];
+// Zones come from the physical layout (src/layout.mjs).
 
 const STAGES = [
   ["intake", "Z01", "Raw water intake"], ["inlet", "Z02", "Inlet works"], ["coag", "Z03", "Coagulation"],
@@ -44,7 +32,7 @@ const STAGES = [
 // Part templates. geom: shape box{size:[x,y,z]} | cyl{r,len,axis}; pos in metres relative to the asset origin.
 const T = {
   centrifugal_pump: {
-    label: "End-suction centrifugal pump", make: "Hydrava", model: "ES 200-400",
+    label: "Horizontal split-case pump", make: "Hydrava", model: "HSC 350-500",
     parts: [
       ["Baseplate", 890, "base", "box", { size: [2.6, 0.15, 0.8] }, [0, 0.075, 0], [0, -1, 0], "S275 steel"],
       ["Motor", 800, "drive", "cyl", { r: 0.32, len: 0.9, axis: "x" }, [-0.75, 0.55, 0], [-1, 0, 0], "Cast iron frame"],
@@ -230,7 +218,7 @@ export function generateWorks(seed = 7) {
     const installed = `20${10 + Math.floor(r() * 14)}-0${1 + Math.floor(r() * 8)}-1${Math.floor(r() * 9)}`;
     add({
       id: assetId, type: "Asset", name: label, positionTag: tag, positionId: posId, zoneId, serial, template: tpl,
-      assetClass: t ? t.label : "Diesel generator", make: t ? t.make : "Genpro", model: t ? t.model : "G500", hero,
+      assetClass: tag.startsWith("CHL") ? "Chlorinator" : t ? t.label : "Diesel generator", make: t ? t.make : "Genpro", model: t ? t.model : "G500", hero,
       criticality: tag.startsWith("HLP") || tag.startsWith("RWP") || tag.startsWith("CHL") ? "A" : "B",
       state: tag === "HLP-D" ? "standby" : tag === "RWP-C" ? "isolated" : "running", installed, runHours: Math.floor(8000 + r() * 40000)
     });
@@ -276,12 +264,12 @@ export function generateWorks(seed = 7) {
   // Filters and process sensors
   for (let f = 1; f <= 12; f++) {
     const tag = `F${String(f).padStart(2, "0")}`;
-    add({ id: `POS-${tag}`, type: "Position", tag, kks: `15HFA${f}0`, name: `Rapid gravity filter ${f}`, zoneId: "Z05", stage: "filt" });
+    add({ id: `POS-${tag}`, type: "Position", tag, kks: `15HFA${String(f).padStart(2, "0")}`, name: `Rapid gravity filter ${f}`, zoneId: "Z05", stage: "filt" });
     link("PU-filt", "HAS_POSITION", `POS-${tag}`);
     add({ id: `AST-FLT-${tag}`, type: "Asset", name: `Filter ${tag}`, positionTag: tag, positionId: `POS-${tag}`, zoneId: "Z05", assetClass: "Rapid gravity filter", hero: false, criticality: "B", state: "running", runHoursSinceBackwash: 20 + f });
     link(`AST-FLT-${tag}`, "INSTALLED_AT", `POS-${tag}`, { from: "2008-04-01", to: null });
     for (const [key, name, unit, alarm] of [["turb", "Filtered turbidity", "NTU", 0.5], ["headloss", "Head loss", "m", 2.2]]) {
-      add({ id: `SEN-${tag}-${key}`, type: "Sensor", assetId: `AST-FLT-${tag}`, zoneId: "Z05", key, name, unit, range: [0, key === "turb" ? 5 : 3], alarmHi: alarm, historianTag: `15HFA${f}0.${key.toUpperCase()}` }, "SYNTH-HIST");
+      add({ id: `SEN-${tag}-${key}`, type: "Sensor", assetId: `AST-FLT-${tag}`, zoneId: "Z05", key, name, unit, range: [0, key === "turb" ? 5 : 3], alarmHi: alarm, historianTag: `15HFA${String(f).padStart(2, "0")}.${key.toUpperCase()}` }, "SYNTH-HIST");
       link(`SEN-${tag}-${key}`, "MEASURES", `AST-FLT-${tag}`);
     }
   }
@@ -348,6 +336,8 @@ export function generateWorks(seed = 7) {
     p.supervisorId = p.trade && p.role !== "contractor" ? (p.role === "millwright" ? sups[1].id : sups[0].id) : null;
     p.autoSubmit = p === millwrights[2];
     if (p.role === "reliability_engineer") comp(p.id, "c-author", 1, "2028-12-31");
+    // c-model: may release a plant model revision (design §4.3); the second engineer and the works manager hold it
+    if (p.id === "P-001" || p.id === "P-003") comp(p.id, "c-model", 1, "2028-12-31");
   }
 
   // Shifts: today's day and night shift (min class IV = 4)

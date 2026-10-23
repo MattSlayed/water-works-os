@@ -10,6 +10,7 @@ import { runEvals } from "./evals.mjs";
 import { rank } from "./ontology.mjs";
 import { llmEnabled } from "./llm.mjs";
 import { currentProcedure, performanceFor, projectStatus } from "./functions.mjs";
+import { siteBounds } from "./layout.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const WEB = path.resolve(here, "..", "web");
@@ -101,7 +102,7 @@ export function createServer(sys) {
       const p = ont.get(pr.personId);
       return { id: p.id, name: p.name, role: p.role, zoneId: pr.zoneId, checkedIn: muster.checkins.has(p.id) };
     }) : null;
-    return { site: ont.get("SITE-RB"), zones, muster: { on: muster.on, since: muster.since, people }, permits: view.list("Permit", (p) => p.state === "open") };
+    return { site: ont.get("SITE-RB"), bounds: siteBounds(), zones, muster: { on: muster.on, since: muster.since, people }, permits: view.list("Permit", (p) => p.state === "open") };
   }
 
   function objectPayload(v, id) {
