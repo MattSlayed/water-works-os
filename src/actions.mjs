@@ -3,7 +3,7 @@
 import { rank } from "./ontology.mjs";
 import { currentProcedure, stepLock, bandCheck, partNamesIn, stepRequires } from "./functions.mjs";
 import { packageHash, currentPlantModel, writePlant } from "./plant.mjs";
-import { specFor, promotionGap, MODES } from "./harness.mjs";
+import { specFor, promotionGap, MODES, checkWrite } from "./harness.mjs";
 
 export const LEVELS = ["read", "draft", "notify", "propose", "act"];
 const lv = (l) => LEVELS.indexOf(l);
@@ -421,7 +421,7 @@ export const ACTIONS = {
   }, "engineer")
 };
 
-export function createActionService({ ont, audit, clock = wallClock }) {
+export function createActionService({ ont, audit, clock = wallClock, tel = null }) {
   const now = clock;
   const reverts = new Map();
   const log = (entry) => audit && audit.append(entry);
@@ -469,6 +469,7 @@ export function createActionService({ ont, audit, clock = wallClock }) {
     const dec = ont.upsert({ zoneId: zoneFor(params), audience: audienceFor(params),
       id: nextId("DEC"), type: "Decision", action, params, actorId: actor.id, actorKind: actor.kind, onBehalfOf: actor.onBehalfOf || null, autonomy: extra.autonomy || null,
       approvedBy: extra.approvedBy || null, proposalId: extra.proposalId || null, runId: extra.runId || null,
+      constraintsChecked: extra.constraintsChecked || null, evidenceAges: extra.evidenceAges || null,
       assetId: params.assetId || null, objects: res.objects, reversible: !!res.revert, reversed: false, at: now()
     });
     if (res.revert) reverts.set(dec.id, res.revert);
@@ -490,16 +491,23 @@ export function createActionService({ ont, audit, clock = wallClock }) {
     try {
       if (actor.kind === "person") return apply(action, params, actor);
       if (a.ceiling === "human") return refuse(action, actor, `${action} is human-only`);
-      const eff = LEVELS[Math.min(lv(autonomy || "propose"), lv(a.ceiling))];
-      if (lv(eff) >= lv(a.needs)) return apply(action, params, actor, { autonomy: eff, runId });
+      // the harness: evidence freshness and the inherited hard constraints (agents design §4.3, §4.4)
+      const chk = checkWrite({ ont, tel, actor, action, params, evidence, spec: specFor(ont, actor.id), now: now() });
+      let eff = LEVELS[Math.min(lv(autonomy || "propose"), lv(a.ceiling))];
+      const capped = chk.level && lv(eff) > lv(chk.level);
+      const hits = [...chk.hits, ...(capped ? chk.caps : [])];
+      if (chk.refuse) return { ...refuse(action, actor, chk.refuse), hits };
+      if (capped) eff = chk.level;
+      const stamp = { constraintsChecked: chk.checked, evidenceAges: chk.ages };
+      if (lv(eff) >= lv(a.needs)) return { ...apply(action, params, actor, { autonomy: eff, runId, ...stamp }), hits };
       if (lv(eff) >= lv("propose")) {
         const prp = ont.upsert({
           zoneId: zoneFor(params), audience: audienceFor(params), id: nextId("PRP"), type: "Proposal", action, params, actorId: actor.id, actorKind: actor.kind, runId: runId || null,
           assetId: params.assetId || (params.partIds && ont.get(params.partIds[0]) && ont.get(params.partIds[0]).assetId) || null,
-          evidence: evidence || [], risk: risk || null, state: "open", created: now()
+          evidence: evidence || [], risk: risk || null, state: "open", created: now(), ...stamp
         });
-        log({ actor: actor.id, actorKind: actor.kind, action, outcome: "proposed", ref: prp.id });
-        return { status: "proposed", proposal: prp };
+        log({ actor: actor.id, actorKind: actor.kind, action, outcome: "proposed", ref: prp.id, ...(hits.length ? { constraints: hits } : {}) });
+        return { status: "proposed", proposal: prp, hits };
       }
       return refuse(action, actor, `autonomy ${eff} is below what ${action} needs`);
     } catch (e) {

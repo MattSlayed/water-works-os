@@ -17,7 +17,7 @@ export function createSystem({ seed = 7 } = {}) {
   const trackers = createTrackers({ ont, seed, start: "2026-10-01T00:00:00Z", minutes: 14 * 24 * 60 });
   const audit = createAudit();
   trackers.syncTo(ont, tel.cursor(), audit);
-  const actions = createActionService({ ont, audit, clock: tel.now });
+  const actions = createActionService({ ont, audit, clock: tel.now, tel });
   const runtime = createRuntime({ ont, tel, actions, audit });
   const copilot = createCopilot({ ont, tel, actions, runtime });
   const channels = createChannels({ ont, tel, actions, runtime, copilot, audit });

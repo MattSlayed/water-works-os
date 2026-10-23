@@ -2,7 +2,8 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createSystem } from "../src/system.mjs";
 import { AGENT_SPECS } from "../src/agents.mjs";
-import { HARD_CONSTRAINTS, specFor, specId, specFromManifest, statementSentences, matchShadow, shadowRecord } from "../src/harness.mjs";
+import { HARD_CONSTRAINTS, specFor, specId, specFromManifest, statementSentences, matchShadow, shadowRecord, checkWrite } from "../src/harness.mjs";
+import { ACTIONS } from "../src/actions.mjs";
 
 const SYS = { id: "SYSTEM", kind: "person", clearance: "manager", role: "system" };
 const setMode = (s, name, mode) => s.ont.upsert({ id: specId(name), type: "AgentSpec", mode });
@@ -140,7 +141,7 @@ test("off switch (J23): turning off Process Watch's setpoint tool withdraws its 
   assert.equal(s.ont.list("Proposal", (p) => p.actorId === "Process Watch" && p.state === "open").length, 0);
 });
 
-test("demotion: a bounded agent that hits a hard constraint drops to assisted, with an audit entry", { todo: "the permit constraint lands in Task 4" }, () => {
+test("demotion: a bounded agent that hits a hard constraint drops to assisted, with an audit entry", () => {
   const s = createSystem();
   const permit = s.ont.list("Permit", (p) => p.state === "open")[0];
   const m = { name: "Test Recorder", version: "1.0.0", owner: "P-002", purpose: "test", trigger: { kind: "manual" }, tools: ["record_reading"], autonomy: { record_reading: "act" } };
@@ -151,4 +152,62 @@ test("demotion: a bounded agent that hits a hard constraint drops to assisted, w
   assert.deepEqual(run.outputs.map((o) => o.status), ["proposed"]);
   assert.equal(specFor(s.ont, "Test Recorder").mode, "assisted");
   assert.ok(s.audit.all().some((e) => e.action === "demote_agent" && e.ref === specId("Test Recorder") && /permit-holder/.test(e.reason)));
+});
+
+const PW = { kind: "agent", id: "Process Watch", clearance: "manager", onBehalfOf: "SYSTEM" };
+const f07 = (s) => s.ont.list("Asset", (a) => a.positionTag === "F07")[0];
+
+test("freshness: telemetry older than the limit refuses the write, and the refusal is audited", () => {
+  const s = createSystem();
+  const real = s.tel.latest;
+  s.tel.latest = (id) => (id === "SEN-F07-turb" ? { value: 0.6, at: new Date(Date.parse(s.tel.now()) - 45 * 60000).toISOString(), quality: "good" } : real(id));
+  const r = s.actions.invoke({ action: "raise_alert", params: { targetId: f07(s).id, title: "F07 breakthrough risk" }, actor: PW, autonomy: "act", evidence: ["SEN-F07-turb"] });
+  assert.equal(r.status, "refused");
+  assert.match(r.reason, /^evidence stale: SEN-F07-turb 45 min$/);
+  const last = s.audit.all().at(-1);
+  assert.deepEqual([last.action, last.outcome, last.reason], ["raise_alert", "refused", r.reason]);
+  s.tel.latest = real;
+  const ok = s.actions.invoke({ action: "raise_alert", params: { targetId: f07(s).id, title: "F07 breakthrough risk" }, actor: PW, autonomy: "act", evidence: ["SEN-F07-turb", "competence ok for P-028"] });
+  assert.equal(ok.status, "done");
+  assert.ok(ok.decision.evidenceAges.some((e) => e.id === "SEN-F07-turb" && e.ageMin <= 30) && ok.decision.constraintsChecked.includes("permit-holder"));
+});
+
+test("freshness: a cited object that does not exist refuses the write", () => {
+  const s = createSystem();
+  const r = s.actions.invoke({ action: "raise_alert", params: { targetId: f07(s).id, title: "x" }, actor: PW, autonomy: "act", evidence: ["SEN-NOPE"] });
+  assert.equal(r.reason, "evidence missing: SEN-NOPE");
+});
+
+test("permit-holder: an agent acting for someone other than the holder only proposes on a permitted asset", () => {
+  const s = createSystem();
+  const hlpb = s.ont.list("Asset", (a) => a.positionTag === "HLP-B")[0];
+  assert.equal(act(s, "P-009", "open_permit", { assetId: hlpb.id, kind: "general", holderId: "P-028" }).status, "done");
+  const copilot = (who) => s.actions.invoke({ action: "record_reading", params: { targetId: hlpb.id, measure: "vibration", value: 3.2 }, actor: { kind: "agent", id: "Technician Copilot", clearance: "technician", onBehalfOf: who }, autonomy: "act" });
+  const r = copilot("P-030");
+  assert.equal(r.status, "proposed");
+  assert.deepEqual(r.hits, ["permit-holder"]);
+  assert.equal(copilot("P-028").status, "done");
+  const spec = specFor(s.ont, "Technician Copilot");
+  s.ont.upsert({ id: spec.id, type: "AgentSpec", constraints: [] });
+  assert.equal(copilot("P-030").status, "proposed", "the inherited constraint cannot be removed");
+});
+
+test("hard constraints: chlorine and money cap at propose; a control-system write is refused", () => {
+  const s = createSystem();
+  const base = { ont: s.ont, tel: s.tel, actor: PW, evidence: [], spec: specFor(s.ont, "Process Watch"), now: s.tel.now() };
+  const cl = checkWrite({ ...base, action: "propose_dose_change", params: { chemicalId: "CHEM-CL2", change: "up" } });
+  assert.deepEqual([cl.level, cl.refuse], ["propose", null]);
+  assert.ok(cl.caps.includes("chlorine-propose") && cl.checked.includes("chlorine-propose"));
+  assert.equal(checkWrite({ ...base, action: "propose_dose_change", params: { chemicalId: "CHEM-COAG", change: "up" } }).level, null);
+  ACTIONS.raise_alert.money = true;
+  try { assert.ok(checkWrite({ ...base, action: "raise_alert", params: { targetId: "Z01", title: "x" } }).caps.includes("money-propose")); } finally { delete ACTIONS.raise_alert.money; }
+  ACTIONS.raise_alert.control = true;
+  try { assert.match(checkWrite({ ...base, action: "raise_alert", params: { targetId: "Z01", title: "x" } }).refuse, /control system/); } finally { delete ACTIONS.raise_alert.control; }
+});
+
+test("every read records its source time", () => {
+  const s = createSystem();
+  const run = s.runtime.run("Process Watch", { actingUser: SYS, chain: false });
+  const cl = run.sources.find((x) => x.id === "SEN-FIN-cl");
+  assert.ok(cl && typeof cl.sourceAt === "string" && cl.sourceAt <= s.tel.now(), JSON.stringify(cl));
 });

@@ -1,6 +1,7 @@
 // The harness around every agent (agents design §4): the decision statement each agent is held to, its modes,
 // evidence freshness, the hard constraints it inherits, and the rules for promoting and demoting it.
 import { ACTIONS } from "./actions.mjs";
+import { rank } from "./ontology.mjs";
 
 export const HARD_CONSTRAINTS = [
   { id: "no-control-write", text: "It never writes to the control system." },
@@ -113,4 +114,45 @@ export function demoteIfNeeded(ont, spec, run) {
   const overrides = ont.list("Feedback", (f) => props.has(f.targetId) && ["reject", "edit"].includes(f.verdict)).length;
   if ((overrides / WINDOW) * 100 > 20) return `people overrode ${overrides} of its last ${WINDOW} proposals`;
   return null;
+}
+
+// Evidence freshness and the inherited hard constraints, checked before any agent write (agents design §4.3, §4.4).
+// Only id-like evidence is a citation; free text such as "competence ok for P-028" is a note, not a source.
+const ID_LIKE = /^[A-Z][A-Z0-9]*(-[A-Za-z0-9_.]+)+$/;
+const minutesBetween = (a, b) => Math.round((Date.parse(b) - Date.parse(a)) / 60000);
+export const objectTime = (o) => o.at || o.updatedAt || (o.prov && o.prov.extracted_at) || null;
+// The asset an action is about: named directly, or through what it targets.
+const assetOf = (ont, p) => {
+  if (p.assetId) return p.assetId;
+  for (const k of ["targetId", "partId", "workOrderId", "executionId", "alertId"]) {
+    const o = p[k] && ont.get(p[k]);
+    if (o) return o.type === "Asset" ? o.id : o.assetId || null;
+  }
+  return Array.isArray(p.partIds) && p.partIds.length ? (ont.get(p.partIds[0]) || {}).assetId || null : null;
+};
+const inDisinfection = (ont, p) => [p.chemicalId, p.targetId, p.assetId].some((id) => id && (ont.get(id) || {}).zoneId === "Z06");
+
+export function checkWrite({ ont, tel, actor, action, params, evidence, spec, now }) {
+  const out = { level: null, refuse: null, checked: [], caps: [], hits: [], ages: [] };
+  const limit = ((spec && spec.reads) || []).find((r) => r.source === "telemetry")?.freshnessMin ?? 30;
+  for (const id of [].concat(evidence || []).filter((x) => typeof x === "string" && ID_LIKE.test(x))) {
+    const l = tel && tel.latest(id), o = l ? null : ont.get(id);
+    if (!l && !o) return { ...out, refuse: `evidence missing: ${id}` };
+    const at = l ? l.at : objectTime(o), ageMin = at ? minutesBetween(at, now) : null;
+    out.ages.push({ id, ageMin });
+    if (l && limit != null && ageMin > limit) return { ...out, refuse: `evidence stale: ${id} ${ageMin} min` };
+  }
+  const a = ACTIONS[action];
+  const cap = (id) => { out.level = "propose"; out.caps.push(id); };
+  out.checked.push("no-control-write", "human-only-releases");
+  if (a.control) return { ...out, refuse: `${action} writes to the control system`, hits: ["no-control-write"] };
+  out.checked.push("chlorine-propose");
+  if (["request_setpoint_change", "propose_dose_change"].includes(action) && inDisinfection(ont, params)) cap("chlorine-propose");
+  out.checked.push("money-propose");
+  if (a.money) cap("money-propose");
+  out.checked.push("permit-holder");
+  const assetId = assetOf(ont, params);
+  const permit = assetId && ont.list("Permit", (p) => p.assetId === assetId && p.state === "open")[0];
+  if (permit && permit.holderId !== (actor.onBehalfOf || actor.id) && rank(actor.clearance) < rank("supervisor")) cap("permit-holder");
+  return out;
 }

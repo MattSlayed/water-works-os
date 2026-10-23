@@ -5,7 +5,7 @@
 import { LEVELS } from "./actions.mjs";
 import * as F from "./functions.mjs";
 import { baseline } from "./scenes.mjs";
-import { specFor, shadowId, demoteIfNeeded } from "./harness.mjs";
+import { specFor, shadowId, demoteIfNeeded, objectTime } from "./harness.mjs";
 
 const v = (s) => ({ version: "1.0.0", owner: "P-002", ...s }); // P-002, a reliability engineer, owns the default agents (agents design §4.1)
 export const AGENT_SPECS = [
@@ -595,7 +595,9 @@ export function createRuntime({ ont, tel, actions, audit }) {
   function makeCtx(spec, run, opts) {
     const view = ont.view(opts.actingUser);
     const seen = new Set();
-    const read = (o) => { if (o && !seen.has(o.id)) { seen.add(o.id); if (run.read.length < 500) run.read.push(o.id); } return o; };
+    // every read records its source and the source's own time (agents design §4.3)
+    const source = (id, sourceAt) => { if (run.sources.length < 500) run.sources.push({ id, sourceAt: sourceAt || null }); };
+    const read = (o) => { if (o && !seen.has(o.id)) { seen.add(o.id); if (run.read.length < 500) run.read.push(o.id); source(o.id, o.type === "Sensor" ? (tel.latest(o.id) || {}).at : objectTime(o)); } return o; };
     const call = (tool, args, result) => { run.calls.push({ tool, args, result }); return result; };
     const now = tel.now();
     return {
@@ -643,7 +645,7 @@ export function createRuntime({ ont, tel, actions, audit }) {
     const r = {
       id: `RUN-${String(++n).padStart(5, "0")}`, type: "AgentRun", agent: name, version: spec.version, trigger: opts.trigger || { kind: "manual" },
       mission: opts.mission || null, scope: opts.scope || {}, actingUserId: opts.actingUser.id, startedAt: new Date().toISOString(), plantTime: tel.now(),
-      read: [], calls: [], reasoning: [], outputs: [], refusals: [], constraintHits: [], status: "running"
+      read: [], sources: [], calls: [], reasoning: [], outputs: [], refusals: [], constraintHits: [], status: "running"
     };
     let next = [];
     const hs = specFor(ont, name);
