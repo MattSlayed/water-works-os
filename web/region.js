@@ -27,9 +27,9 @@ export function mountRegion(el, data, { onSelect = () => {}, onEnterPlant = () =
   const watchdog = setTimeout(() => { if (!loaded) offline(); }, 4000);
 
   const groups = {
-    region: L.layerGroup(), grid: L.layerGroup(), detections: L.layerGroup(), plant: L.layerGroup(), trackers: L.layerGroup(), people: L.layerGroup(), alerts: L.layerGroup(), focus: L.layerGroup()
+    region: L.layerGroup(), projects: L.layerGroup(), grid: L.layerGroup(), detections: L.layerGroup(), plant: L.layerGroup(), trackers: L.layerGroup(), people: L.layerGroup(), alerts: L.layerGroup(), focus: L.layerGroup()
   };
-  const on = { region: true, grid: false, detections: true, plant: true, trackers: true, people: false, alerts: true, ...(start.layers || {}) };
+  const on = { region: true, projects: true, grid: false, detections: true, plant: true, trackers: true, people: false, alerts: true, ...(start.layers || {}) };
   const filters = { kinds: new Set(["pump_station", "reservoir", "valve_chamber", "vehicle", "portable", "contractor"]), alarmOnly: false, staleOnly: false };
   const byId = new Map(); // object id -> leaflet layers, for focus
   let focusSet = null, labelled = new Set();
@@ -39,7 +39,7 @@ export function mountRegion(el, data, { onSelect = () => {}, onEnterPlant = () =
   const tip = (layer, text, id) => layer.bindTooltip(esc(text), { direction: "top", offset: [0, -6], permanent: labelled.has(id), className: "rlabel" });
 
   function draw() {
-    for (const g of Object.values(groups)) g.clearLayers();
+    for (const [k, g] of Object.entries(groups)) if (k !== "grid") g.clearLayers(); // the scene grid is set by setGrid only
     byId.clear();
     R.features = 0;
     const style = (id, base) => ({ ...base, opacity: fade(id) ? 0.25 : base.opacity ?? 1, fillOpacity: fade(id) ? 0.05 : base.fillOpacity ?? 0.2 });
@@ -55,6 +55,14 @@ export function mountRegion(el, data, { onSelect = () => {}, onEnterPlant = () =
       tip(layer, r.name, r.id);
       layer.on("click", () => onSelect({ kind: "region", id: r.id }));
       groups.region.addLayer(reg(r.id, layer));
+    }
+    // project footprints: faint dashed outlines, brought forward in focus
+    for (const p of data.projects) {
+      if (!p.footprint) continue;
+      const f = L.polygon(p.footprint.coordinates[0].map((c) => [c[1], c[0]]), style(p.id, { color: css("--violet"), weight: focusSet && focusSet.has(p.id) ? 2.5 : 1.2, dashArray: "5 4", fillOpacity: focusSet && focusSet.has(p.id) ? 0.15 : 0.04 }));
+      tip(f, p.title, p.id);
+      f.on("click", () => onSelect({ kind: "project", id: p.id }));
+      groups.projects.addLayer(reg(p.id, f));
     }
     // the works as one object until Enter plant
     const w = L.circleMarker(works, style("SITE-RB", { radius: 9, color: css("--teal"), weight: 2, fillOpacity: 0.5 }));
@@ -127,10 +135,9 @@ export function mountRegion(el, data, { onSelect = () => {}, onEnterPlant = () =
     if (pts.length) map.fitBounds(L.latLngBounds(pts.map((c) => [c[1], c[0]])).extend(works).pad(0.05));
   }
   map.on("zoomend", () => { drawTrackers(); });
-  map.on("moveend zoomend", () => {
-    enter.hidden = !(map.getZoom() >= ENTER_AT && map.getBounds().contains(works));
-    onView({ center: [map.getCenter().lat, map.getCenter().lng], zoom: map.getZoom() });
-  });
+  const canEnter = () => { enter.hidden = !(map.getZoom() >= ENTER_AT && map.getBounds().contains(works)); };
+  map.on("moveend zoomend", () => { canEnter(); onView({ center: [map.getCenter().lat, map.getCenter().lng], zoom: map.getZoom() }); });
+  canEnter(); // the first view may already be close over the works (Back from the plant)
   enter.addEventListener("click", () => onEnterPlant());
   setTimeout(() => map.invalidateSize(), 0);
 

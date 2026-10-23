@@ -120,7 +120,7 @@ const LOGIC = {
       const r = st.requires && st.requires.reading;
       return `Step ${st.step}/${pr.steps.length}: ${st.text}.${r ? ` Reply "done" with the ${r.measure} in ${r.unit}.` : ' Reply "done" when finished.'}${lock.locked ? ` Locked: ${lock.reason}` : ""}`;
     };
-    const tagOf = (id) => (ctx.get(id) || {}).positionTag || id;
+    const tagOf = (id) => { const o = ctx.get(id) || {}; return o.positionTag || o.name || id; }; // a sample point has a name, not a position tag
 
     const card = awaiting && awaiting.kind === "note" ? [{ agent: "Scribe", scope: { executionId: awaiting.executionId } }] : null;
     const handled = (() => { switch (kind) {

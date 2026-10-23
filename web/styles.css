@@ -206,11 +206,11 @@ main:focus { outline: none; }
 .rmap { position: relative; padding: 0; min-height: 520px; overflow: hidden; }
 .rmap-canvas { position: absolute; inset: 0; background: var(--bg2); }
 .rmap.plain .rmap-canvas, .rmap .plain { background: var(--panel); }
-.rmap .disclose { position: absolute; z-index: 500; top: 8px; left: 50px; }
+.rmap .disclose { position: absolute; z-index: 500; top: 8px; left: 50px; background: var(--panel); color: var(--text); padding: 2px 8px; border: 1px solid var(--line); }
 .rmap-note { position: absolute; z-index: 500; bottom: 24px; left: 10px; background: var(--raise); color: var(--amber); padding: 2px 8px; border: 1px solid var(--line); }
 .rmap-enter { position: absolute; z-index: 500; top: 8px; right: 10px; }
 .rtabs [role="tablist"] { margin-bottom: 6px; } .rtabs [aria-selected="true"] { border-color: var(--teal); color: var(--ink); }
-#rpanel h4 { margin: 10px 0 4px; }
+#rpanel h4 { margin: 10px 0 4px; } #rpanel:not(:empty) { padding-bottom: 10px; margin-bottom: 10px; border-bottom: 1px solid var(--line); }
 .rtag { color: var(--teal); font-size: 13px; text-align: center; line-height: 16px; text-shadow: 0 0 2px #000; }
 .rtag.portable { color: var(--violet); } .rtag.stale { color: var(--muted); } .rtag.lost { color: var(--dim); opacity: 0.6; }
 .rcluster span { display: block; width: 26px; height: 26px; line-height: 26px; border-radius: 50%; background: var(--raise); border: 1px solid var(--teal); color: var(--ink); text-align: center; font: 12px var(--mono); }
