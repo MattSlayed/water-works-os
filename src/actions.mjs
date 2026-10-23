@@ -3,6 +3,7 @@
 import { rank } from "./ontology.mjs";
 import { currentProcedure, stepLock, bandCheck, partNamesIn, stepRequires } from "./functions.mjs";
 import { packageHash, currentPlantModel, writePlant } from "./plant.mjs";
+import { specFor, promotionGap, MODES } from "./harness.mjs";
 
 export const LEVELS = ["read", "draft", "notify", "propose", "act"];
 const lv = (l) => LEVELS.indexOf(l);
@@ -40,6 +41,11 @@ const isolatedPermit = (ont, assetId) => {
   return { permit, isolated: !!(permit && (permit.isolations || []).some((i) => i.state === "applied")) };
 };
 
+const agentSpec = (ont, name) => { const s = specFor(ont, name); if (!s) throw new Error(`unknown agent ${name}`); return s; };
+// Withdraw an agent's open proposals (all of them, or one tool's); returns the undos.
+const withdrawFor = (ont, agent, action, ctx, reason) => ont.list("Proposal", (p) => p.actorId === agent && p.state === "open" && (!action || p.action === action))
+  .map((p) => setProps(ont, p.id, { state: "withdrawn", withdrawnAt: ctx.now(), withdrawnReason: reason }));
+
 // A job follows the procedure version released when it starts; shared by start_execution and the sampling round.
 function openExecution(ont, wo, personId, proc, at) {
   // performance data: the person, their own supervisor and engineers (the manager sees everything)
@@ -53,6 +59,33 @@ function openExecution(ont, wo, personId, proc, at) {
 const samplerOf = (ont) => ont.list("Person", (x) => x.role === "lab_analyst").sort((a, b) => a.id.localeCompare(b.id))[0];
 
 export const ACTIONS = {
+  // The harness's switches (agents design §4.2, §4.6): people only, engineers and above.
+  promote_agent: def("act", "human", ["agent", "to"], (ont, p, ctx) => {
+    const spec = agentSpec(ont, p.agent);
+    if (actorId(ctx) === spec.owner) throw new Error("the builder cannot promote their own agent");
+    const next = MODES[MODES.indexOf(spec.mode) + 1];
+    if (!next) throw new Error(`${spec.name} is already ${spec.mode}`);
+    if (p.to !== next) throw new Error(`promotion is one step at a time: ${spec.name} is ${spec.mode}, so the next step is ${next}`);
+    const gap = promotionGap(ont, spec);
+    if (gap) throw new Error(`not yet: ${gap}`);
+    return { objects: [spec.id], revert: setProps(ont, spec.id, { mode: p.to }) };
+  }, "engineer"),
+  set_agent_state: def("act", "human", ["agent", "state"], (ont, p, ctx) => {
+    const spec = agentSpec(ont, p.agent);
+    if (!["live", "paused", "retired"].includes(p.state)) throw new Error("state must be live, paused or retired");
+    const off = p.state !== "live";
+    const undo = [setProps(ont, spec.id, { state: p.state, killedAt: off ? ctx.now() : null, killedBy: off ? actorId(ctx) : null })];
+    if (off) undo.push(...withdrawFor(ont, spec.name, null, ctx, `${spec.name} ${p.state}`), ...ont.list("ShadowAction", (x) => x.agent === spec.name && x.status === "pending").map((x) => setProps(ont, x.id, { status: "dropped" })));
+    return { objects: [spec.id], revert: () => undo.reverse().forEach((f) => f()) };
+  }, "engineer"),
+  set_tool_enabled: def("act", "human", ["agent", "action", "enabled"], (ont, p, ctx) => {
+    const spec = agentSpec(ont, p.agent);
+    if (!spec.tools.some((t) => t.action === p.action)) throw new Error(`${p.action} is not one of ${spec.name}'s tools`);
+    const on = p.enabled === true || p.enabled === "true";
+    const undo = [setProps(ont, spec.id, { tools: spec.tools.map((t) => (t.action === p.action ? { ...t, enabled: on } : t)) })];
+    if (!on) undo.push(...withdrawFor(ont, spec.name, p.action, ctx, `${p.action} turned off`));
+    return { objects: [spec.id], revert: () => undo.reverse().forEach((f) => f()) };
+  }, "engineer"),
   create_work_order: def("act", "act", ["assetId", "title"], (ont, p, ctx) => {
     const wo = create(ont, { id: nextId("WO-N"), type: "WorkOrder", assetId: p.assetId, title: p.title, kind: p.kind || "CM", priority: p.priority || "P3", state: "requested", requested: ctx.now(), source: p.source || null }, [["TARGETS", p.assetId]]);
     return { objects: [wo.id], revert: () => setProps(ont, wo.id, { state: "cancelled" }) };

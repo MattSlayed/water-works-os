@@ -5,7 +5,7 @@
 import { LEVELS } from "./actions.mjs";
 import * as F from "./functions.mjs";
 import { baseline } from "./scenes.mjs";
-import { specFor, shadowId } from "./harness.mjs";
+import { specFor, shadowId, demoteIfNeeded } from "./harness.mjs";
 
 const v = (s) => ({ version: "1.0.0", owner: "P-002", ...s }); // P-002, a reliability engineer, owns the default agents (agents design §4.1)
 export const AGENT_SPECS = [
@@ -586,7 +586,7 @@ export function dropPackEvidence(ctx) {
   return items;
 }
 
-export function createRuntime({ ont, tel, actions }) {
+export function createRuntime({ ont, tel, actions, audit }) {
   const specs = new Map(AGENT_SPECS.map((s) => [s.name, structuredClone(s)]));
   const logic = new Map(Object.entries(LOGIC));
   const runs = [];
@@ -626,6 +626,7 @@ export function createRuntime({ ont, tel, actions }) {
         const level = spec.autonomy[action] || "propose";
         const autonomy = hs && hs.mode === "assisted" && LEVELS.indexOf(level) > LEVELS.indexOf("propose") ? "propose" : level;
         const r = actions.invoke({ action, params, actor: { kind: "agent", id: spec.name, clearance: opts.actingUser.clearance, onBehalfOf: opts.actingUser.id }, autonomy, runId: run.id, ...meta });
+        if (r.hits) run.constraintHits.push(...r.hits);
         if (r.status === "refused") run.refusals.push({ action, reason: r.reason });
         else run.outputs.push({ action, status: r.status, ref: (r.decision || r.proposal).id });
         return call(action, params, { status: r.status, ref: r.decision ? r.decision.id : r.proposal ? r.proposal.id : null, objects: r.decision ? r.decision.objects : [], reason: r.reason });
@@ -642,10 +643,12 @@ export function createRuntime({ ont, tel, actions }) {
     const r = {
       id: `RUN-${String(++n).padStart(5, "0")}`, type: "AgentRun", agent: name, version: spec.version, trigger: opts.trigger || { kind: "manual" },
       mission: opts.mission || null, scope: opts.scope || {}, actingUserId: opts.actingUser.id, startedAt: new Date().toISOString(), plantTime: tel.now(),
-      read: [], calls: [], reasoning: [], outputs: [], refusals: [], status: "running"
+      read: [], calls: [], reasoning: [], outputs: [], refusals: [], constraintHits: [], status: "running"
     };
     let next = [];
-    try {
+    const hs = specFor(ont, name);
+    if (hs && ["paused", "retired"].includes(hs.state)) { r.status = "skipped"; r.reasoning.push(`${name} is ${hs.state}.`); }
+    else try {
       const chain = logic.get(name)(makeCtx(spec, r, opts));
       next = Array.isArray(chain) ? chain : []; // only a returned list chains; "return ctx.think(...)" is an early exit
       r.status = "completed";
@@ -658,6 +661,13 @@ export function createRuntime({ ont, tel, actions }) {
     for (const o of r.read.map((id) => ont.get(id)).filter((x) => x && x.audience)) audience = audience ? audience.filter((x) => o.audience.includes(x)) : [...o.audience];
     ont.upsert({ ...r, minClearance: opts.actingUser.clearance, audience });
     runs.push(r);
+    // the harness: a breach is counted, and a bounded agent that misbehaves drops to assisted (agents design §4.2)
+    if (hs && r.constraintHits.length) ont.upsert({ id: hs.id, type: "AgentSpec", breaches: (hs.breaches || 0) + 1 });
+    const why = demoteIfNeeded(ont, hs, r);
+    if (why) {
+      ont.upsert({ id: hs.id, type: "AgentSpec", mode: "assisted" });
+      if (audit) audit.append({ actor: "harness", actorKind: "system", action: "demote_agent", outcome: "done", ref: hs.id, reason: why, runId: r.id });
+    }
     if (opts.chain !== false && depth < 6) for (const x of next) run(x.agent, { ...opts, scope: x.scope, mission: null, trigger: { kind: "chain", from: r.id } }, depth + 1);
     return r;
   }

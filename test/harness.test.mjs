@@ -95,3 +95,60 @@ test("the autonomy dial and the decision statement agree", () => {
   s.runtime.setAutonomy("Process Watch", "raise_alert", "propose");
   assert.equal(specFor(s.ont, "Process Watch").tools.find((t) => t.action === "raise_alert").level, "propose");
 });
+
+const person = (s, id) => ({ kind: "person", id, clearance: s.ont.get(id).clearance });
+const act = (s, by, action, params) => s.actions.invoke({ action, params, actor: person(s, by) });
+const seedAgreed = (s, agent, n) => { for (let i = 0; i < n; i++) s.ont.upsert({ id: `SHA-T${agent.length}-${i}`, type: "ShadowAction", agent, specVersion: "1.0.0", runId: null, action: "raise_alert", params: {}, at: s.tel.now(), status: "agreed" }); };
+
+test("promotion: four eyes, one step at a time, only on a shadow record that meets the criteria", () => {
+  const s = createSystem();
+  assert.match(act(s, "P-002", "promote_agent", { agent: "Process Watch", to: "bounded" }).reason, /own agent/);
+  setMode(s, "Asset Watch", "shadow");
+  assert.match(act(s, "P-003", "promote_agent", { agent: "Asset Watch", to: "assisted" }).reason, /minCases/);
+  assert.match(act(s, "P-028", "promote_agent", { agent: "Asset Watch", to: "assisted" }).reason, /engineer/);
+  seedAgreed(s, "Asset Watch", 20);
+  assert.match(act(s, "P-003", "promote_agent", { agent: "Asset Watch", to: "bounded" }).reason, /one step/);
+  assert.equal(act(s, "P-003", "promote_agent", { agent: "Asset Watch", to: "assisted" }).status, "done");
+  assert.equal(specFor(s.ont, "Asset Watch").mode, "assisted");
+  assert.equal(act(s, "P-003", "promote_agent", { agent: "Asset Watch", to: "live" }).status, "refused");
+});
+
+test("off switch: pausing Geo Watch withdraws its open proposals and queued shadow actions; its runs are skipped", () => {
+  const s = createSystem();
+  const open = s.ont.list("Proposal", (p) => p.actorId === "Geo Watch" && p.state === "open");
+  assert.equal(open.length, 2);
+  s.ont.upsert({ id: "SHA-GEO-1", type: "ShadowAction", agent: "Geo Watch", specVersion: "1.0.0", runId: null, action: "raise_alert", params: {}, at: s.tel.now(), status: "pending" });
+  assert.equal(act(s, "P-003", "set_agent_state", { agent: "Geo Watch", state: "paused" }).status, "done");
+  for (const p of open) assert.equal(s.ont.get(p.id).state, "withdrawn");
+  assert.equal(s.ont.get("SHA-GEO-1").status, "dropped");
+  const spec = specFor(s.ont, "Geo Watch");
+  assert.deepEqual([spec.state, spec.killedBy], ["paused", "P-003"]);
+  assert.equal(s.runtime.run("Geo Watch", { actingUser: SYS, chain: false }).status, "skipped");
+  assert.equal(act(s, "P-028", "set_agent_state", { agent: "Geo Watch", state: "live" }).status, "refused");
+});
+
+test("off switch (J23): turning off Process Watch's setpoint tool withdraws its open request; a run raises none", () => {
+  const s = createSystem();
+  s.runtime.run("Process Watch", { actingUser: SYS, chain: false });
+  const prp = s.ont.list("Proposal", (p) => p.actorId === "Process Watch" && p.action === "request_setpoint_change" && p.state === "open");
+  assert.ok(prp.length, "an open setpoint proposal");
+  assert.equal(act(s, "P-002", "set_tool_enabled", { agent: "Process Watch", action: "request_setpoint_change", enabled: false }).status, "done");
+  for (const p of prp) assert.equal(s.ont.get(p.id).state, "withdrawn");
+  for (const a of s.ont.list("Alert", (x) => x.state === "active" && s.ont.get(x.targetId) && s.ont.get(x.targetId).assetClass === "Rapid gravity filter")) act(s, "P-004", "acknowledge_alert", { alertId: a.id });
+  const run = s.runtime.run("Process Watch", { actingUser: SYS, chain: false });
+  assert.ok(run.refusals.some((r) => r.action === "request_setpoint_change" && r.reason === "tool turned off"), JSON.stringify(run.refusals));
+  assert.equal(s.ont.list("Proposal", (p) => p.actorId === "Process Watch" && p.state === "open").length, 0);
+});
+
+test("demotion: a bounded agent that hits a hard constraint drops to assisted, with an audit entry", { todo: "the permit constraint lands in Task 4" }, () => {
+  const s = createSystem();
+  const permit = s.ont.list("Permit", (p) => p.state === "open")[0];
+  const m = { name: "Test Recorder", version: "1.0.0", owner: "P-002", purpose: "test", trigger: { kind: "manual" }, tools: ["record_reading"], autonomy: { record_reading: "act" } };
+  s.runtime.register(structuredClone(m), (ctx) => { ctx.act("record_reading", { targetId: permit.assetId, measure: "vibration", value: 3.1 }); });
+  s.ont.upsert(specFromManifest(m));
+  const other = s.ont.list("Person", (p) => p.clearance === "technician" && p.id !== permit.holderId)[0];
+  const run = s.runtime.run("Test Recorder", { actingUser: { id: other.id, kind: "person", clearance: "technician" } });
+  assert.deepEqual(run.outputs.map((o) => o.status), ["proposed"]);
+  assert.equal(specFor(s.ont, "Test Recorder").mode, "assisted");
+  assert.ok(s.audit.all().some((e) => e.action === "demote_agent" && e.ref === specId("Test Recorder") && /permit-holder/.test(e.reason)));
+});
