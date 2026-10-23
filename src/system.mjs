@@ -5,6 +5,7 @@ import { createTelemetry } from "./telemetry.mjs";
 import { createAudit } from "./audit.mjs";
 import { createActionService } from "./actions.mjs";
 import { createRuntime } from "./agents.mjs";
+import { createCopilot } from "./copilot.mjs";
 
 export function createSystem({ seed = 7 } = {}) {
   const ont = createOntology(generateWorks(seed));
@@ -12,5 +13,6 @@ export function createSystem({ seed = 7 } = {}) {
   const audit = createAudit();
   const actions = createActionService({ ont, audit });
   const runtime = createRuntime({ ont, tel, actions });
-  return { seed, ont, tel, audit, actions, runtime };
+  const copilot = createCopilot({ ont, tel, actions, runtime });
+  return { seed, ont, tel, audit, actions, runtime, copilot };
 }
