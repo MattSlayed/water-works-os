@@ -278,3 +278,31 @@ test("overrides are learnt: a rejection with a reason becomes an eval case", asy
   assert.deepEqual([learned[0].agent, learned[0].expect, learned[0].reason], ["Process Watch", "not request_setpoint_change", "artisan on leave"]);
   assert.equal((await runEvals(() => createSystem(), "Process Watch", s.ont)).learned, 1);
 });
+
+test("relative revert: reversing an agent's change keeps a person's later edit of the same field", () => {
+  const s = createSystem();
+  const wo = s.ont.list("WorkOrder", (w) => !["closed", "cancelled"].includes(w.state))[0];
+  const prp = s.actions.invoke({ action: "update_work_order", params: { workOrderId: wo.id, patch: { priority: "P1" } }, actor: PW, autonomy: "act" });
+  assert.equal(prp.status, "proposed");
+  const agentDec = resolveAs(s, prp.proposal.id, "P-004").decision;
+  assert.equal(s.ont.get(wo.id).priority, "P1");
+  assert.equal(act(s, "P-004", "update_work_order", { workOrderId: wo.id, patch: { planned: "2026-10-20", priority: "P2" } }).status, "done");
+  assert.equal(s.actions.reverse(agentDec.id, person(s, "P-004")).status, "done");
+  assert.deepEqual([s.ont.get(wo.id).priority, s.ont.get(wo.id).planned], ["P2", "2026-10-20"]);
+  const entry = s.audit.all().filter((e) => e.action === "reverse").at(-1);
+  assert.deepEqual(entry.kept, ["priority"]);
+});
+
+test("relative revert: closing a permit and recording an isolation can both be reversed", () => {
+  const s = createSystem();
+  const hlpb = s.ont.list("Asset", (a) => a.positionTag === "HLP-B")[0];
+  const ptw = act(s, "P-009", "open_permit", { assetId: hlpb.id, kind: "general", holderId: "P-028" }).decision.objects[0];
+  const iso = act(s, "P-009", "record_isolation", { permitId: ptw, point: "MCC-2 feeder 4" }).decision;
+  assert.equal(s.ont.get(ptw).isolations.length, 1);
+  assert.equal(s.actions.reverse(iso.id, person(s, "P-009")).status, "done");
+  assert.equal(s.ont.get(ptw).isolations.length, 0);
+  const close = act(s, "P-009", "close_permit", { permitId: ptw }).decision;
+  assert.equal(s.ont.get(ptw).state, "closed");
+  assert.equal(s.actions.reverse(close.id, person(s, "P-009")).status, "done");
+  assert.equal(s.ont.get(ptw).state, "open");
+});

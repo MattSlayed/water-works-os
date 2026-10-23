@@ -16,12 +16,19 @@ const wallClock = () => new Date().toISOString();
 // for it ("human" = never an agent). minClearance: the least clearance of the actor (or the person an agent acts for).
 const def = (needs, ceiling, required, apply, minClearance = "technician") => ({ needs, ceiling, required, apply, minClearance });
 
+// The revert is relative (agents design §4.6): it restores only the fields that still hold what the patch wrote, so a
+// later edit by someone else is kept; it returns { kept: [fields] }.
+const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 const setProps = (ont, id, patch) => {
   const prev = ont.get(id);
   if (!prev) throw new Error(`not found: ${id}`);
   const old = Object.fromEntries(Object.keys(patch).map((k) => [k, prev[k]]));
   ont.upsert({ id, type: prev.type, ...patch });
-  return () => ont.upsert({ id, type: prev.type, ...old });
+  return () => {
+    const cur = ont.get(id), kept = Object.keys(patch).filter((k) => !same(cur[k], patch[k]));
+    ont.upsert({ id, type: prev.type, ...Object.fromEntries(Object.entries(old).filter(([k]) => !kept.includes(k))) });
+    return { kept };
+  };
 };
 const create = (ont, obj, linksTo = []) => {
   const o = ont.upsert(obj);
@@ -564,10 +571,11 @@ export function createActionService({ ont, audit, clock = wallClock, tel = null 
     if ((d.onBehalfOf || d.actorId) !== by.id && rank(by.clearance) < rank("supervisor")) return refuse("reverse", by, "only the person who did it or a supervisor reverses it");
     const f = reverts.get(decisionId);
     if (!f) return refuse("reverse", by, "not reversible");
-    try { f(); } catch (e) { return refuse("reverse", by, e.message); }
+    let kept = [];
+    try { kept = (f() || {}).kept || []; } catch (e) { return refuse("reverse", by, e.message); }
     reverts.delete(decisionId);
-    ont.upsert({ id: decisionId, type: "Decision", reversed: true, reversedBy: by && by.id, reversedAt: now() });
-    log({ actor: by && by.id, actorKind: by && by.kind, action: "reverse", outcome: "done", ref: decisionId });
+    ont.upsert({ id: decisionId, type: "Decision", reversed: true, reversedBy: by && by.id, reversedAt: now(), ...(kept.length ? { kept } : {}) });
+    log({ actor: by && by.id, actorKind: by && by.kind, action: "reverse", outcome: "done", ref: decisionId, ...(kept.length ? { kept } : {}) });
     return { status: "done" };
   }
 
