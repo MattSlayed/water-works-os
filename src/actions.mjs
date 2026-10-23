@@ -2,6 +2,7 @@
 // autonomy dial (BR-04, BR-05, FR-AGT-004) and writes Decisions, Proposals and Feedback (FR-GOV-002).
 import { rank } from "./ontology.mjs";
 import { currentProcedure, stepLock, bandCheck, partNamesIn, stepRequires } from "./functions.mjs";
+import { packageHash, currentPlantModel, writePlant } from "./plant.mjs";
 
 export const LEVELS = ["read", "draft", "notify", "propose", "act"];
 const lv = (l) => LEVELS.indexOf(l);
@@ -28,7 +29,7 @@ const create = (ont, obj, linksTo = []) => {
 };
 
 // Parameters that name an object: the type it must be. Every named object must also be visible to the actor.
-const TARGET_TYPES = { channelId: ["Channel"], messageId: ["Message"], documentId: ["Draft"], onBehalfOf: ["Person", "Project"], procedureId: ["Procedure"], executionId: ["Execution"], issueId: ["Issue"], noteId: ["KnowledgeNote"], personId: ["Person"], projectId: ["Project"], workOrderId: ["WorkOrder"], assetId: ["Asset"], partIds: ["Part"], partId: ["Part"], alertId: ["Alert"], permitId: ["Permit"], assigneeId: ["Person"], holderId: ["Person"], itemId: ["Part", "Chemical"], targetId: null };
+const TARGET_TYPES = { modelId: ["PlantModel"], channelId: ["Channel"], messageId: ["Message"], documentId: ["Draft"], onBehalfOf: ["Person", "Project"], procedureId: ["Procedure"], executionId: ["Execution"], issueId: ["Issue"], noteId: ["KnowledgeNote"], personId: ["Person"], projectId: ["Project"], workOrderId: ["WorkOrder"], assetId: ["Asset"], partIds: ["Part"], partId: ["Part"], alertId: ["Alert"], permitId: ["Permit"], assigneeId: ["Person"], holderId: ["Person"], itemId: ["Part", "Chemical"], targetId: null };
 const PATCHABLE = ["title", "priority", "state", "planned", "hours", "closed"];
 const ISSUE_STATES = ["open", "triaged", "in_work", "done", "dropped"];
 // The person an action is done by or for: an agent acts for the person who launched it.
@@ -275,7 +276,55 @@ export const ACTIONS = {
     if (ctx.actor.kind !== "agent" && actorId(ctx) !== who.id && who.ownerId !== actorId(ctx)) throw new Error("a person submits their own paperwork");
     return { objects: [d.id], revert: setProps(ont, d.id, { state: "submitted", submittedBy: ctx.actor.id, submittedFor: who.id, submittedAt: ctx.now() }) };
   }),
-  release_asset_model: def("act", "human", ["assetId", "revision"], (ont, p, ctx) => ({ objects: [p.assetId], revert: setProps(ont, p.assetId, { modelRevision: p.revision }) }), "engineer")
+  release_asset_model: def("act", "human", ["assetId", "revision"], (ont, p, ctx) => ({ objects: [p.assetId], revert: setProps(ont, p.assetId, { modelRevision: p.revision }) }), "engineer"),
+  // Drawing review (design §4.3 step 4): bulk-accept one sheet's EXTRACTED cells, or mark cells by key, optionally correcting the value.
+  review_cells: def("act", "human", ["modelId"], (ont, p, ctx) => {
+    const m = ont.get(p.modelId);
+    if (!["draft", "in_review"].includes(m.status)) throw new Error(`${m.id} is ${m.status}, not a draft`);
+    let hit;
+    if (p.accept !== undefined) {
+      if (p.accept !== "EXTRACTED" || !p.sheet) throw new Error('bulk accept takes accept: "EXTRACTED" and a sheet');
+      hit = new Map(m.cells.filter((c) => c.grade === "EXTRACTED" && c.sheet === p.sheet).map((c) => [c.key, {}]));
+    } else {
+      if (!Array.isArray(p.marks) || !p.marks.length || p.marks.some((k) => !k || typeof k.key !== "string")) throw new Error("marks must be a non-empty list of {key, value?}");
+      const unknown = p.marks.find((k) => !m.cells.some((c) => c.key === k.key));
+      if (unknown) throw new Error(`no cell ${unknown.key} in ${m.id}`);
+      hit = new Map(p.marks.map((k) => [k.key, k]));
+    }
+    const mark = { by: actorId(ctx), at: ctx.now() }, fix = (c) => "value" in hit.get(c.key);
+    const cells = m.cells.map((c) => (!hit.has(c.key) ? c : { ...c, ...(fix(c) ? { value: hit.get(c.key).value, reasoning: `${c.reasoning} — corrected by ${mark.by} from ${JSON.stringify(c.value)}` } : {}), reviewed: mark }));
+    const items = m.items.map((it) => { const fixed = cells.filter((c) => c.key.startsWith(`${it.tag}|`) && hit.has(c.key) && fix(c)); return fixed.length ? { ...it, fields: { ...it.fields, ...Object.fromEntries(fixed.map((c) => [c.field, c.value])) } } : it; });
+    const reviews = [...m.reviews, { ...mark, cells: hit.size }];
+    ont.upsert({ id: m.id, type: "PlantModel", cells, items, reviews, status: "in_review", packageHash: packageHash({ ...m, cells, items }) });
+    return { objects: [m.id], revert: () => ont.upsert({ id: m.id, type: "PlantModel", cells: m.cells, items: m.items, reviews: m.reviews, status: m.status, packageHash: m.packageHash }) };
+  }, "engineer"),
+  // Four-eyes release of a plant model (design §4.3 step 5). Writes revision-scoped objects; never rewrites existing records.
+  release_plant_model: def("act", "human", ["modelId", "hash"], (ont, p, ctx) => {
+    const m = ont.get(p.modelId), by = actorId(ctx), at = ctx.now();
+    if (!["draft", "in_review"].includes(m.status)) throw new Error(`${m.id} is ${m.status}, not a draft`);
+    const last = m.reviews[m.reviews.length - 1];
+    if (!last) throw new Error(`${m.id} has no review; someone other than the releaser must review it first`);
+    if (last.by === by) throw new Error(`${by} is the last reviewer; release needs a second person (four eyes)`);
+    const open = m.cells.filter((c) => c.grade !== "EXTRACTED" && !c.reviewed);
+    if (open.length) throw new Error(`${open.length} INFERRED or AMBIGUOUS cells unreviewed: ${open.slice(0, 3).map((c) => c.key).join(", ")}`);
+    if (p.hash !== packageHash(m)) throw new Error("stale hash: the model changed since the releaser read it");
+    if (!ont.list("Competency", (c) => c.personId === by && c.competency === "c-model" && c.validTo >= at.slice(0, 10)).length) throw new Error("needs the c-model competence");
+    const prev = currentPlantModel(ont);
+    if (prev) ont.upsert({ id: prev.id, type: "PlantModel", status: "superseded", governs: { ...prev.governs, to: at } });
+    ont.upsert({ id: m.id, type: "PlantModel", status: "released", governs: { from: at, to: null }, release: { by, at, hash: p.hash } });
+    writePlant(ont, ont.get(m.id));
+    // An accepted disagreement with an existing record goes to that record's owner as an Issue (spec §4.3 step 3), once.
+    const issues = [];
+    for (const c of m.cells.filter((x) => x.grade === "AMBIGUOUS" && x.reviewed)) {
+      const cites = [...new Set(c.reasoning.match(/\b[A-Z]{2,4}-[\w-]+/g) || [])].map((id) => ont.get(id)).filter((o) => o && !o.modelId && !["Drawing", "PlantModel"].includes(o.type));
+      const title = `Drawing disagrees with record: ${c.key}`;
+      if (!cites.length || ont.list("Issue", (i) => i.title === title).length) continue;
+      const rec = cites[0];
+      const iss = create(ont, { id: nextId("ISS"), type: "Issue", title, state: "open", raisedBy: by, assetId: rec.assetId || null, partId: null, workOrderId: null, projectId: null, procedureId: null, step: null, recordIds: cites.map((o) => o.id), evidence: [m.id, c.key, c.reasoning], assigneeId: rec.ownerId || null, at }, [["ON", rec.assetId], ["ABOUT", rec.id]]);
+      issues.push(iss.id);
+    }
+    return { objects: [m.id, ...issues] };
+  }, "engineer")
 };
 
 export function createActionService({ ont, audit, clock = wallClock }) {

@@ -132,6 +132,7 @@ export function extractPlant(files, ont) {
 
   // ---- valves (the PID-05 typical's tag table) ----
   const typ = sheets[TYP];
+  if (typ) for (const [filter, row] of Object.entries(typ.tagTable)) put("structure", row.kks, "filterToWaste", row.filterToWaste, TYP, { element: `TagRow ${filter}` }, `${TYP} tag table row ${filter}`);
   if (typ) for (const [filter, row] of Object.entries(typ.tagTable)) for (const v of row.valves) {
     const role = v.split("-").pop(), region = { element: `TagRow ${filter}` }, why = `${TYP} tag table row ${filter} with the typical ${v.replace(/\d\d-/, "##-")}`;
     put("valve", v, "kind", typ.components.find((c) => c.tag === `15AA##-${role}`)?.cls, TYP, region, why);

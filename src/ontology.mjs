@@ -90,6 +90,8 @@ export function createOntology({ objects = [], links = [] } = {}) {
     const visible = (o) => {
       if (o.minClearance && rank(o.minClearance) > r) return false;
       if (o.audience && r < rank("manager") && !o.audience.includes(viewer && viewer.id)) return false;
+      // An object spanning several zones (a plant Line) is hidden if any of them is above the viewer.
+      if (o.zones && o.zones.some((zid) => byId.has(zid) && rank(byId.get(zid).clearance) > r)) return false;
       const z = zoneOf(o);
       if (!z) return true;
       const zone = byId.get(z);
