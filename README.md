@@ -6,7 +6,7 @@ An ontology-driven operating system for a **synthetic** water treatment works (R
 ## Run it
 
 ```bash
-npm test          # 155 tests: generator, ontology, telemetry, functions, actions, agents + evals, copilot, chat, API, web
+npm test          # 169 tests: generator, ontology, telemetry, functions, actions, agents + evals, copilot, chat, API, web
 npm start         # http://localhost:8830  (plant clock advances 1 minute every 2 seconds)
 ```
 
