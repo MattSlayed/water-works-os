@@ -1,6 +1,6 @@
 # Design: The agent harness, the root-cause agent and the Agent Studio (Phase 3, project 3 of 3)
 
-Status: **draft for Matthew's approval**, after the builder check.
+Status: **for Matthew's approval**. The builder check is answered in §14a.
 
 Phase 3 so far:
 
@@ -120,7 +120,7 @@ Each agent gets one `AgentSpec` record in the ontology. A spec for the 19 existi
 
 | Field | Meaning |
 |---|---|
-| `id`, `name`, `version`, `owner` | owner is a person; default agents are owned by the reliability engineer |
+| `id`, `name`, `version`, `owner` | owner is a person id. Today `AGENT_SPECS` holds the role string `reliability_engineer`; the default agents become owned by P-002 |
 | `purpose` | the builder's own words, kept verbatim |
 | `trigger` | `schedule` (cron-like), `event` (an ontology event type plus a filter), `manual`, or `connector` (a new mail or file) |
 | `reads` | the evidence contract: `[{ source: type or connector, filter, fields, freshnessMin }]` |
@@ -179,7 +179,7 @@ Approving needs the approver (or the backup after `escalateAfterMin`). Every rej
 ### 4.6 Off switch and revocation
 
 - **Off switches.** One per agent, and one per tool on an agent. Pausing cancels the agent's open proposals and queued shadow actions.
-- **Undo.** Reversing an agent's decision never overwrites a later human edit. This is the existing relative-revert rule, applied everywhere.
+- **Undo.** Reversing an agent's decision never overwrites a later human edit. Today only `reserve_parts` and progress claims revert relatively, and `close_permit` and `record_isolation` cannot be reversed at all: their revert is called when they are applied, not stored. Plan 3a extends relative revert to every action an agent can hold, and fixes those two.
 
 ### 4.7 Audit
 
@@ -251,7 +251,7 @@ A `Connector` record has a kind (m365.mail, m365.files, m365.teams, google.mail,
 - the highest level allowed;
 - whether IT sign-off is needed before an agent may use it.
 
-An IT administrator role edits the catalogue; this is a new clearance-independent role on Person, `itAdmin: true`. A studio agent that needs a signed-off action stays in draft until IT approves that line. IT approval is a separate four-eyes action, recorded in the audit.
+An IT administrator role edits the catalogue; this is a new clearance-independent role on Person, `itAdmin: true`. A studio agent that needs a signed-off action stays in draft until IT approves that line. One IT administrator's approval is enough, and it is audited. The second pair of eyes is the business approver, who must promote the agent separately; that is J26.
 
 ### 6.3 Templates the studio knows without AI
 
@@ -319,7 +319,7 @@ A nightly **Recommender** (agent 21) reads, for each person, only what that pers
 | Signal | Where it is read | Example suggestion |
 |---|---|---|
 | The same manual action, repeated with the same shape | audit log, decisions, file moves in the connector | "You filed 23 invoices into supplier folders by hand last month: a document digester could draft these" |
-| Repeated checks | reading history, runs of Ask | "You open F07 head loss every morning: a watch agent could tell you only when it moves" |
+| Repeated checks | readings recorded and runs of Ask (actions only; what a person views is never logged) | "You open F07 head loss every morning: a watch agent could tell you only when it moves" |
 | Slow decisions | event-to-approval time per owner and shift | "Sampling rounds wait 3 h for approval on night shift: add a backup approver" |
 | Repeated overrides with similar reasons | feedback | "You rejected Scheduler's proposal 5 times for 'artisan on leave': add leave to its evidence" |
 | Steps that run long or collect notes | Procedure Steward's findings | "Step 6 runs 60% over: a pre-job check agent" |
@@ -352,7 +352,7 @@ A nightly **Recommender** (agent 21) reads, for each person, only what that pers
   - Turn it back on.
 - **J24, root cause (P-001).** The F07 alert → **Find root cause**. The report ranks:
   1. F07 media (local);
-  2. the storm plume (contributing; detection confirmed; raw-water onset 2.2 h before F07, inside the travel window).
+  2. the storm plume (contributing; the detection is shown with its status, suggested or confirmed; raw-water onset 2.2 h before F07, inside the travel window).
 
   DP-2 is rejected as too late. "Show me" on the plume opens the Region on the plume.
 - **J25, the studio (an accounts clerk, a new synthetic role).** The clerk types: "When a supplier invoice comes into the accounts inbox, read it, check it against the PO and file it in the right supplier folder."
@@ -360,7 +360,7 @@ A nightly **Recommender** (agent 21) reads, for each person, only what that pers
   - Replay over 14 days: 23 of 25 filings agree with what the clerk did, 1 unsure total, 1 duplicate caught.
   - Start in shadow.
 - **J26, IT (an IT administrator).** The catalogue → approve "m365.files write" for the accounts clerk role → the clerk's agent can now be promoted by the finance officer (four eyes).
-- **J27, suggestions (P-028).** The studio suggests a watch agent for the HLP-B bearing checks P-028 does each morning, with the evidence. Dismiss it, giving "I like to look myself"; it does not come back.
+- **J27, suggestions (P-028).** The studio suggests a watch agent for the HLP-B bearing readings P-028 records each morning (seeded `record_reading` history), with the evidence. Dismiss it, giving "I like to look myself"; it does not come back.
 - **J28, AI off.** With no API key, J25 still works on the text-layer documents and the keyword planner. The studio says Claude is off.
 
 ## 12. Build order (two plans)
@@ -399,6 +399,21 @@ Each gets its own plan, a TDD build, a browser check and a final review, as in p
 8. **The root-cause agent is deterministic**, with Claude only for wording. It must reproduce the F07 answer and say "Insufficient evidence" when it can't.
 9. **Accounts roles:** a synthetic accounts clerk and finance officer are added to the people.
 10. **AI-optional:** every flow works without an API key, and the studio says when Claude is off.
+
+## 14a. Builder check: answered as my calls
+
+1. **Who an agent runs as.**
+   - **Default agents** keep running as the system user (manager clearance), as today. Their evidence contract narrows what they read to what their manifest needs. Their behaviour does not change.
+   - **Studio agents** run as their builder. Whoever triggers one, it sees at most its builder's view, cut to its contract. Someone else running it never widens it.
+2. **The harness and the 19 default agents.**
+   - The defaults start in **bounded** mode with their current levels and no promotion record. Automatic demotion, freshness checks and off switches apply to them too.
+   - **Approver** is a person or a clearance level. For the defaults it is "any person with the action's clearance", exactly as `resolve` works today, so current flows hold. Studio agents name a person, and a backup.
+   - **"The permit's own"** means the person behind the action (the actor, or the person an agent acts for) is the permit holder, or holds supervisor clearance or above. Otherwise, an agent action that changes an asset under an open permit is capped at propose. Chat Intake's steps on P-028's own permit pass.
+3. **Assisted mode** caps tools at `propose`, the way the dial works today. `draft` and `notify` are below propose, so they still run without asking. Messages and drafts inform people; they do not change the plant.
+4. **Persistence.** None. The system stays in memory and rebuilds from the seed like everything else. Shadow records, IT approvals, dismissals and studio agents live for the run. Seeded history gives the replay and the recommender something to read. The recommender runs on the plant clock (each plant day), not at night in real time.
+5. **The plume in root cause.** It is ranked as contributing whatever its status. The report shows the detection's status, and a confirmed detection carries more weight in the ranking.
+6. **No view logging.** The recommender reads actions only: decisions, readings, runs, feedback and connector file moves. What a person opens or looks at is never recorded, consistent with the Region map's "no surveillance" anti-goal and Phase 2's "names steps, never people".
+7. **IT sign-off** needs one IT administrator. The four eyes come from the business approver's separate promotion.
 
 ## 15. Left to the builder
 
