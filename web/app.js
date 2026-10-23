@@ -125,84 +125,132 @@ const views = {
     const [d, since, risks] = await Promise.all([api("/api/region"), api("/api/region/since"), api("/api/region/risks")]);
     state.region?.dispose();
     state.region = null;
+    let cur = d, trails = [], curScene = null, lastRefresh = Date.now(); // cur: the latest payload; panels and focus read it, never the page-load copy
     const phone = matchMedia("(max-width: 720px)").matches;
     const band = (b) => `<span class="band ${esc(b)}">${esc(b)}</span>`;
+    const STAGE = { intake: "the intake", main: "the raw-water main", clar: "clarification", filt: "filtration" };
+    const cap = risks.capacity;
     const res = risks.storage.sites.map((s) => `<li>${esc(s.name)}: ${s.storageHours ?? "—"} h ${s.flagged ? pill("under 12 h", "red") : ""}</li>`).join("");
     const cards = `<section class="panel rcard" aria-label="Since you left"><div class="row"><h3>Since you left <small class="meta">${time(since.since)}</small></h3><button class="btn" id="seen">Mark seen</button></div>
-        <ul class="rlist">${since.items.map((i) => `<li><button class="linkish" data-si="${esc(i.kind)}|${esc(i.trackerId || i.id)}">${esc(i.text)}</button>${i.stillOpen ? ` ${pill("still open", "amber")}` : ""}</li>`).join("") || "<li>Nothing new.</li>"}</ul>${since.more ? `<p class="meta">${since.more} more</p>` : ""}</section>
+        <ul class="rlist">${since.items.map((i) => `<li><button class="linkish" data-si="${esc(i.kind)}|${esc(i.trackerId || i.projectId || i.id)}">${esc(i.text)}</button>${i.stillOpen ? ` ${pill("still open", "amber")}` : ""}</li>`).join("") || "<li>Nothing new.</li>"}</ul>${since.more ? `<p class="meta">${since.more} more</p>` : ""}</section>
       <section class="panel rcard" aria-label="Today's supply risks"><h3>Today's supply risks</h3><ul class="rlist">
         <li>Raw water: ${band(risks.rawWater.band)} <small class="meta">satellite NDTI is an index, not calibrated; intake ${num(risks.rawWater.inputs[2].value)} NTU</small></li>
-        <li>Out of service: <b>${risks.capacity.outOfServiceMlD} ML/d</b> <small class="meta">treatment ${risks.capacity.capacityMlD} ML/d, limited by ${esc({ intake: "the intake", main: "the raw-water main", clar: "clarification", filt: "filtration" }[risks.capacity.limiting] || risks.capacity.limiting)}</small></li>${res}</ul></section>`;
+        <li>Treatment: <b>${cap.capacityMlD} ML/d</b> against demand ${cap.demandMlD != null ? `${num(cap.demandMlD)} ML/d` : "unknown"} ${cap.shortfallMlD > 0 ? pill(`short by ${num(cap.shortfallMlD)} ML/d`, "red") : ""}<small class="meta"> ${cap.outOfServiceMlD} ML/d out of service, limited by ${esc(STAGE[cap.limiting] || cap.limiting)}</small></li>${res}</ul></section>`;
     const timeline = `<div class="rtimeline" role="group" aria-label="Scene timeline">${d.scenes.filter((s) => s.inWindow || s.mission === "S2").slice(-14).map((s) => {
       const ok = Object.values(s.usable).some(Boolean);
       return `<button class="scene ${ok ? "" : "cloudy"} ${s.processed ? "" : "pending"}" data-scene="${esc(s.id)}" ${!s.inWindow || !s.processed ? "disabled" : ""} title="${esc(s.id)} · ${s.mission === "S2" ? `${s.cloudPct}% cloud${ok ? "" : ", unusable"}` : "radar"}">${esc(s.acquiredAt.slice(5, 10))}<small>${s.mission}${s.mission === "S2" ? ` ${s.cloudPct}%` : ""}</small></button>`;
     }).join("")}<label class="sr" for="gidx">Index</label><select id="gidx"><option value="ndti">NDTI turbidity</option><option value="ndci">NDCI chlorophyll</option><option value="ndwi">NDWI water</option><option value="mndwi">MNDWI water</option></select><small class="meta">index, not calibrated</small></div>`;
-    const LAYERS = [["region", "Catchment and river", true], ["grid", "Satellite index grid", false], ["detections", "Detections", true], ["plant", "Fixed plant and remote sites", true], ["trackers", "Tagged things", true], ["alerts", "Alerts", true]];
+    const LAYERS = [["region", "Catchment and river", true], ["projects", "Project footprints", true], ["grid", "Satellite index grid", false], ["detections", "Detections", true], ["plant", "Fixed plant and remote sites", true], ["trackers", "Tagged things", true], ["alerts", "Alerts", true]];
+    const layerState = Object.fromEntries(LAYERS.map(([k, , def]) => [k, def]));
+    // l=grid,-region: a layer turned on, or off with a leading "-" ("+" would read back as a space)
+    for (const k of (q.get("l") || "").split(",").map((x) => x.trim()).filter(Boolean)) { const off = k.startsWith("-"), key = k.replace(/^-/, ""); if (key in layerState) layerState[key] = !off; }
     const FILTERS = [["pump_station", "Pump stations"], ["reservoir", "Reservoirs"], ["valve_chamber", "Valve chambers"], ["vehicle", "Works vehicles"], ["portable", "Portable plant"], ["contractor", "Contractors"]];
-    const rail = `<section class="panel rrail" aria-label="Layers and filters"><h3>Layers</h3>${LAYERS.map(([k, label, def]) => `<label><input type="checkbox" data-rlayer="${k}" ${def ? "checked" : ""}> ${label}</label>`).join("")}
+    const rail = `<section class="panel rrail" aria-label="Layers and filters"><h3>Layers</h3>${LAYERS.map(([k, label]) => `<label><input type="checkbox" data-rlayer="${k}" ${layerState[k] ? "checked" : ""}> ${label}</label>`).join("")}
       <h3>Filter</h3>${FILTERS.map(([k, label]) => `<label><input type="checkbox" data-rfilter="${k}" checked> ${label}</label>`).join("")}
       <label><input type="checkbox" data-rfilter="alarmOnly"> In alarm only</label><label><input type="checkbox" data-rfilter="staleOnly"> Stale or lost tags only</label>${d.live ? `<p class="meta">Live: ${esc(d.live.ok ? `${d.live.name}, ${d.live.scene.acquiredAt.slice(0, 10)}, NDTI mean ${num(d.live.stats.ndti.mean)} (index, not calibrated)` : d.live.reason)}</p>` : ""}</section>`;
-    const ops = [...d.detections.filter((x) => x.status === "suggested" || x.status === "confirmed").map((x) => ({ kind: "detection", id: x.id, label: `${x.kind} ${x.status} · ${x.sceneId}` })),
-      ...d.alerts.filter((a) => !String(a.targetId).startsWith("GEO-")).map((a) => ({ kind: "alert", id: a.id, label: a.title }))];
+    const ops = d.operations || [];
     const tabs = `<section class="panel rtabs"><div id="rpanel" aria-live="polite"></div><div class="btns" role="tablist"><button class="btn" role="tab" data-rtab="projects" aria-selected="true">Projects (${d.projects.length})</button><button class="btn" role="tab" data-rtab="ops" aria-selected="false">Operations (${ops.length})</button></div>
       <ul class="rlist" id="rtab-projects">${d.projects.map((p) => `<li><button class="linkish" data-proj="${esc(p.id)}">${esc(p.title)}</button> ${p.status.overdue.length ? pill("overdue", "amber") : ""}<small class="meta">${esc(p.start)} to ${esc(p.end)}</small></li>`).join("")}</ul>
-      <ul class="rlist" id="rtab-ops" hidden>${ops.map((o) => `<li><button class="linkish" data-op="${esc(o.kind)}|${esc(o.id)}">${esc(o.label)}</button></li>`).join("") || "<li>No operations running.</li>"}</ul></section>`;
+      <ul class="rlist" id="rtab-ops" hidden>${ops.map((o) => `<li><button class="linkish" data-op="${esc(o.kind)}|${esc(o.id)}">${esc(o.label)}</button> <small class="meta">${esc(o.kind)}</small></li>`).join("") || "<li>No operations running.</li>"}</ul></section>`;
     view.innerHTML = `<div id="regionv"><div class="row"><div><h2>03 / the region · ${esc(d.clock.slice(0, 16).replace("T", " "))} plant · synthetic works</h2><h1>Region</h1></div><div class="btns"><a class="btn" href="#/map">Site map</a><a class="btn" href="#/plant">Plant</a><button class="btn" id="clearfocus" hidden>Clear focus</button></div></div>
       <div class="rcards">${cards}</div>${phone ? "" : timeline}
       <div class="rgrid ${phone ? "phone" : ""}">${phone ? "" : rail}<section class="panel rmap" aria-label="Region map">${phone ? `<button class="btn primary" id="showmap">Show on map</button>` : ""}</section>${tabs}</div></div>`;
 
     const panel = $("#rpanel");
     let lastView = { center: (q.get("c") || "").split(",").map(Number).filter(Number.isFinite), zoom: Number(q.get("z")) || null };
-    const keepHash = (v) => { lastView = v; history.replaceState(null, "", `#/region/c=${v.center.map((x) => x.toFixed(5)).join(",")}&z=${v.zoom}${q.get("focus") ? `&focus=${q.get("focus")}` : ""}`); };
+    // the view lives in the hash (centre, zoom, layers that differ from the defaults, focus), so Back from the plant restores it
+    const keepHash = (v = lastView) => {
+      lastView = v;
+      const l = LAYERS.filter(([k, , def]) => layerState[k] !== def).map(([k]) => `${layerState[k] ? "" : "-"}${k}`).join(",");
+      history.replaceState(null, "", `#/region/c=${v.center.map((x) => x.toFixed(5)).join(",")}&z=${v.zoom}${l ? `&l=${l}` : ""}${q.get("focus") ? `&focus=${q.get("focus")}` : ""}`);
+    };
+    const restored = lastView.center.length === 2;
     const mount = async () => {
       try {
         const { mountRegion } = await import("/region.js");
         state.region = mountRegion($(".rmap"), d, {
-          start: { center: lastView.center.length === 2 ? lastView.center : null, zoom: lastView.zoom },
+          start: { center: restored ? lastView.center : null, zoom: lastView.zoom, layers: layerState },
           onSelect: (s) => select(s), onView: keepHash,
           onEnterPlant: () => { location.hash = `#/plant/${enc(d.works.plantModelId ? `${d.works.plantModelId}:STR-10UPA01` : "")}`; }
         });
-        if (q.get("focus")) { const [k, id] = q.get("focus").split(":"); focus(k, id); }
+        if (q.get("focus")) {
+          const [k, id] = q.get("focus").split(":"), det = k === "detection" && d.detections.find((x) => x.id === id);
+          focus(k, id, { fit: !restored });
+          if (det && layerState.grid) loadGrid(det.sceneId); // the grid that was showing comes back with its detection
+        }
       } catch (e) {
         $(".rmap").innerHTML = `<p class="sub">The map could not load (${esc(e.message)}). The cards and lists above still work.</p>`;
       }
     };
-    const focus = async (kind, id) => {
+    const focus = async (kind, id, { fit = true } = {}) => {
       try {
         const f = await api(`/api/region/focus/${kind}/${enc(id)}`);
-        if (f.trackerIds.length) { const t = await api(`/api/region?trails=${f.trackerIds.map(enc).join(",")}`); state.region?.setData(t); }
-        state.region?.focus(f);
+        trails = f.trackerIds;
+        if (trails.length) { cur = await api(`/api/region?trails=${trails.map(enc).join(",")}`); state.region?.setData(cur); }
+        state.region?.focus(f, { fit });
         $("#clearfocus").hidden = false;
         q.set("focus", `${kind}:${id}`);
+        keepHash();
       } catch (e) { toast(e.message); }
     };
-    const clearFocus = () => { state.region?.clearFocus(); state.region?.setData(d); $("#clearfocus").hidden = true; q.delete("focus"); };
+    const clearFocus = () => {
+      trails = [];
+      cur = { ...cur, trackers: cur.trackers.map(({ trail, ...t }) => t) };
+      state.region?.setData(cur);
+      state.region?.clearFocus();
+      $("#clearfocus").hidden = true;
+      q.delete("focus");
+      keepHash();
+    };
+    // live updates: at most every 15 s, keeping trails and focus, so hover labels and reading are not interrupted
+    state.regionRefresh = async () => {
+      if (!state.region || Date.now() - lastRefresh < 15000) return;
+      lastRefresh = Date.now();
+      cur = await api(`/api/region${trails.length ? `?trails=${trails.map(enc).join(",")}` : ""}`);
+      state.region?.setData(cur);
+    };
+    const ago = (iso) => { const m = Math.max(0, Math.round((Date.parse(cur.clock) - Date.parse(iso)) / 60000)); return m < 60 ? `${m} min ago` : `${Math.floor(m / 60)} h ${m % 60} min ago`; };
     const showProject = async (id) => {
       const p = await api(`/api/projects/${enc(id)}/panel`);
       const pct = p.progress.budgetZar ? Math.round((p.progress.spendZar / p.progress.budgetZar) * 100) : 0;
       panel.innerHTML = `<h3>${esc(p.title)}</h3><p class="meta">${esc(p.start)} to ${esc(p.end)} · owner ${esc(p.ownerId)}</p>
         <h4>Footprint and who is on it</h4><ul class="rlist">${p.footprint.trackers.map((t) => `<li>${esc(t.name)} ${t.signal !== "live" ? pill(t.signal, "amber") : ""}</li>`).join("") || "<li>Nobody tagged on site now.</li>"}${p.footprint.permits.map((x) => `<li>Permit ${link(x.id)} open</li>`).join("")}</ul>
         <h4>Progress and money</h4><p>${p.progress.status.milestones.claimed} of ${p.progress.status.milestones.total} milestones claimed, ${p.progress.status.milestones.confirmed} confirmed. R ${(p.progress.spendZar / 1e6).toFixed(2)} m committed of R ${(p.progress.budgetZar / 1e6).toFixed(2)} m (${pct}%).</p><p class="meta">${p.progress.lastReport ? `Last report ${time(p.progress.lastReport.at)}: ${esc(p.progress.lastReport.text)}` : "No report yet."}</p>
-        <h4>Impact on operations</h4><p>${esc(p.impact.text || "None recorded.")}</p><p class="meta">${esc(p.impact.supplyRisk)}</p>
+        <h4>Impact on operations</h4><p>${esc(p.impact.text || "None recorded.")}</p>${p.impact.outOfService.length ? `<ul class="rlist">${p.impact.outOfService.map((x) => `<li>${esc(x.name)} out of service ${esc(x.from)} to ${esc(x.to)}</li>`).join("")}</ul>` : ""}<p class="meta">${esc(p.impact.supplyRisk)}</p>
         <h4>Issues and risks</h4><ul class="rlist">${p.issues.map((i) => `<li>${esc(i.text)}${i.auditId ? ` <a href="#/audit" class="meta">log #${i.auditId}</a>` : ""}</li>`).join("") || "<li>None open.</li>"}</ul>`;
       focus("project", id);
     };
     const select = (s) => {
       if (s.kind === "detection") {
-        const x = d.detections.find((y) => y.id === s.id);
-        panel.innerHTML = `<h3>${esc(x.kind)} · ${esc(x.status)}</h3><p>${esc(x.index.toUpperCase())} z ${x.z} against the 90-day baseline in ${esc(x.aoiId)}, scene ${esc(x.sceneId)} (${x.cloudPct ?? "—"}% cloud). Confidence ${x.confidence}.</p><p class="meta">Index, not calibrated: a person confirms it with a raw-water sample.</p><p>${link(x.id, "Open the record")} · ${(x.sampleIds || []).length} raw-water sample(s) attached</p><div class="btns"><button class="btn" data-op="detection|${esc(x.id)}">Focus the response</button>${x.status === "suggested" ? `<button class="btn primary" data-review="confirmed|${esc(x.id)}" ${(x.sampleIds || []).length ? "" : 'disabled title="Confirm needs a raw-water sample"'}>Confirm</button><button class="btn" data-review="rejected|${esc(x.id)}">Reject</button>` : ""}</div>`;
+        const x = cur.detections.find((y) => y.id === s.id);
+        if (!x) return;
+        const sampled = (x.sampleIds || []).length;
+        panel.innerHTML = `<h3>${esc(x.kind)} · ${esc(x.status)}</h3><p>${esc(String(x.index || "").toUpperCase())} z ${esc(x.z)} against the 90-day baseline in ${esc(x.aoiId)}, scene ${esc(x.sceneId)} (${x.cloudPct ?? "—"}% cloud). Confidence ${esc(x.confidence)}.</p><p class="meta">Index, not calibrated: a person confirms or rejects it with a raw-water sample.</p><p>${link(x.id, "Open the record")} · ${sampled} raw-water sample(s) attached</p><div class="btns"><button class="btn" data-op="detection|${esc(x.id)}">Focus the response</button>${x.status === "suggested" ? `<button class="btn primary" data-review="confirmed|${esc(x.id)}" ${sampled ? "" : 'disabled title="Needs a raw-water sample"'}>Confirm</button><button class="btn" data-review="rejected|${esc(x.id)}" ${sampled ? "" : 'disabled title="Needs a raw-water sample"'}>Reject</button>` : ""}</div>`;
         loadGrid(x.sceneId);
       } else if (s.kind === "tracker") {
-        const t = d.trackers.find((y) => y.id === s.id);
-        panel.innerHTML = `<h3>${esc(t.name)}</h3><p>${t.signal === "live" ? "Live" : `${esc(t.signal)}: last seen ${time(t.pingAt)}`} · ${num(t.speedKmh)} km/h${t.eta ? ` · ETA ${esc(t.eta.slice(11, 16))}` : ""}${t.state ? ` · ${esc(t.state)}` : ""}${t.fuelPct != null && t.kind === "portable" ? ` · fuel ${t.fuelPct}% · ${t.runHours} h` : ""}</p>${t.projectId ? `<p><button class="linkish" data-proj="${esc(t.projectId)}">${esc(t.projectId)}</button></p>` : ""}`;
+        const t = cur.trackers.find((y) => y.id === s.id);
+        if (!t) return;
+        panel.innerHTML = `<h3>${esc(t.name)}</h3><p>${t.signal === "live" ? `Live, ping ${ago(t.pingAt)}` : `${esc(t.signal)}: last seen ${ago(t.pingAt)}`} · ${num(t.speedKmh)} km/h${t.eta ? ` · ETA ${esc(t.eta.slice(11, 16))}` : ""}${t.state ? ` · ${esc(t.state)}` : ""}${t.fuelPct != null && t.kind === "portable" ? ` · fuel ${t.fuelPct}% · ${t.runHours} h` : ""}</p>${t.projectId ? `<p><button class="linkish" data-proj="${esc(t.projectId)}">${esc(t.projectId)}</button></p>` : ""}`;
+        state.region?.select(t.id);
       } else if (s.kind === "site") {
-        const x = d.sites.find((y) => y.id === s.id);
+        const x = cur.sites.find((y) => y.id === s.id);
+        if (!x) return;
         panel.innerHTML = `<h3>${esc(x.name)}</h3><ul class="rlist">${x.readings.map((r) => `<li>${esc(r.name)}: ${num(r.value)} ${esc(r.unit)}${isAlarm(r) ? ` ${pill("alarm", "red")}` : ""}</li>`).join("")}</ul>`;
+        state.region?.select(x.id);
       } else if (s.kind === "project") showProject(s.id);
       else panel.innerHTML = `<p>${link(s.id)}</p>`;
     };
+    // a scene's grid in the chosen index (radar scenes have only backscatter); the map says which scene and index it shows
     const loadGrid = async (sceneId) => {
-      try { state.region?.setGrid(await api(`/api/region/scenes/${enc(sceneId)}/grid?index=${$("#gidx") ? $("#gidx").value : "ndti"}`)); const c = view.querySelector('[data-rlayer="grid"]'); if (c) c.checked = true; } catch (e) { toast(e.message); }
+      curScene = sceneId;
+      const radar = sceneId.startsWith("S1-"), index = radar ? "vv" : $("#gidx") ? $("#gidx").value : "ndti";
+      try {
+        state.region?.setGrid(await api(`/api/region/scenes/${enc(sceneId)}/grid?index=${index}`));
+        layerState.grid = true;
+        const c = view.querySelector('[data-rlayer="grid"]');
+        if (c) c.checked = true;
+        keepHash();
+      } catch (e) { toast(e.message); }
     };
 
     $("#regionv").addEventListener("click", (e) => {
@@ -210,22 +258,28 @@ const views = {
       if (!b) return;
       if (b.dataset.proj) showProject(b.dataset.proj);
       if (b.dataset.op) { const [k, id] = b.dataset.op.split("|"); focus(k, id); if (k === "detection") select({ kind: "detection", id }); }
-      if (b.dataset.si) { const [k, id] = b.dataset.si.split("|"); if (k === "detection") { focus("detection", id); select({ kind: "detection", id }); } else if (k === "project") showProject(id); else if (k === "geofence" || k === "tracker") { select({ kind: "tracker", id }); state.region?.select(id); } }
+      if (b.dataset.si) {
+        const [k, id] = b.dataset.si.split("|");
+        if (k === "detection") { focus("detection", id); select({ kind: "detection", id }); }
+        else if (k === "project" || k === "issue") showProject(id);
+        else if (k === "site") select({ kind: "site", id });
+        else if (k === "geofence" || k === "tracker") select({ kind: "tracker", id });
+      }
       if (b.dataset.scene) loadGrid(b.dataset.scene);
       if (b.dataset.review) { const [verdict, id] = b.dataset.review.split("|"); api("/api/actions/review_detection", { method: "POST", body: { params: { detectionId: id, verdict } } }).then(() => { toast(`Detection ${verdict}.`); views.region(location.hash.replace(/^#\/region\/?/, "")); }, (err) => toast(err.message)); }
       if (b.dataset.rtab) { for (const t of view.querySelectorAll("[data-rtab]")) t.setAttribute("aria-selected", String(t === b)); $("#rtab-projects").hidden = b.dataset.rtab !== "projects"; $("#rtab-ops").hidden = b.dataset.rtab !== "ops"; }
     });
-    view.querySelectorAll("[data-rlayer]").forEach((c) => c.addEventListener("change", () => state.region?.setLayer(c.dataset.rlayer, c.checked)));
+    view.querySelectorAll("[data-rlayer]").forEach((c) => c.addEventListener("change", () => { layerState[c.dataset.rlayer] = c.checked; state.region?.setLayer(c.dataset.rlayer, c.checked); keepHash(); }));
     view.querySelectorAll("[data-rfilter]").forEach((c) => c.addEventListener("change", () => state.region?.setFilter(c.dataset.rfilter, c.checked)));
+    $("#gidx")?.addEventListener("change", () => { if (curScene && !curScene.startsWith("S1-")) loadGrid(curScene); });
     $("#seen").addEventListener("click", async () => { await api("/api/region/since", { method: "POST" }); views.region(location.hash.replace(/^#\/region\/?/, "")); });
     $("#clearfocus").addEventListener("click", clearFocus);
-    document.onkeydown = (e) => { if (e.key === "Escape" && state.region) clearFocus(); };
+    document.onkeydown = (e) => { if (e.key === "Escape" && state.region && location.hash.startsWith("#/region")) clearFocus(); };
     if (phone) $("#showmap").addEventListener("click", () => { $("#showmap").remove(); mount(); });
     else await mount();
   },
   async refreshRegion() {
-    if (!state.region) return;
-    state.region.setData(await api("/api/region"));
+    await state.regionRefresh?.();
   },
   async assets() {
     const assets = await api("/api/objects?type=Asset");
@@ -729,7 +783,7 @@ async function route() {
   document.querySelectorAll("[data-nav]").forEach((a) => a.classList.toggle("active", a.dataset.nav === name || a.dataset.nav === `${name}s` || (name === "plantmodels" && a.dataset.nav === "plant") || (name === "run" && a.dataset.nav === "agents")));
   if (name !== "asset") { state.twin?.dispose(); state.twin = null; state.copilot = null; }
   if (name !== "plant") { state.plant?.dispose(); state.plant = null; }
-  if (name !== "region") { state.region?.dispose(); state.region = null; }
+  if (name !== "region") { state.region?.dispose(); state.region = null; state.regionRefresh = null; }
   const fn = views[name];
   if (!fn) { view.innerHTML = `<h1>Not found</h1>`; return; }
   try { await fn(arg ? decodeURIComponent(arg) : undefined); } catch (e) { view.innerHTML = `<h1>${e.status === 404 ? "Not found, or not visible to you" : "Something went wrong"}</h1><p class="sub">${esc(e.message)}</p>`; }

@@ -209,6 +209,7 @@ main:focus { outline: none; }
 .rmap .disclose { position: absolute; z-index: 500; top: 8px; left: 50px; background: var(--panel); color: var(--text); padding: 2px 8px; border: 1px solid var(--line); }
 .rmap-note { position: absolute; z-index: 500; bottom: 24px; left: 10px; background: var(--raise); color: var(--amber); padding: 2px 8px; border: 1px solid var(--line); }
 .rmap-enter { position: absolute; z-index: 500; top: 8px; right: 10px; }
+.rmap-grid { position: absolute; z-index: 500; bottom: 24px; right: 10px; background: var(--panel); color: var(--amber); padding: 2px 8px; border: 1px solid var(--line); font: 12px var(--mono); }
 .rtabs [role="tablist"] { margin-bottom: 6px; } .rtabs [aria-selected="true"] { border-color: var(--teal); color: var(--ink); }
 #rpanel h4 { margin: 10px 0 4px; } #rpanel:not(:empty) { padding-bottom: 10px; margin-bottom: 10px; border-bottom: 1px solid var(--line); }
 .rtag { color: var(--teal); font-size: 13px; text-align: center; line-height: 16px; text-shadow: 0 0 2px #000; }

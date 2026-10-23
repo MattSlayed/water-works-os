@@ -101,3 +101,16 @@ test("region: the view carries the 07:00 cards, honest labels, offline and Enter
   const reg = await (await fetch(base + "/region.js")).text();
   for (const s of ["export function mountRegion", "basemap offline", "Enter plant", "synthetic works", "tile.openstreetmap.org"]) assert.ok(reg.includes(s), s);
 });
+
+test("final review (Region view): live refresh keeps focus and trails, panels read the latest data, Back restores layers", async () => {
+  const app = await (await fetch(base + "/app.js")).text();
+  for (const s of ["state.regionRefresh = async", "Date.now() - lastRefresh < 15000", "cur = await api(`/api/region${trails.length", "cur.detections.find", "cur.trackers.find", "focus(k, id, { fit: !restored })", "&l=${l}", "layers: layerState", 'k.replace(/^-/, "")', "if (det && layerState.grid) loadGrid(det.sceneId)"]) assert.ok(app.includes(s), s);
+});
+
+test("final review (Region view): every Since-you-left line acts, the index picker reloads the grid, demand and dates are shown", async () => {
+  const app = await (await fetch(base + "/app.js")).text();
+  for (const s of ['k === "project" || k === "issue"', 'k === "site"', '$("#gidx")?.addEventListener("change"', 'radar ? "vv"', "against demand", "short by", "out of service ${esc(x.from)} to ${esc(x.to)}", "d.operations"]) assert.ok(app.includes(s), s);
+  const reg = await (await fetch(base + "/region.js")).text();
+  for (const s of ["groups.focus.clearLayers()", "last seen ${ago(t.pingAt)}", "focus(f, { fit = true } = {})", "index, not calibrated`", "map.setView([t.lat, t.lon], CLUSTER_BELOW)"]) assert.ok(reg.includes(s), s);
+});
+

@@ -9,8 +9,10 @@ const MAX_LABELS = 12, CLUSTER_BELOW = 14, ENTER_AT = 16;
 const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
 export function mountRegion(el, data, { onSelect = () => {}, onEnterPlant = () => {}, onView = () => {}, start = {} } = {}) {
-  el.innerHTML = `<div class="rmap-canvas"></div><div class="disclose badge">synthetic works · indices are not calibrated</div><div class="rmap-note" hidden>basemap offline</div><button class="btn primary rmap-enter" hidden>Enter plant</button>`;
-  const box = el.querySelector(".rmap-canvas"), note = el.querySelector(".rmap-note"), enter = el.querySelector(".rmap-enter");
+  el.innerHTML = `<div class="rmap-canvas"></div><div class="disclose badge">synthetic works · indices are not calibrated</div><div class="rmap-note" hidden>basemap offline</div><div class="rmap-grid" hidden></div><button class="btn primary rmap-enter" hidden>Enter plant</button>`;
+  const box = el.querySelector(".rmap-canvas"), note = el.querySelector(".rmap-note"), enter = el.querySelector(".rmap-enter"), gridNote = el.querySelector(".rmap-grid");
+  // a tag's age against the plant clock: a stale ping is never shown as live
+  const ago = (iso) => { const m = Math.max(0, Math.round((Date.parse(data.clock) - Date.parse(iso)) / 60000)); return m < 60 ? `${m} min ago` : `${Math.floor(m / 60)} h ${m % 60} min ago`; };
   const map = L.map(box, { preferCanvas: true, zoomSnap: 0.5, attributionControl: true });
   const works = L.latLng(data.works.centre[1], data.works.centre[0]);
   map.setView(start.center ? L.latLng(start.center[0], start.center[1]) : works, start.zoom || 12.5);
@@ -103,6 +105,7 @@ export function mountRegion(el, data, { onSelect = () => {}, onEnterPlant = () =
   // tags: clustered on a screen grid below zoom 14 so the map never fills with dots
   function drawTrackers() {
     groups.trackers.clearLayers();
+    groups.focus.clearLayers(); // trails are redrawn with their tags, never stacked
     const shown = data.trackers.filter((t) => Number.isFinite(t.lat) && filters.kinds.has(t.projectId && t.kind === "vehicle" ? "contractor" : t.kind) && (!filters.staleOnly || t.signal !== "live"));
     if (map.getZoom() < CLUSTER_BELOW && !focusSet) {
       const cells = new Map();
@@ -120,7 +123,7 @@ export function mountRegion(el, data, { onSelect = () => {}, onEnterPlant = () =
   function addTracker(t) {
     const cls = `rtag ${t.kind} ${t.signal}${fade(t.id) ? " faded" : ""}`;
     const m = L.marker([t.lat, t.lon], { icon: L.divIcon({ className: cls, html: t.kind === "vehicle" ? "▲" : "■", iconSize: [16, 16] }), opacity: fade(t.id) ? 0.25 : 1 });
-    const age = t.signal === "live" ? "" : ` · ${t.signal}, last seen ${esc(t.pingAt.slice(11, 16))}`;
+    const age = t.signal === "live" ? ` · ping ${ago(t.pingAt)}` : ` · ${t.signal}, last seen ${ago(t.pingAt)}`;
     tip(m, `${t.name}${t.eta ? ` · ETA ${t.eta.slice(11, 16)}` : ""}${age}`, t.id);
     m.on("click", () => onSelect({ kind: "tracker", id: t.id }));
     groups.trackers.addLayer(reg(t.id, m));
@@ -146,19 +149,28 @@ export function mountRegion(el, data, { onSelect = () => {}, onEnterPlant = () =
     setData(next) { data = next; draw(); },
     setLayer(name, v) { on[name] = v; if (v) groups[name].addTo(map); else map.removeLayer(groups[name]); },
     setFilter(name, v) { if (name === "alarmOnly" || name === "staleOnly") filters[name] = v; else if (v) filters.kinds.add(name); else filters.kinds.delete(name); draw(); },
-    focus(f) {
+    focus(f, { fit = true } = {}) {
       focusSet = f ? new Set([...f.ids, ...f.trackerIds]) : null;
       labelled = new Set(f ? [...f.trackerIds, ...f.ids].slice(0, MAX_LABELS) : []);
       draw();
-      const ls = f ? [...focusSet].flatMap((id) => byId.get(id) || []) : [];
+      const ls = f && fit ? [...focusSet].flatMap((id) => byId.get(id) || []) : []; // a restored view keeps its own centre and zoom
       if (ls.length) map.fitBounds(L.featureGroup(ls).getBounds().pad(0.3), { maxZoom: 15 });
     },
     clearFocus() { this.focus(null); },
-    select(id) { labelled = new Set([id]); draw(); const ls = byId.get(id); if (ls && ls[0].getLatLng) map.panTo(ls[0].getLatLng()); },
+    select(id) {
+      const t = data.trackers.find((x) => x.id === id);
+      if (t && map.getZoom() < CLUSTER_BELOW) map.setView([t.lat, t.lon], CLUSTER_BELOW); // out of its cluster, so it can be labelled
+      labelled = new Set([id]);
+      draw();
+      const ls = byId.get(id);
+      if (ls && ls[0].getLatLng) map.panTo(ls[0].getLatLng());
+    },
     // a scene grid as banded cells: never a continuous ramp
     setGrid(g) {
       groups.grid.clearLayers();
+      gridNote.hidden = !g;
       if (!g) return;
+      gridNote.textContent = `${g.index.toUpperCase()} · ${g.sceneId} · index, not calibrated`;
       const half = g.cellM / 2 / 111320;
       g.cells.forEach(([lon, lat], i) => {
         const dl = half / Math.cos((lat * Math.PI) / 180), b = g.bands[i];
