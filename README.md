@@ -1,4 +1,4 @@
-# Water Works OS — Phase 1 MVP
+# Water Works OS — Phases 1–3
 
 An ontology-driven operating system for a **synthetic** water treatment works (Riverbend WTW), built from
 `../03-PRD-Water-Works-OS.md` (NVT-PROJ-BBR-WTW-002). Grade: `demonstrable` over synthetic data.
@@ -6,7 +6,7 @@ An ontology-driven operating system for a **synthetic** water treatment works (R
 ## Run it
 
 ```bash
-npm test          # 169 tests: generator, ontology, telemetry, functions, actions, agents + evals, copilot, chat, API, web
+npm test          # 211 tests: generator, ontology, telemetry, functions, actions, agents + evals, copilot, chat, drawings, parsers, plant model, process graph, API, web
 npm start         # http://localhost:8830  (plant clock advances 1 minute every 2 seconds)
 ```
 
@@ -45,6 +45,29 @@ Phase 2, Workforce Intelligence (design: `docs/superpowers/specs/2026-10-23-work
 | Scribe (job cards, close-outs, weekly reports; consent-gated submission), Project Watch, Procedure Steward; performance and project status | `src/agents.mjs`, `src/functions.mjs` | Phase 2 design §6.4, §7 |
 | Chat, Issues, Projects, Procedures and My work views | `web/app.js` | Phase 2 design §9 |
 | Web console (NOVATEK design system): console, site map + muster, asset workbench with three.js twin, agent hub, proposals, knowledge, compliance, ontology explorer, audit | `web/` | FR-CON, FR-GEO, FR-TWN, FR-AVZ |
+| Layout sized for 120 ML/d (structures, levels falling 5.9 m by gravity, machine placements, georeference) and a synthetic drawing set in real text formats: DXF R2000 GA and hydraulic profile, DEXPI 1.3-subset PFD and eight P&IDs, CSV line, equipment and instrument lists; rev A and rev B, with seeded disagreements | `src/layout.mjs`, `src/drawings/make.mjs`, `data/drawings/` | Phase 3 design §4.1–4.2 |
+| Zero-dependency DXF, DEXPI-subset and CSV readers; extraction into graded cells (EXTRACTED / INFERRED / AMBIGUOUS) and whole-tag binding to Positions and Sensors | `src/ingest/` | Phase 3 design §4.3 |
+| Plant model revisions: seeded rev A, live ingest of newer sheets with review marks carried forward, cell review, four-eyes release with a content hash, revision-scoped plant objects, Issues for accepted disagreements | `src/plant.mjs`, `src/actions.mjs` | Phase 3 design §4.3–4.5 |
+| Process graph over the released model: upstream and downstream sets with split shares, all simple paths, travel windows (onset, mean, tail), change-onset detection | `src/functions.mjs` | Phase 3 design §4.6 |
+| Plant view: physical 3D (sky, sun shadows baked once, procedural materials, click-down into pump houses, states, alerts, band-tinted filter water) and blueprint (hidden-line, process lines by service, flow arrows, x-ray, skeletal map, upstream highlight with travel-window captions); SVG fallback without WebGL; server-side pruning that cuts lines at hidden zones; revision review and release screen | `web/plant.js`, `web/app.js`, `src/server.mjs` | Phase 3 design §5, §7 |
+
+Phase 3, project 1 — the plant from its drawings (design: `docs/superpowers/specs/2026-10-23-plant-blueprint-twin-design.md`):
+
+- **J14, click-down (P-001):** Plant → select the high-lift pump house 20UMC01; it turns translucent. Select HLP-B in place
+  (its alert ring pulses) → **Open twin**.
+- **J15, blueprint reading (P-002):** Plant → **Blueprint** → select filter 15HFA07 → **Show upstream**. The path lights back
+  through all four clarifiers at ¼ each and the dosing branches to the intake, with "onset ≈ …, mean ≈ … (design values
+  at the measured inlet flow)".
+- **J13, living blueprint:** **P-002**, Plant → Revisions and review → **Ingest received drawings** (GA, line list and
+  PID-05 at rev B). Accept extracted cells per sheet, accept the inferred lengths one by one, and **Exclude** the old
+  washwater route RB-L-421X (the one AMBIGUOUS cell). P-002's Release is refused (four eyes). Switch to **P-001** and
+  Release: the Plant re-renders at rev B with filter-to-waste lines on F01–F04, and an Issue is raised for instrument
+  15CQ13, which matches no sensor.
+- **J16, phone (P-004):** at under 720 px wide the Plant opens in blueprint; a tap selects an item and links its record.
+- With WebGL off, the Plant shows the site plan with structure outlines and line paths, each linking to its record.
+
+three.js 0.160.0 (MIT) is vendored under `web/vendor/three@0.160.0/` from the npm tarball, so the console needs no CDN;
+it is not a package dependency. Regenerate the drawing set with `node scripts/make-drawings.mjs`.
 
 Design prototypes for the same screens: https://claude.ai/artifact/LwS7u1g2MyCjYfzRA4ivKL (private until shared).
 
@@ -57,8 +80,12 @@ Design prototypes for the same screens: https://claude.ai/artifact/LwS7u1g2MyCjY
 - AI conversion of arbitrary SOP PDFs into steps: the four synthetic SOPs are converted by hand.
 - Neo4j, Graphiti, Qdrant and TimescaleDB adapters; the photoreal splat site walk; Unreal showcase.
 - Trained ML models: risk functions are transparent heuristics (`functions.mjs`).
+- Real CAD, survey or point-cloud geometry: the plant is template geometry generated from a synthetic drawing set, and
+  every rendering says so. Roads are not drawn (the GA's road polylines are not extracted into the model). P&ID symbol
+  recognition from images is not attempted; the readers take the documented text subsets only.
 - ERP write-back and any control-system write (PRD BR-06).
 - Authentication: the acting user is a header for the demo. Do not expose this server beyond localhost.
 
-Implementation plans: `docs/superpowers/plans/2026-10-23-water-works-os-phase1.md` and
-`docs/superpowers/plans/2026-10-23-workforce-intelligence-phase2.md`.
+Implementation plans: `docs/superpowers/plans/2026-10-23-water-works-os-phase1.md`,
+`docs/superpowers/plans/2026-10-23-workforce-intelligence-phase2.md` and
+`docs/superpowers/plans/2026-10-23-plant-blueprint-twin.md`.
