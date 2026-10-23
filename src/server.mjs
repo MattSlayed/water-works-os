@@ -11,7 +11,10 @@ import { rank } from "./ontology.mjs";
 import { llmEnabled } from "./llm.mjs";
 import { currentProcedure, performanceFor, projectStatus, graphFrom, upstreamOf, downstreamOf, processPaths, travelWindow } from "./functions.mjs";
 import { currentPlantModel } from "./plant.mjs";
-import { siteBounds } from "./layout.mjs";
+import { siteBounds, toLocal, toLonLat } from "./layout.mjs";
+import { regionPayload, sinceYouLeft, supplyRisks, focusOf, projectPanel } from "./regionview.mjs";
+import { sceneGrid } from "./scenes.mjs";
+import { liveStats } from "./geolive.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const WEB = path.resolve(here, "..", "web");
@@ -204,7 +207,31 @@ export function createServer(sys) {
     return { object: o, links, sensors, runs, related };
   }
 
+  // ---------- Region (Region design §6, §9): pruned like the plant; lines are cut at hidden zones in site metres ----------
+  const lastSeen = new Map(); // person -> ISO time of their last "Mark seen"; in memory like the rest of the state
+  const seenOf = (v) => lastSeen.get(v.id) || new Date(Date.parse(tel.now()) - 86400000).toISOString();
+  const clipLineFor = (v) => { const rects = hiddenRects(v); return (coords) => clipPath(coords.map(toLocal), rects).map((part) => part.map(toLonLat)); };
+  let live = null; // GEO_LIVE=1: real statistics for a user-supplied area, fetched once at start
+  if (process.env.GEO_LIVE === "1") {
+    let aoi = null;
+    try { aoi = JSON.parse(fs.readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "data", "geo", "live-aoi.geojson"), "utf8")); } catch (e) { live = { ok: false, reason: `live data unavailable: ${e.message}` }; }
+    if (aoi) liveStats({ aoi }).then((r) => { live = r; broadcast({ kind: "region.live", ok: r.ok }); });
+  }
+  const notFound = (x) => { if (!x) throw new HttpError(404, "not found"); return x; };
+
   const routes = [
+    ["GET", /^\/api\/region$/, (v, m, url) => regionPayload(sys, v, { clipLine: clipLineFor(v), trails: (url.searchParams.get("trails") || "").split(",").filter(Boolean), live })],
+    ["GET", /^\/api\/region\/since$/, (v) => sinceYouLeft(sys, v, seenOf(v))],
+    ["POST", /^\/api\/region\/since$/, (v) => { lastSeen.set(v.id, tel.now()); return { lastSeen: tel.now() }; }],
+    ["GET", /^\/api\/region\/risks$/, (v) => supplyRisks(sys, v)],
+    ["GET", /^\/api\/region\/focus\/(alert|workorder|project|detection)\/([^/]+)$/, (v, m) => notFound(focusOf(sys, v, m[1], decodeURIComponent(m[2])))],
+    ["GET", /^\/api\/region\/scenes\/([^/]+)\/grid$/, (v, m, url) => {
+      const view = ont.view(v), s = view.get(decodeURIComponent(m[1])), index = url.searchParams.get("index") || "ndti";
+      const g = s && s.type === "Scene" ? sceneGrid(s, index, 60, view.list("Scene")) : null;
+      if (!g) throw new HttpError(404, "no grid for that scene and index");
+      return { sceneId: g.sceneId, index: g.index, cellM: g.cellM, cells: g.cells, bands: g.band, usable: g.usable, note: g.note };
+    }],
+    ["GET", /^\/api\/projects\/([^/]+)\/panel$/, (v, m) => notFound(projectPanel(sys, v, decodeURIComponent(m[1])))],
     ["GET", /^\/api\/me$/, (v) => ({ ...v, autoSubmit: !!ont.get(v.id).autoSubmit, supervisorId: ont.get(v.id).supervisorId || null })],
     ["GET", /^\/api\/people$/, () => ont.list("Person").map((p) => ({ id: p.id, name: p.name, role: p.role, clearance: p.clearance }))],
     ["GET", /^\/api\/console$/, (v) => consolePayload(v)],
@@ -383,6 +410,7 @@ export function createServer(sys) {
   function tick(minutes) {
     const before = dueScenes();
     tel.tick(minutes);
+    sys.trackers.syncTo(ont, tel.cursor()); // pings and geofence events reach viewers as pruned ontology updates
     if (dueScenes() > before) runtime.run("Geo Watch", { actingUser: SYSTEM_USER, trigger: { kind: "event", on: "Scene ingested" } });
     if (tel.now().slice(0, 13) !== hour) { hour = tel.now().slice(0, 13); runtime.run("Project Watch", { actingUser: SYSTEM_USER, trigger: { kind: "schedule" } }); }
     if (tel.now().slice(0, 10) !== day) { day = tel.now().slice(0, 10); runtime.run("Procedure Steward", { actingUser: SYSTEM_USER, trigger: { kind: "schedule" } }); }

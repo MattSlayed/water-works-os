@@ -22,6 +22,8 @@ export function createSystem({ seed = 7 } = {}) {
   const copilot = createCopilot({ ont, tel, actions, runtime });
   const channels = createChannels({ ont, tel, actions, runtime, copilot, audit });
   const plant = createPlantService({ ont, tel, actions, audit });
+  // the RES-2 contractor's open issue, raised through the action service so it has its audit entry (Region design §4.4)
+  actions.invoke({ action: "raise_issue", params: { title: "Liner seam test failed on panel 14: re-weld before the cure", projectId: "PRJ-RES2" }, actor: { kind: "person", id: "P-004", clearance: ont.get("P-004").clearance } });
   // scenes already processed when the shift starts have been through Geo Watch (Region design §5.4)
   runtime.run("Geo Watch", { actingUser: { id: "SYSTEM", kind: "person", clearance: "manager", role: "system" }, trigger: { kind: "event", on: "Scene ingested" }, chain: false });
   return { seed, ont, tel, trackers, audit, actions, runtime, copilot, channels, plant };

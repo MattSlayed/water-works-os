@@ -30,7 +30,7 @@ test("seed: channels, the CL-3 contract, chat history, past jobs, issues and fie
   assert.ok(ex.filter((e) => e.personId === "P-028").length >= 2, "the demo artisan has past jobs to show in My work");
   assert.ok(ex.filter((e) => e.procedureId === "PRC-CENTRIFUGAL_PUMP-v3").length >= 5);
   const issues = ont.list("Issue");
-  assert.equal(issues.length, 6);
+  assert.equal(issues.length, 7); // six from Phase 2, and the RES-2 relining issue (Region design §4.4)
   for (const st of ["open", "triaged", "in_work", "done"]) assert.ok(issues.some((i) => i.state === st), st);
   const notes = ont.list("KnowledgeNote");
   assert.equal(notes.length, 9);
