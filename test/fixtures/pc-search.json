@@ -1,0 +1,36 @@
+{
+ "_captured": "2026-10-24 from POST https://planetarycomputer.microsoft.com/api/stac/v1/search (trimmed to id, datetime, cloud cover, platform)",
+ "type": "FeatureCollection",
+ "features": [
+  {
+   "type": "Feature",
+   "id": "S2C_MSIL2A_20261022T074951_R135_T35JPM_20261022T111003",
+   "collection": "sentinel-2-l2a",
+   "properties": {
+    "datetime": "2026-10-22T07:49:51.025000Z",
+    "eo:cloud_cover": 0.005109,
+    "platform": "Sentinel-2C"
+   }
+  },
+  {
+   "type": "Feature",
+   "id": "S2B_MSIL2A_20261017T074919_R135_T35JPM_20261017T113937",
+   "collection": "sentinel-2-l2a",
+   "properties": {
+    "datetime": "2026-10-17T07:49:19.024000Z",
+    "eo:cloud_cover": 0.66518,
+    "platform": "Sentinel-2B"
+   }
+  },
+  {
+   "type": "Feature",
+   "id": "S2C_MSIL2A_20261012T074841_R135_T35JPM_20261012T111606",
+   "collection": "sentinel-2-l2a",
+   "properties": {
+    "datetime": "2026-10-12T07:48:41.025000Z",
+    "eo:cloud_cover": 7.866042,
+    "platform": "Sentinel-2C"
+   }
+  }
+ ]
+}

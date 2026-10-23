@@ -50,6 +50,6 @@ test("scenes: the day-11 grid has 1,500-2,500 cells and the raised ones are in t
 
 test("scenes: statistics have the Planetary Computer statistics shape", () => {
   const fx = JSON.parse(readFileSync(new URL("./fixtures/pc-stats.json", import.meta.url)));
-  const keys = Object.keys(Object.values(fx).find((v) => v && typeof v === "object" && "mean" in v)).sort();
+  const keys = Object.keys(Object.values(fx.properties.statistics)[0]).sort();
   assert.deepEqual(Object.keys(sc("S2-20261012").stats["AOI-DAM"].ndti).sort(), keys);
 });

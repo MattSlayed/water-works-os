@@ -1,0 +1,34 @@
+{
+ "type": "Feature",
+ "properties": {
+  "name": "example: Rietvlei Dam (real, approximate outline)",
+  "note": "A rough box over a real Gauteng dam, for live mode only. Never mixed with the synthetic works."
+ },
+ "geometry": {
+  "type": "Polygon",
+  "coordinates": [
+   [
+    [
+     28.255,
+     -25.885
+    ],
+    [
+     28.285,
+     -25.885
+    ],
+    [
+     28.285,
+     -25.868
+    ],
+    [
+     28.255,
+     -25.868
+    ],
+    [
+     28.255,
+     -25.885
+    ]
+   ]
+  ]
+ }
+}
