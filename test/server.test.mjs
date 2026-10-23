@@ -176,3 +176,71 @@ test("moving an issue to done drafts its close-out; a person can turn on agent s
   assert.equal(sys.ont.get("P-031").autoSubmit, true);
   assert.equal((await call("/api/me/consent", { as: "P-031", method: "PUT", body: { autoSubmit: "yes" } })).status, 400);
 });
+
+// ---------- Plant API (Phase 3 project 1) ----------
+const Z06 = () => sys.ont.get("Z06").rect;
+const strictlyIn = ([x, y], [zx, zy, w, h]) => x > zx && x < zx + w && y > zy && y < zy + h;
+
+test("Review Focus 3: a technician's plant has nothing inside Z06, lines cut at its edge", async () => {
+  const r = await call("/api/plant", { as: techId() });
+  assert.equal(r.status, 200);
+  assert.match(r.json.model.disclosure, /^Generated from plant model rev A \(drawing set RB-DS rev A\)\. Template geometry, not survey or CAD\. Synthetic works\.$/);
+  assert.ok(r.json.structures.length > 30 && !r.json.structures.some((s) => s.zoneId === "Z06"));
+  assert.ok(!r.json.machines.some((m) => m.zoneId === "Z06" || /CHL/.test(m.tag)));
+  for (const l of r.json.lines) for (const part of l.parts) for (const p of part) assert.ok(!strictlyIn(p, Z06()), `${l.lineNumber} has ${p} inside Z06`);
+  const l207 = r.json.lines.find((l) => l.lineNumber === "RB-L-207");
+  assert.ok(l207 && l207.parts.length >= 1, "the filter outlet line is shown up to the zone edge");
+  assert.equal(l207.to, null);
+  assert.ok(!JSON.stringify(r.json).includes("16UGH01") && !JSON.stringify(r.json).includes('"Z06"'));
+  assert.ok(r.json.bounds.length === 4);
+});
+
+test("manager's plant includes Z06, machine states and sample points", async () => {
+  const r = await call("/api/plant");
+  assert.ok(r.json.structures.some((s) => s.tag === "16UGH01"));
+  const hlpB = r.json.machines.find((m) => m.tag === "HLP-B");
+  assert.ok(hlpB.assetId && hlpB.state);
+  assert.ok(r.json.samplePoints.length > 10 && r.json.valves.length === 72);
+  assert.ok(r.json.lines.find((l) => l.lineNumber === "RB-L-511"));
+});
+
+test("graph routes run over the viewer's pruned model", async () => {
+  const up = await call(`/api/plant/graph/upstream/${encodeURIComponent("POS-F07")}`);
+  assert.equal(up.status, 200);
+  assert.equal(up.json.items.filter((x) => /STR-14UGE0\d$/.test(x.id)).length, 4);
+  assert.equal((await call(`/api/plant/graph/upstream/${encodeURIComponent("PM-RB-A:STR-16UGH01")}`, { as: techId() })).status, 404);
+  const w = await call(`/api/plant/graph/window?from=${encodeURIComponent("PM-RB-A:STR-10UPA01")}&to=POS-F07&flow=120`);
+  assert.equal(w.status, 200);
+  assert.ok(w.json.window.meanH > 3 && w.json.path.length > 5);
+  const p = await call(`/api/plant/graph/paths?from=${encodeURIComponent("PM-RB-A:STR-13UGB01")}&to=POS-F07`);
+  assert.equal(p.json.paths.length, 4);
+  assert.ok((await call("/api/plant/graph/downstream/POS-DP-2")).json.items.some((x) => x.id.endsWith("STR-13UGB01")));
+});
+
+test("plant models: list, one with cells; technicians do not get Z06 cells", async () => {
+  const list = await call("/api/plant/models");
+  assert.deepEqual(list.json.map((m) => [m.id, m.status]), [["PM-RB-A", "released"]]);
+  const one = await call("/api/plant/models/PM-RB-A", { as: techId() });
+  assert.equal(one.status, 200);
+  assert.ok(one.json.cells.length > 500 && !one.json.cells.some((c) => c.key.startsWith("16UGH01|") || c.key.startsWith("RB-L-511|")));
+  assert.equal((await call("/api/plant/models/NOPE")).status, 404);
+});
+
+test("ingest needs engineer; ingest, review and release over HTTP move the plant to rev B", async () => {
+  const ids = sys.ont.list("Drawing", (d) => d.rev === "B").map((d) => d.id);
+  assert.equal((await call("/api/plant/ingest", { as: techId(), method: "POST", body: { drawingIds: ids } })).status, 403);
+  const ing = await call("/api/plant/ingest", { as: "P-002", method: "POST", body: { drawingIds: ids } });
+  assert.equal(ing.status, 200, JSON.stringify(ing.json));
+  assert.equal(ing.json.id, "PM-RB-B");
+  assert.equal((await call("/api/plant/ingest", { as: "P-002", method: "POST", body: { drawingIds: ids } })).status, 409);
+  const act = (name, params, as) => call(`/api/actions/${name}`, { as, method: "POST", body: { params } });
+  const model = () => sys.ont.get("PM-RB-B");
+  for (const sheet of new Set(model().cells.map((c) => c.sheet))) assert.equal((await act("review_cells", { modelId: "PM-RB-B", accept: "EXTRACTED", sheet }, "P-002")).status, 200);
+  assert.equal((await act("review_cells", { modelId: "PM-RB-B", marks: model().cells.filter((c) => !c.reviewed).map((c) => ({ key: c.key })) }, "P-002")).status, 200);
+  const rel = await act("release_plant_model", { modelId: "PM-RB-B", hash: model().packageHash }, "P-001");
+  assert.equal(rel.status, 200, JSON.stringify(rel.json));
+  const r = await call("/api/plant");
+  assert.equal(r.json.model.rev, "B");
+  assert.match(r.json.model.disclosure, /rev B \(drawing set RB-DS rev B\)/);
+  assert.ok(r.json.lines.some((l) => l.lineNumber === "RB-L-601"));
+});

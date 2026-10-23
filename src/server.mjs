@@ -9,7 +9,8 @@ import { dropPackEvidence } from "./agents.mjs";
 import { runEvals } from "./evals.mjs";
 import { rank } from "./ontology.mjs";
 import { llmEnabled } from "./llm.mjs";
-import { currentProcedure, performanceFor, projectStatus } from "./functions.mjs";
+import { currentProcedure, performanceFor, projectStatus, graphFrom, upstreamOf, downstreamOf, processPaths, travelWindow } from "./functions.mjs";
+import { currentPlantModel } from "./plant.mjs";
 import { siteBounds } from "./layout.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -18,6 +19,38 @@ const MIME = { ".html": "text/html; charset=utf-8", ".js": "text/javascript; cha
 const SYSTEM_USER = { id: "SYSTEM", kind: "person", clearance: "manager", role: "system" };
 
 class HttpError extends Error { constructor(status, msg) { super(msg); this.status = status; } }
+
+export const disclosureFor = (rev) => `Generated from plant model rev ${rev} (drawing set RB-DS rev ${rev}). Template geometry, not survey or CAD. Synthetic works.`;
+// Liang–Barsky: the parameter range [t0, t1] of segment a→b inside rect [x, y, w, h], or null.
+function segInside(a, b, [rx, ry, w, h]) {
+  const dx = b[0] - a[0], dy = b[1] - a[1];
+  let t0 = 0, t1 = 1;
+  for (const [p, q] of [[-dx, a[0] - rx], [dx, rx + w - a[0]], [-dy, a[1] - ry], [dy, ry + h - a[1]]]) {
+    if (p === 0) { if (q < 0) return null; continue; }
+    const t = q / p;
+    if (p < 0) { if (t > t1) return null; if (t > t0) t0 = t; } else { if (t < t0) return null; if (t < t1) t1 = t; }
+  }
+  return t1 > t0 ? [t0, t1] : null;
+}
+// The visible parts of a polyline [[x, y, z]...] after cutting out every hidden rect; z is interpolated at the cut.
+export function clipPath(path, rects) {
+  const lerp = (a, b, t) => a.map((v, i) => v + (b[i] - v) * t);
+  let parts = [path];
+  for (const r of rects) parts = parts.flatMap((pts) => {
+    const out = [];
+    let cur = [];
+    for (let i = 1; i < pts.length; i++) {
+      const a = pts[i - 1], b = pts[i], cut = segInside(a, b, r);
+      if (!cut) { if (!cur.length) cur.push(a); cur.push(b); continue; }
+      if (cut[0] > 0) { if (!cur.length) cur.push(a); cur.push(lerp(a, b, cut[0])); }
+      if (cur.length >= 2) out.push(cur);
+      cur = cut[1] < 1 ? [lerp(a, b, cut[1]), b] : [];
+    }
+    if (cur.length >= 2) out.push(cur);
+    return out;
+  });
+  return parts.filter((p) => p.length >= 2);
+}
 
 export function createServer(sys) {
   const { ont, tel, actions, runtime, copilot, audit, channels } = sys;
@@ -105,6 +138,51 @@ export function createServer(sys) {
     return { site: ont.get("SITE-RB"), bounds: siteBounds(), zones, muster: { on: muster.on, since: muster.since, people }, permits: view.list("Permit", (p) => p.state === "open") };
   }
 
+  // ---------- Plant (design §5.5, §7): the current released model, pruned on the server ----------
+  const hiddenZones = (v) => ont.list("Zone", (z) => rank(z.clearance) > rank(v.clearance));
+  const currentModel = () => { const m = currentPlantModel(ont); if (!m) throw new HttpError(404, "no released plant model"); return m; };
+  const modelSummary = (m) => {
+    const open = {};
+    for (const c of m.cells) if (!c.reviewed) open[c.grade] = (open[c.grade] || 0) + 1;
+    return { id: m.id, rev: m.rev, status: m.status, governs: m.governs, release: m.release, packageHash: m.packageHash, sources: m.sources, reviews: m.reviews, cells: m.cells.length, unreviewed: open, ingestedBy: m.ingestedBy || null, disclosure: disclosureFor(m.rev) };
+  };
+  function plantPayload(v) {
+    const m = currentModel(), view = ont.view(v), rects = hiddenZones(v).map((z) => z.rect);
+    const objs = ont.list(null, (o) => o.modelId === m.id), seen = (id) => !!(id && view.get(id));
+    const of = (t) => objs.filter((o) => o.type === t && view.get(o.id));
+    // Lines are cut at a hidden zone's edge rather than dropped whole; endpoints the viewer may not see are blanked.
+    const lines = [];
+    for (const l of objs.filter((o) => o.type === "Line")) {
+      const parts = clipPath(l.path || [], rects);
+      if (!parts.length) continue;
+      const { path, zones, ...rest } = l, a = seen(l.fromId), b = seen(l.toId);
+      lines.push({ ...rest, from: a ? l.from : null, fromId: a ? l.fromId : null, to: b ? l.to : null, toId: b ? l.toId : null, normalDirection: a && b ? l.normalDirection : null,
+        injectionAt: l.injectionAt && seen(`${m.id}:STR-${l.injectionAt}`) ? l.injectionAt : null, zones: (zones || []).filter((z) => view.get(z)), parts });
+    }
+    const machines = of("MachinePlacement").map((p) => {
+      const a = ont.list("Asset", (x) => x.positionId === p.positionId)[0];
+      return { ...p, ...(a && view.get(a.id) ? { assetId: a.id, state: a.state, assetClass: a.assetClass } : {}) };
+    });
+    return { model: { id: m.id, rev: m.rev, status: m.status, release: m.release, georef: m.georef, disclosure: disclosureFor(m.rev) }, structures: of("Structure"), machines, lines, valves: of("Valve"), samplePoints: of("SamplePoint"), bounds: siteBounds() };
+  }
+  // One revision with its cells, less the cells of items in (or drawn through, or attached to) a hidden zone.
+  function modelDetail(v, id) {
+    const m = ont.get(id);
+    if (!m || m.type !== "PlantModel") throw new HttpError(404, "not found");
+    const hz = hiddenZones(v), ids = new Set(hz.map((z) => z.id)), rects = hz.map((z) => z.rect), hidden = new Set();
+    for (const { tag, fields: f } of m.items) {
+      const through = f.path && f.path.some((p, i) => i > 0 && rects.some((r) => segInside(f.path[i - 1], p, r)));
+      if (ids.has(f.zoneId) || through || [f.from, f.to, f.at, f.structure, f.filter, f.injectionAt, f.instrument, f.measuredAt].some((t) => hidden.has(t))) hidden.add(tag);
+    }
+    return { ...modelSummary(m), cells: m.cells.filter((c) => !hidden.has(c.key.split("|")[0])) };
+  }
+  // Graph functions run over the viewer's pruned released model.
+  function plantGraph(v) {
+    const m = currentModel(), view = ont.view(v);
+    return graphFrom(ont.list(null, (o) => o.modelId === m.id && view.get(o.id)));
+  }
+  const nodeOf = (g, id) => { const n = g.alias.get(id) || id; if (!id || !g.nodes.has(n)) throw new HttpError(404, "not found"); return n; };
+
   function objectPayload(v, id) {
     const view = ont.view(v);
     const o = view.get(id);
@@ -126,6 +204,29 @@ export function createServer(sys) {
     ["GET", /^\/api\/people$/, () => ont.list("Person").map((p) => ({ id: p.id, name: p.name, role: p.role, clearance: p.clearance }))],
     ["GET", /^\/api\/console$/, (v) => consolePayload(v)],
     ["GET", /^\/api\/map$/, (v) => mapPayload(v)],
+    ["GET", /^\/api\/plant$/, (v) => plantPayload(v)],
+    ["GET", /^\/api\/plant\/models$/, () => ont.list("PlantModel").sort((a, b) => a.rev.localeCompare(b.rev)).map(modelSummary)],
+    ["GET", /^\/api\/plant\/models\/([^/]+)$/, (v, m) => modelDetail(v, decodeURIComponent(m[1]))],
+    ["POST", /^\/api\/plant\/ingest$/, async (v, m, url, req) => {
+      if (rank(v.clearance) < rank("engineer")) throw new HttpError(403, "engineer clearance needed to ingest drawings");
+      const b = await body(req);
+      try { return modelSummary(sys.plant.ingest(Array.isArray(b.drawingIds) ? b.drawingIds : [], v)); } catch (e) { throw new HttpError(409, e.message); }
+    }],
+    ["GET", /^\/api\/plant\/graph\/(upstream|downstream)\/([^/]+)$/, (v, m, url) => {
+      const g = plantGraph(v), id = nodeOf(g, decodeURIComponent(m[2])), mode = url.searchParams.get("mode") === "backwash" ? "backwash" : "normal";
+      return { id, mode, items: (m[1] === "upstream" ? upstreamOf : downstreamOf)(id, g, { mode }) };
+    }],
+    ["GET", /^\/api\/plant\/graph\/paths$/, (v, m, url) => {
+      const g = plantGraph(v), from = nodeOf(g, url.searchParams.get("from")), to = nodeOf(g, url.searchParams.get("to"));
+      return { from, to, paths: processPaths(from, to, g) };
+    }],
+    ["GET", /^\/api\/plant\/graph\/window$/, (v, m, url) => {
+      const g = plantGraph(v), from = nodeOf(g, url.searchParams.get("from")), to = nodeOf(g, url.searchParams.get("to"));
+      const [path] = processPaths(from, to, g);
+      if (!path) throw new HttpError(404, "no process path between them");
+      const flowMlD = Number(url.searchParams.get("flow")) || (tel.latest("SEN-RAW-flow") || {}).value || 120;
+      return { path, window: travelWindow(path, g, { flowMlD, lagMin: Number(url.searchParams.get("lag")) || 0 }) };
+    }],
     ["GET", /^\/api\/objects$/, (v, m, url) => { const view = ont.view(v); const q = url.searchParams.get("q"); const type = url.searchParams.get("type"); return (q ? view.search(q, 50) : view.list(type || null)).filter((o) => !type || o.type === type).slice(0, 500); }],
     ["GET", /^\/api\/objects\/([^/]+)$/, (v, m) => objectPayload(v, decodeURIComponent(m[1]))],
     ["GET", /^\/api\/schema$/, (v) => { const view = ont.view(v); const types = {}; for (const o of view.list()) types[o.type] = (types[o.type] || 0) + 1; return { types }; }],
