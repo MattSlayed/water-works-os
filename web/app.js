@@ -68,7 +68,7 @@ function plantSide(it) {
     : it.kind3d === "valve" ? [["Kind", it.kind], ["Filter", it.filter], ["Line", it.lineId], ["Normal state", it.normalState], ["Actuated", it.actuated ? "yes" : "no"]]
     : [["Kind", String(it.kind || "").replace(/_/g, " ")], ["Zone", it.zoneId], ["Floor level", it.baseLevel], ["Top water level", it.twl], ["Volume m³", it.volumeM3], it.diameter ? ["Diameter m", it.diameter] : ["Plan m", it.w ? `${it.w} × ${it.l}` : null]];
   return `<h2>${esc(it.kind3d)}</h2><h3 style="margin:0 0 8px">${esc(it.tag)}</h3><table>${rows.filter(([, v]) => v != null && v !== "").map(([k, v]) => `<tr><td class="meta">${esc(k)}</td><td>${esc(v)}</td></tr>`).join("")}</table>
-    <div class="btns" style="margin-top:10px"><button class="btn" id="flyto">Fly to</button>${it.kind3d !== "valve" ? `<button class="btn" id="upstream">Show upstream</button>` : ""}<a class="btn" href="#/object/${encodeURIComponent(it.id)}">Record</a>${it.assetId ? `<a class="btn primary" href="#/asset/${encodeURIComponent(it.assetId)}">Open twin</a>` : ""}</div>`;
+    <div class="btns" style="margin-top:10px"><button class="btn" id="flyto">Fly to</button>${it.kind3d !== "valve" ? `<button class="btn" id="upstream">Show upstream</button>` : ""}<a class="btn" href="#/object/${encodeURIComponent(it.id)}">Record</a>${it.assetId ? `<button class="btn" data-rca="${esc(it.assetId)}">Find root cause</button>` : ""}${it.assetId ? `<a class="btn primary" href="#/asset/${encodeURIComponent(it.assetId)}">Open twin</a>` : ""}</div>`;
 }
 const SHARE = { 0.25: "¼", 0.5: "½", 0.0833: "1/12", 0.3333: "⅓" };
 const plantStates = (d) => Object.fromEntries([...d.machines.filter((m) => m.positionId).map((m) => [m.positionId, { state: m.state, alerts: m.alerts }]), ...d.samplePoints.map((sp) => [sp.id, { reading: sp.reading }])]);
@@ -545,10 +545,37 @@ const views = {
         <td class="val">${a.runs}</td><td class="val">${a.acceptance == null ? "—" : a.acceptance + "%"}</td>
         <td><div class="btns"><button class="btn primary" data-run="${esc(a.name)}">Run</button><button class="btn" data-evals="${esc(a.name)}">Evals</button></div><div data-evalout="${esc(a.name)}"></div></td></tr>`).join("")}
       </tbody></table></section>
+      <section class="panel" id="stmts" style="margin-top:14px"><h2>Decision statements</h2><p class="meta">What each agent may do, who answers it, and its off switches. Open one to read it back.</p>
+        ${agents.map((a) => `<details class="stmt" data-spec="${esc(a.name)}"><summary><b>${esc(a.name)}</b></summary><div data-specout="${esc(a.name)}"><span class="meta">loading…</span></div></details>`).join("")}</section>
       <section class="panel" style="margin-top:14px"><h2>Recent runs</h2><table><thead><tr><th>Run</th><th>Agent</th><th>Trigger</th><th>Status</th><th>Read</th><th>Calls</th><th>Outputs</th></tr></thead><tbody>${runs.slice(0, 40).map((r) => `<tr><td><a href="#/run/${r.id}">${r.id}</a></td><td>${esc(r.agent)}</td><td class="meta">${esc(r.trigger.kind)}</td><td>${pill(r.status)}</td><td class="val">${r.read.length}</td><td class="val">${r.calls.length}</td><td class="val">${r.outputs.length}</td></tr>`).join("")}</tbody></table></section>`;
     view.querySelectorAll("select[data-agent]").forEach((s) => s.addEventListener("change", async () => {
       try { await api(`/api/agents/${encodeURIComponent(s.dataset.agent)}/autonomy`, { method: "PUT", body: { action: s.dataset.action, level: s.value } }); toast(`${s.dataset.agent}: ${s.dataset.action} set to ${s.value}.`); } catch (e) { toast(e.message); }
     }));
+    const card = (r) => {
+      const s = r.spec, sh = r.shadow, c = r.promotion.criteria;
+      const who = s.approver && s.approver.clearanceOf ? "anyone with the action's clearance" : `${esc(s.approver)}${s.backup ? `, or ${esc(s.backup)} after ${esc(s.escalateAfterMin)} min` : ""}`;
+      return `<div class="row">${pill(s.mode, s.mode === "bounded" ? "running" : "watch")} ${pill(s.state)}<span class="meta">owner ${esc(s.owner)} · v${esc(s.version)}</span></div>
+        <ul class="list">${r.sentences.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>
+        <p class="meta">Approver: ${who}. If nobody answers: ${esc(s.onTimeout)}, never applied.</p>
+        <p class="meta">Shadow record: ${sh.cases} cases, ${sh.agreePct}% agreed. Promotion needs ${c.minCases} cases, ${c.minAgreePct}% agreement, no breaches and stale evidence under ${c.maxStalePct}%.${r.promotion.gap ? ` Not yet: ${esc(r.promotion.gap)}.` : ""}</p>
+        ${canDial ? `<div class="btns">${s.tools.map((t) => `<label class="meta"><input type="checkbox" data-tool-toggle data-agent="${esc(s.name)}" data-action="${esc(t.action)}" ${t.enabled ? "checked" : ""}> ${esc(t.action)}</label>`).join("")}</div>
+        <div class="btns"><label class="meta">Agent <select data-agent-state="${esc(s.name)}">${["live", "paused", "retired"].map((x) => `<option ${s.state === x ? "selected" : ""}>${x}</option>`).join("")}</select></label>
+          ${r.promotion.next ? `<button class="btn" data-promote="${esc(s.name)}" data-to="${esc(r.promotion.next)}">Promote to ${esc(r.promotion.next)}</button>` : ""}
+          ${r.promotion.previous ? `<button class="btn" data-demote="${esc(s.name)}" data-to="${esc(r.promotion.previous)}">Demote to ${esc(r.promotion.previous)}</button>` : ""}</div>` : `<p class="meta">Engineer clearance is needed for the switches.</p>`}`;
+    };
+    const stmts = $("#stmts");
+    const load = async (name) => { stmts.querySelector(`[data-specout="${CSS.escape(name)}"]`).innerHTML = card(await api(`/api/agents/${encodeURIComponent(name)}/spec`)); };
+    const harness = async (action, params, done) => { try { await api(`/api/actions/${action}`, { method: "POST", body: { params } }); toast(done); } catch (e) { toast(e.message); } load(params.agent); };
+    stmts.querySelectorAll("details[data-spec]").forEach((d) => d.addEventListener("toggle", () => d.open && load(d.dataset.spec)));
+    stmts.addEventListener("change", (e) => {
+      const t = e.target;
+      if (t.matches("[data-tool-toggle]")) harness("set_tool_enabled", { agent: t.dataset.agent, action: t.dataset.action, enabled: t.checked }, `${t.dataset.agent}: ${t.dataset.action} turned ${t.checked ? "on" : "off"}.`);
+      if (t.matches("[data-agent-state]")) harness("set_agent_state", { agent: t.dataset.agentState, state: t.value }, `${t.dataset.agentState} is ${t.value}.`);
+    });
+    stmts.addEventListener("click", (e) => {
+      const b = e.target.closest("[data-promote],[data-demote]");
+      if (b) harness(b.dataset.promote ? "promote_agent" : "demote_agent", { agent: b.dataset.promote || b.dataset.demote, to: b.dataset.to }, `${b.dataset.promote || b.dataset.demote} is now ${b.dataset.to}.`);
+    });
     view.querySelectorAll("[data-evals]").forEach((b) => b.addEventListener("click", async () => {
       const out = view.querySelector(`[data-evalout="${CSS.escape(b.dataset.evals)}"]`);
       out.innerHTML = `<span class="meta">running…</span>`;
@@ -566,6 +593,16 @@ const views = {
         ${r.refusals.length ? `<h2>Refused</h2><ul>${r.refusals.map((x) => `<li>${esc(x.action)}: ${esc(x.reason)}</li>`).join("")}</ul>` : ""}</section>
       <section class="panel"><h2>Outputs</h2><ul class="list">${r.outputs.map((o) => `<li>${o.ref ? `${esc(o.action)} → ${link(o.ref)} ${pill(o.status)}` : `<pre>${esc(o.text || JSON.stringify(o))}</pre>`}</li>`).join("") || `<li class="empty">None.</li>`}</ul>
         <h2>Objects read (${r.read.length})</h2><p class="meta">${r.read.slice(0, 120).map((x) => link(x)).join(" · ")}</p></section></div>`;
+  },
+
+  async rca(id) {
+    const d = await api(`/api/rca/${encodeURIComponent(id)}`), r = d.data;
+    const ev = (e) => `<li>${link(e.id)} <span class="meta">${e.ageMin == null ? "" : `${e.ageMin} min old · `}${esc(e.note)}</span></li>`;
+    view.innerHTML = `<h2>Root cause · ${esc(d.id)}</h2><h1>${esc(d.title.replace(/^Root cause: /, ""))}</h1>
+      <p class="sub">${pill(r.verdict, r.verdict === "explained" ? "done" : "medium")} ${r.symptom && r.symptom.sensorId ? `Symptom ${link(r.symptom.sensorId)}${r.symptom.onsetAt ? `, onset ${time(r.symptom.onsetAt)}` : ""}.` : ""} ${r.window ? `Travel window from the intake ${r.window.onsetH}–${r.window.tailH} h (mean ${r.window.meanH} h).` : ""} ${r.why ? esc(r.why) + "." : ""}</p>
+      <div class="grid console"><section class="panel"><h2>Causes, ranked</h2><ol>${r.causes.map((c) => `<li><div class="row"><b>${esc(c.label)}</b>${pill(c.kind, c.kind === "local" ? "high" : "watch")}<span class="meta">weight ${esc(c.weight)}</span><a class="btn" href="${esc(c.showMe)}">Show me</a></div><ul class="list">${c.evidence.map(ev).join("")}</ul></li>`).join("") || `<li class="empty">None: ${esc(r.verdict)}.</li>`}</ol></section>
+      <section class="panel"><h2>Rejected</h2><ul class="list">${r.rejected.map((x) => `<li><b>${esc(x.label)}</b><div class="meta">${esc(x.reason)}</div></li>`).join("") || `<li class="empty">None.</li>`}</ul>
+        <p class="meta">Deterministic: change onsets, the released plant model's process graph and its travel windows. Nothing here is guessed.</p></section></div>`;
   },
 
   async proposals() {
@@ -619,7 +656,7 @@ const views = {
     const o = await api(`/api/objects/${encodeURIComponent(id)}`);
     const ob = o.object;
     const props = Object.entries(ob).filter(([k]) => !["prov", "geom", "explode"].includes(k)).map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(typeof v === "object" ? JSON.stringify(v) : v)}</dd>`).join("");
-    view.innerHTML = `<h2>${esc(ob.type)}</h2><h1>${esc(ob.name || ob.title || ob.id)}</h1>${ob.type === "Asset" && ob.template ? `<p><a class="btn primary" href="#/asset/${encodeURIComponent(ob.id)}">Open in the Asset Workbench</a></p>` : ""}
+    view.innerHTML = `<h2>${esc(ob.type)}</h2><h1>${esc(ob.name || ob.title || ob.id)}</h1>${ob.type === "Asset" && ob.template ? `<p><a class="btn primary" href="#/asset/${encodeURIComponent(ob.id)}">Open in the Asset Workbench</a></p>` : ""}${ob.type === "Alert" && ob.assetId ? `<p><button class="btn primary" data-rca="${esc(ob.id)}">Find root cause</button></p>` : ""}
       <div class="grid console"><section class="panel"><h2>Properties</h2><dl class="kv">${props}</dl><h2 style="margin-top:12px">Provenance</h2><dl class="kv">${Object.entries(ob.prov || {}).map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join("")}</dl></section>
       <div class="grid"><section class="panel"><h2>Links · ${o.links.length}</h2><ul class="list">${o.links.map((l) => `<li>${l.dir === "out" ? "→" : "←"} <span class="mono">${esc(l.rel)}</span> ${l.other ? link(l.other.id, `${l.other.type} ${l.other.name}`) : ""}</li>`).join("") || `<li class="empty">None visible.</li>`}</ul></section>
       ${o.sensors.length ? `<section class="panel"><h2>Live values</h2><ul class="list">${o.sensors.map((s) => `<li class="row"><span>${esc(s.name)}</span><span class="val" style="color:${isAlarm(s) ? "var(--red)" : "inherit"}">${num(s.value)} ${esc(s.unit)}</span></li>`).join("")}</ul></section>` : ""}
@@ -794,6 +831,12 @@ document.addEventListener("click", async (e) => {
   if (!b) return;
   b.disabled = true;
   try { const r = await api(`/api/agents/${encodeURIComponent(b.dataset.run)}/run`, { method: "POST", body: {} }); toast(`${r.agent}: ${r.status}, ${r.outputs.length} output(s).`); route(); } catch (err) { toast(err.message); } finally { b.disabled = false; }
+});
+document.addEventListener("click", async (e) => {
+  const b = e.target.closest("[data-rca]");
+  if (!b) return;
+  b.disabled = true;
+  try { const d = await api("/api/rca", { method: "POST", body: { targetId: b.dataset.rca } }); location.hash = `#/rca/${encodeURIComponent(d.id)}`; } catch (err) { toast(err.message); b.disabled = false; }
 });
 $("#cmd").addEventListener("submit", async (e) => {
   e.preventDefault();

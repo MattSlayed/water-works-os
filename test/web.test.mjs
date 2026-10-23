@@ -114,3 +114,8 @@ test("final review (Region view): every Since-you-left line acts, the index pick
   for (const s of ["groups.focus.clearLayers()", "last seen ${ago(t.pingAt)}", "focus(f, { fit = true } = {})", "index, not calibrated`", "map.setView([t.lat, t.lon], CLUSTER_BELOW)"]) assert.ok(reg.includes(s), s);
 });
 
+
+test("harness and root cause: agent cards with switches and promotion; the report view; Find root cause", async () => {
+  const app = await (await fetch(base + "/app.js")).text();
+  for (const s of ["async rca(", "Find root cause", "data-tool-toggle", "data-agent-state", "Promote", "Demote", "data-spec"]) assert.ok(app.includes(s), s);
+});

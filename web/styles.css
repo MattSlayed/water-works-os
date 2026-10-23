@@ -74,6 +74,9 @@ h2 { font: 500 12px var(--mono); text-transform: uppercase; letter-spacing: .14e
 .row { display: flex; gap: 8px; align-items: center; justify-content: space-between; }
 .meta { color: var(--dim); font: 11px var(--mono); }
 .btns { display: flex; gap: 6px; margin-top: 6px; flex-wrap: wrap; }
+details.stmt { border-top: 1px solid var(--line); padding: 8px 0; }
+details.stmt summary { cursor: pointer; }
+details.stmt label input { margin-right: 4px; }
 .btn { background: var(--bg); border: 1px solid rgba(96,165,250,0.35); border-radius: var(--r); padding: 6px 12px; min-height: 36px; cursor: pointer; font-weight: 600; font-size: 13px; color: var(--ink); }
 .btn:hover { border-color: var(--teal); }
 .btn.primary { background: var(--teal-d); border-color: var(--teal); }

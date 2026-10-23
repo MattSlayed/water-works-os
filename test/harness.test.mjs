@@ -306,3 +306,11 @@ test("relative revert: closing a permit and recording an isolation can both be r
   assert.equal(s.actions.reverse(close.id, person(s, "P-009")).status, "done");
   assert.equal(s.ont.get(ptw).state, "open");
 });
+
+test("demotion by hand: anyone at engineer or above, the owner included, may step an agent down", () => {
+  const s = createSystem();
+  assert.equal(act(s, "P-002", "demote_agent", { agent: "Process Watch", to: "assisted" }).status, "done");
+  assert.equal(specFor(s.ont, "Process Watch").mode, "assisted");
+  assert.match(act(s, "P-002", "demote_agent", { agent: "Process Watch", to: "bounded" }).reason, /one step down/);
+  assert.equal(act(s, "P-028", "demote_agent", { agent: "Process Watch", to: "shadow" }).status, "refused");
+});

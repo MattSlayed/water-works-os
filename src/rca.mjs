@@ -94,7 +94,7 @@ export function rootCause(ctx, { targetId, at } = {}) {
       const w = travelWindow(p, g, { flowMlD: 120 }), lag = minutesBetween(on.at, sym.onsetAt), late = timing(lag, w, tag);
       const label = `${a.positionTag} ${String(a.template || a.assetClass || "").replace(/_/g, " ")}`.trim();
       if (late) rejected.push({ id: a.id, label, reason: late });
-      else causes.push({ id: a.id, label, kind: "contributing", weight: 0.5, onsetAt: on.at, evidence: [{ id: on.id, ageMin: age(on.at), note: `onset ${lag} min before ${tag}, inside ${w.onsetH}–${w.tailH} h` }], showMe: `#/plant/${a.id}` });
+      else causes.push({ id: a.id, label, kind: "contributing", weight: 0.5, onsetAt: on.at, evidence: [{ id: on.id, ageMin: age(on.at), note: `onset ${lag} min before ${tag}, inside ${w.onsetH}–${w.tailH} h` }], showMe: `#/plant/${a.positionId || a.id}` });
     }
   } else rejected.push({ id: "upstream", label: "Upstream water", reason: `${sym.sensorId} is not a water-quality measure; upstream water cannot cause it` });
 
@@ -104,7 +104,7 @@ export function rootCause(ctx, { targetId, at } = {}) {
   const alike = siblings.filter((a) => onsetAt(ctx, `SEN-${a.positionTag}${suffix}`, sym.at, sym.filter)).map((a) => a.positionTag);
   if (alike.length < 2) {
     const history = [...ctx.list("Finding", (f) => f.assetId === asset.id && f.verified), ...ctx.list("WorkOrder", (w) => w.assetId === asset.id)].slice(-3);
-    causes.push({ id: asset.id, label: `${tag} ${String(asset.assetClass || "").toLowerCase()}`.trim(), kind: "local", weight: 1, onsetAt: sym.onsetAt, showMe: `#/plant/${asset.id}`,
+    causes.push({ id: asset.id, label: `${tag} ${String(asset.assetClass || "").toLowerCase()}`.trim(), kind: "local", weight: 1, onsetAt: sym.onsetAt, showMe: `#/plant/${asset.positionId || asset.id}`,
       evidence: [{ id: sym.sensorId, ageMin: age(sym.onsetAt), note: `onset ${sym.onsetAt.slice(0, 16)}; ${alike.length} of ${siblings.length} siblings show one` },
         ...history.map((h) => ({ id: h.id, ageMin: age(h.at || h.requested || null), note: h.text || h.title || h.type }))] });
   } else rejected.push({ id: asset.id, label: `${tag} (local)`, reason: `${alike.length} siblings (${alike.join(", ")}) show the same onset: a common cause, not a local one` });

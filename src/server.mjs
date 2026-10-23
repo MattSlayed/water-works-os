@@ -15,7 +15,7 @@ import { siteBounds, toLocal, toLonLat } from "./layout.mjs";
 import { regionPayload, sinceYouLeft, supplyRisks, focusOf, projectPanel } from "./regionview.mjs";
 import { sceneGrid } from "./scenes.mjs";
 import { liveStats } from "./geolive.mjs";
-import { applyTimeouts } from "./harness.mjs";
+import { applyTimeouts, specFor, statementSentences, shadowRecord, promotionGap, MODES } from "./harness.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const WEB = path.resolve(here, "..", "web");
@@ -281,6 +281,23 @@ export function createServer(sys) {
       const decided = props.filter((p) => p.state !== "open");
       return { ...s, runs: runtime.runs().filter((r) => r.agent === s.name).length, proposals: props.length, acceptance: decided.length ? Math.round((decided.filter((p) => p.state === "approved").length / decided.length) * 100) : null };
     })],
+    // the decision statement read back, with the shadow record against the promotion criteria (agents design §4)
+    ["GET", /^\/api\/agents\/([^/]+)\/spec$/, (v, m) => {
+      const spec = specFor(ont, decodeURIComponent(m[1]));
+      if (!spec || !ont.view(v).get(spec.id)) throw new HttpError(404, "unknown agent");
+      const i = MODES.indexOf(spec.mode);
+      return { spec, sentences: statementSentences(spec, ont), shadow: shadowRecord(ont, spec.name), promotion: { criteria: spec.promotion, gap: promotionGap(ont, spec), next: MODES[i + 1] || null, previous: MODES[i - 1] || null } };
+    }],
+    // root cause for the viewer: the agent runs as the person asking, so the report holds only what they may see
+    ["POST", /^\/api\/rca$/, async (v, m, url, req) => {
+      const b = await body(req);
+      if (!b.targetId || !ont.view(v).get(b.targetId)) throw new HttpError(404, "not found");
+      const r = runtime.run("Root Cause", { actingUser: v, scope: { targetId: b.targetId }, chain: false, trigger: { kind: "console", by: v.id } });
+      const out = r.outputs.find((o) => o.action === "draft_document" && o.status === "done");
+      if (!out) throw new HttpError(400, (r.refusals[0] || {}).reason || r.error || "no report");
+      return ont.view(v).get(ont.get(out.ref).objects[0]);
+    }],
+    ["GET", /^\/api\/rca\/([^/]+)$/, (v, m) => { const d = ont.view(v).get(decodeURIComponent(m[1])); if (!d || d.type !== "Draft" || d.kind !== "rca") throw new HttpError(404, "not found"); return d; }],
     ["POST", /^\/api\/agents\/([^/]+)\/run$/, async (v, m, url, req) => {
       const name = decodeURIComponent(m[1]);
       if (!runtime.spec(name)) throw new HttpError(404, "unknown agent");
@@ -309,7 +326,7 @@ export function createServer(sys) {
       const b = await body(req);
       const action = decodeURIComponent(m[1]);
       const r = actions.invoke({ action, params: b.params || {}, actor: v });
-      if (r.status === "refused") throw new HttpError(400, r.reason);
+      if (r.status === "refused") throw new HttpError(/ needs \w+ clearance$/.test(r.reason) ? 403 : 400, r.reason);
       if (action === "update_issue" && b.params.patch && b.params.patch.state === "done") runtime.run("Scribe", { actingUser: v, scope: { issueId: b.params.issueId }, trigger: { kind: "event", on: "issue done" } });
       return r;
     }],

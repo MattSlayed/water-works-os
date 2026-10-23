@@ -77,6 +77,14 @@ export const ACTIONS = {
     if (gap) throw new Error(`not yet: ${gap}`);
     return { objects: [spec.id], revert: setProps(ont, spec.id, { mode: p.to }) };
   }, "engineer"),
+  // stepping down needs no second pair of eyes: it only narrows what the agent may do
+  demote_agent: def("act", "human", ["agent", "to"], (ont, p, ctx) => {
+    const spec = agentSpec(ont, p.agent);
+    const down = MODES[MODES.indexOf(spec.mode) - 1];
+    if (!down) throw new Error(`${spec.name} is already ${spec.mode}`);
+    if (p.to !== down) throw new Error(`demotion is one step down: ${spec.name} is ${spec.mode}, so the next step down is ${down}`);
+    return { objects: [spec.id], revert: setProps(ont, spec.id, { mode: p.to }) };
+  }, "engineer"),
   set_agent_state: def("act", "human", ["agent", "state"], (ont, p, ctx) => {
     const spec = agentSpec(ont, p.agent);
     if (!["live", "paused", "retired"].includes(p.state)) throw new Error("state must be live, paused or retired");

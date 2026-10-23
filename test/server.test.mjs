@@ -285,3 +285,21 @@ test("final: Show upstream works for a machine by its plant id", async () => {
   assert.equal(r.status, 200);
   assert.ok(r.json.items.some((x) => x.id.endsWith("STR-20UBA01")), JSON.stringify(r.json.items.slice(0, 5)));
 });
+
+test("harness routes (J23, J24): a technician cannot pause an agent; the statement reads back; root cause runs for the viewer", async () => {
+  assert.equal((await call("/api/actions/set_agent_state", { as: techId(), method: "POST", body: { params: { agent: "Process Watch", state: "paused" } } })).status, 403);
+  const s = await call(`/api/agents/${encodeURIComponent("Process Watch")}/spec`);
+  assert.equal(s.status, 200);
+  assert.ok(s.json.sentences.length >= 4 && s.json.spec.mode === "bounded");
+  assert.deepEqual(Object.keys(s.json.shadow), ["cases", "agreed", "differed", "missed", "agreePct"]);
+  assert.match(s.json.promotion.gap, /minCases/);
+  assert.equal((await call("/api/agents/Nobody/spec")).status, 404);
+  sys.runtime.run("Process Watch", { actingUser: { id: "SYSTEM", kind: "person", clearance: "manager" }, chain: false });
+  const alert = sys.ont.list("Alert", (a) => a.state === "active" && /^F07/.test(a.title))[0];
+  const r = await call("/api/rca", { method: "POST", body: { targetId: alert.id } });
+  assert.equal(r.status, 200);
+  assert.deepEqual([r.json.kind, r.json.data.causes[0].kind], ["rca", "local"]);
+  assert.equal((await call(`/api/rca/${r.json.id}`)).json.id, r.json.id);
+  assert.equal((await call("/api/rca/NOPE")).status, 404);
+  assert.equal((await call("/api/rca", { method: "POST", body: { targetId: "NOPE" } })).status, 404);
+});
