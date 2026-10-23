@@ -9,7 +9,7 @@ import { dropPackEvidence } from "./agents.mjs";
 import { runEvals } from "./evals.mjs";
 import { rank } from "./ontology.mjs";
 import { llmEnabled } from "./llm.mjs";
-import { currentProcedure } from "./functions.mjs";
+import { currentProcedure, performanceFor, projectStatus } from "./functions.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const WEB = path.resolve(here, "..", "web");
@@ -19,19 +19,21 @@ const SYSTEM_USER = { id: "SYSTEM", kind: "person", clearance: "manager", role: 
 class HttpError extends Error { constructor(status, msg) { super(msg); this.status = status; } }
 
 export function createServer(sys) {
-  const { ont, tel, actions, runtime, copilot, audit } = sys;
+  const { ont, tel, actions, runtime, copilot, audit, channels } = sys;
+  const workforce = () => [ont.list("Execution"), ont.list("Procedure"), ont.list("Issue"), ont.list("KnowledgeNote")];
   const clients = new Map(); // response -> viewer
   const muster = { on: false, since: null, checkins: new Set() };
   // Each client hears only about objects it may see.
   const broadcast = (e) => {
     for (const [c, v] of clients) {
-      const ref = e.partId || (String(e.kind).startsWith("ontology.") ? e.id : null);
+      const ref = e.partId || (String(e.kind).startsWith("ontology.") || e.kind === "message" ? e.id : null);
       if (ref && !ont.view(v).get(ref)) continue;
       c.write(`data: ${JSON.stringify(e)}\n\n`);
     }
   };
   ont.on((e) => broadcast({ ...e, kind: `ontology.${e.kind}` }));
   copilot.on((e) => broadcast(e));
+  channels.on((e) => broadcast(e));
 
   const viewerOf = (req, url) => {
     const id = req.headers["x-acting-user"] || url.searchParams.get("as");
@@ -164,8 +166,10 @@ export function createServer(sys) {
     }],
     ["POST", /^\/api\/actions\/([^/]+)$/, async (v, m, url, req) => {
       const b = await body(req);
-      const r = actions.invoke({ action: decodeURIComponent(m[1]), params: b.params || {}, actor: v });
+      const action = decodeURIComponent(m[1]);
+      const r = actions.invoke({ action, params: b.params || {}, actor: v });
       if (r.status === "refused") throw new HttpError(400, r.reason);
+      if (action === "update_issue" && b.params.patch && b.params.patch.state === "done") runtime.run("Scribe", { actingUser: v, scope: { issueId: b.params.issueId }, trigger: { kind: "event", on: "issue done" } });
       return r;
     }],
     ["POST", /^\/api\/decisions\/([^/]+)\/reverse$/, (v, m) => { const r = actions.reverse(decodeURIComponent(m[1]), v); if (r.status === "refused") throw new HttpError(409, r.reason); return r; }],
@@ -196,13 +200,76 @@ export function createServer(sys) {
       return { on: muster.on };
     }],
     ["POST", /^\/api\/muster\/checkin$/, async (v, m, url, req) => { const b = await body(req); if (!ont.get(b.personId)) throw new HttpError(404, "not found"); muster.checkins.add(b.personId); broadcast({ kind: "muster.checkin", personId: b.personId }); return { ok: true }; }],
-    ["POST", /^\/api\/clock\/tick$/, async (v, m, url, req) => { const b = await body(req); tick(Math.max(1, Math.min(1440, Number(b.minutes) || 15))); return { clock: tel.now() }; }]
+    ["POST", /^\/api\/clock\/tick$/, async (v, m, url, req) => { const b = await body(req); tick(Math.max(1, Math.min(1440, Number(b.minutes) || 15))); return { clock: tel.now() }; }],
+
+    // ---- Workforce intelligence (Phase 2) ----
+    ["PUT", /^\/api\/me\/consent$/, async (v, m, url, req) => {
+      const b = await body(req);
+      if (typeof b.autoSubmit !== "boolean") throw new HttpError(400, "autoSubmit must be true or false");
+      ont.upsert({ id: v.id, type: "Person", autoSubmit: b.autoSubmit });
+      audit.append({ actor: v.id, actorKind: "person", action: "consent", detail: `autoSubmit=${b.autoSubmit}` });
+      return { autoSubmit: b.autoSubmit };
+    }],
+    ["GET", /^\/api\/channels$/, (v) => {
+      const view = ont.view(v);
+      return view.list("Channel").map((c) => {
+        const msgs = view.list("Message", (x) => x.channelId === c.id);
+        const last = msgs[msgs.length - 1];
+        return { ...c, label: c.groupName || (ont.get(c.personId) || {}).name || c.id, last: last ? { text: last.text, at: last.at, direction: last.direction } : null, count: msgs.length };
+      });
+    }],
+    ["GET", /^\/api\/channels\/([^/]+)\/messages$/, (v, m) => {
+      const view = ont.view(v), id = decodeURIComponent(m[1]);
+      if (!view.get(id)) throw new HttpError(404, "not found");
+      return view.list("Message", (x) => x.channelId === id).map((x) => ({ ...x, fromName: (ont.get(x.from) || {}).name || (ont.get(x.from) || {}).label || x.from }));
+    }],
+    ["GET", /^\/api\/executions$/, (v, m, url) => { const pid = url.searchParams.get("personId"); return ont.view(v).list("Execution", (e) => !pid || e.personId === pid); }],
+    ["GET", /^\/api\/issues$/, (v) => ont.view(v).list("Issue")],
+    ["GET", /^\/api\/procedures$/, (v) => ont.view(v).list("Procedure").map(({ steps, ...p }) => ({ ...p, steps: steps.length, sourceBehind: !!(ont.get(p.documentId) || {}).sourceBehind, sourceRef: (ont.get(p.documentId) || {}).sourceRef || null }))],
+    ["GET", /^\/api\/procedures\/([^/]+)$/, (v, m) => {
+      const view = ont.view(v), id = decodeURIComponent(m[1]);
+      const p = view.get(id);
+      if (!p || p.type !== "Procedure") throw new HttpError(404, "not found");
+      return {
+        procedure: p, document: view.get(p.documentId), versions: view.list("Procedure", (x) => x.template === p.template).map(({ steps, ...x }) => x),
+        notes: view.list("KnowledgeNote", (n) => n.procedureId === id), issues: view.list("Issue", (i) => i.procedureId === id),
+        perf: rank(v.clearance) >= rank("engineer") ? performanceFor({ procedureId: id }, ...workforce()) : null
+      };
+    }],
+    ["GET", /^\/api\/projects$/, (v) => { const view = ont.view(v); return view.list("Project").map((p) => ({ ...p, status: projectStatus(p, ont.list("ProgressClaim"), ont.list("Issue"), tel.now()) })); }],
+    ["GET", /^\/api\/projects\/([^/]+)$/, (v, m) => {
+      const view = ont.view(v), id = decodeURIComponent(m[1]);
+      const p = view.get(id);
+      if (!p || p.type !== "Project") throw new HttpError(404, "not found");
+      return { project: p, status: projectStatus(p, ont.list("ProgressClaim"), ont.list("Issue"), tel.now()), claims: view.list("ProgressClaim", (c) => c.projectId === id), issues: view.list("Issue", (i) => i.projectId === id), channel: view.get(p.channelId) };
+    }],
+    ["GET", /^\/api\/performance\/person\/([^/]+)$/, (v, m) => {
+      const id = decodeURIComponent(m[1]), p = ont.get(id);
+      if (!p || p.type !== "Person") throw new HttpError(404, "not found");
+      if (v.id !== id && v.id !== p.supervisorId && rank(v.clearance) < rank("engineer")) throw new HttpError(403, "only the person, their supervisor, engineers and the manager");
+      return { person: { id: p.id, name: p.name, role: p.role }, ...performanceFor({ personId: id }, ...workforce()) };
+    }],
+    ["GET", /^\/api\/performance\/procedure\/([^/]+)$/, (v, m) => {
+      if (rank(v.clearance) < rank("engineer")) throw new HttpError(403, "engineer clearance needed");
+      const id = decodeURIComponent(m[1]);
+      if ((ont.get(id) || {}).type !== "Procedure") throw new HttpError(404, "not found");
+      return performanceFor({ procedureId: id }, ...workforce());
+    }],
+    // Crew rollup: per procedure, never per person.
+    ["GET", /^\/api\/performance\/crew$/, (v) => {
+      if (rank(v.clearance) < rank("supervisor")) throw new HttpError(403, "supervisor clearance needed");
+      const w = workforce();
+      return { procedures: ont.list("Procedure", (p) => p.state === "released").map((p) => { const f = performanceFor({ procedureId: p.id }, ...w); return { procedureId: p.id, title: p.title, version: p.version, executions: f.executions, firstTimeRight: f.firstTimeRight, issues: f.issuesRaised, notes: f.notesContributed, longSteps: f.steps.filter((s) => s.ratio >= 1.5).map((s) => ({ step: s.step, ratio: s.ratio })) }; }) };
+    }],
   ];
 
-  // Plant clock: scheduled agents run every 15 plant minutes, as the system user.
-  let since = 0;
+  // Plant clock: scheduled agents run every 15 plant minutes, as the system user; Project Watch every plant hour
+  // (it posts the weekly status from Friday 15:00), Procedure Steward each plant day (it notifies once a week).
+  let since = 0, hour = tel.now().slice(0, 13), day = tel.now().slice(0, 10);
   function tick(minutes) {
     tel.tick(minutes);
+    if (tel.now().slice(0, 13) !== hour) { hour = tel.now().slice(0, 13); runtime.run("Project Watch", { actingUser: SYSTEM_USER, trigger: { kind: "schedule" } }); }
+    if (tel.now().slice(0, 10) !== day) { day = tel.now().slice(0, 10); runtime.run("Procedure Steward", { actingUser: SYSTEM_USER, trigger: { kind: "schedule" } }); }
     since += minutes;
     if (since >= 15) {
       since = 0;
@@ -230,6 +297,20 @@ export function createServer(sys) {
     const url = new URL(req.url, "http://localhost");
     if (!url.pathname.startsWith("/api/")) return serveStatic(url, res);
     try {
+      // The chat stub's webhook: the sender is the channel member, not a console user.
+      // shortcut: header-trusted sender, like x-acting-user; a real WhatsApp webhook verifies Meta's signature.
+      const inbound = req.method === "POST" && url.pathname.match(/^\/api\/channels\/([^/]+)\/inbound$/);
+      if (inbound) {
+        const sender = req.headers["x-channel-sender"];
+        if (!sender || !ont.get(sender)) throw new HttpError(401, "unknown sender");
+        const b = await body(req);
+        let out;
+        try { out = await channels.inbound(decodeURIComponent(inbound[1]), sender, { text: b.text, media: b.media }); } catch (e) {
+          throw new HttpError(/not a member/.test(e.message) ? 403 : /not found/.test(e.message) ? 404 : 400, e.message);
+        }
+        res.writeHead(200, { "content-type": "application/json" });
+        return res.end(JSON.stringify(out));
+      }
       if (url.pathname === "/api/events") {
         const sv = viewerOf(req, url);
         res.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-cache", connection: "keep-alive" });
@@ -261,7 +342,7 @@ if (process.argv[1] && path.resolve(process.argv[1]).toLowerCase() === SELF.toLo
   const port = Number(process.argv[2]) || 8830;
   const sys = createSystem({ seed: 7 });
   const server = createServer(sys);
-  for (const a of ["Shift Handover", "Process Watch", "Asset Watch", "Permit Guard", "Shift Cover", "Drop Pack"]) sys.runtime.run(a, { actingUser: SYSTEM_USER, trigger: { kind: "startup" } });
+  for (const a of ["Shift Handover", "Process Watch", "Asset Watch", "Permit Guard", "Shift Cover", "Drop Pack", "Project Watch", "Procedure Steward"]) sys.runtime.run(a, { actingUser: SYSTEM_USER, trigger: { kind: "startup" } });
   setInterval(() => server.tick(1), 2000).unref();
   server.listen(port, "127.0.0.1", () => console.log(`Water Works OS on http://localhost:${port}  (plant clock ${sys.tel.now()}, Claude ${llmEnabled() ? "on" : "off: deterministic agents"})`));
 }

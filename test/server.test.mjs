@@ -105,3 +105,74 @@ test("static index is served", async () => {
   assert.equal(res.status, 200);
   assert.match(await res.text(), /<html/i);
 });
+
+// ---- Phase 2: workforce routes ----
+const send = async (channel, sender, text) => {
+  const res = await fetch(`${base}/api/channels/${channel}/inbound`, { method: "POST", headers: { "content-type": "application/json", ...(sender ? { "x-channel-sender": sender } : {}) }, body: JSON.stringify({ text }) });
+  return { status: res.status, json: await res.json() };
+};
+
+test("inbound chat: a member gets one reply; a non-member, a missing sender or an unknown channel is refused", async () => {
+  const survey = sys.ont.list("WorkOrder", (w) => w.title === "HLP-B: 6-monthly vibration survey")[0].id;
+  const r = await send("CHN-P-028", "P-028", `start ${survey}`);
+  assert.equal(r.status, 200);
+  assert.equal(r.json.replies.length, 1);
+  assert.match(r.json.replies[0].text, /Step 1\/11/);
+  assert.equal((await send("CHN-P-028", "P-029", "start")).status, 403);
+  assert.equal((await send("CHN-P-028", null, "start")).status, 401);
+  assert.equal((await send("CHN-NOPE", "P-028", "start")).status, 404);
+  assert.equal((await send("CHN-GRP-CL3", "PAR-001", "Bearings out and slewing ring replaced")).status, 200);
+});
+
+test("channels and messages are private to their members (and the manager)", async () => {
+  const mine = await call("/api/channels", { as: "P-028" });
+  assert.ok(mine.json.some((c) => c.id === "CHN-P-028"));
+  assert.ok(!mine.json.some((c) => c.id === "CHN-P-029"));
+  assert.equal((await call("/api/channels/CHN-P-028/messages", { as: "P-029" })).status, 404);
+  const msgs = await call("/api/channels/CHN-P-028/messages", { as: "P-028" });
+  assert.equal(msgs.status, 200);
+  assert.ok(msgs.json.some((m) => m.direction === "out"));
+  assert.equal((await call("/api/channels/CHN-P-028/messages", { as: "P-001" })).status, 200);
+});
+
+test("performance: the person, their supervisor, engineers and the manager; nobody else", async () => {
+  for (const who of ["P-028", "P-009", "P-002", "P-001"]) assert.equal((await call("/api/performance/person/P-028", { as: who })).status, 200, who);
+  for (const who of ["P-008", "P-029"]) assert.equal((await call("/api/performance/person/P-028", { as: who })).status, 403, who);
+  assert.equal((await call("/api/performance/procedure/PRC-CENTRIFUGAL_PUMP-v3", { as: "P-028" })).status, 403);
+  const proc = await call("/api/performance/procedure/PRC-CENTRIFUGAL_PUMP-v3", { as: "P-002" });
+  assert.equal(proc.status, 200);
+  assert.ok(proc.json.steps.length === 11);
+  assert.equal((await call("/api/performance/crew", { as: "P-028" })).status, 403);
+  const crew = await call("/api/performance/crew", { as: "P-008" });
+  assert.equal(crew.status, 200);
+  assert.ok(crew.json.procedures.length >= 3);
+  assert.doesNotMatch(JSON.stringify(crew.json), /P-0\d\d/);
+});
+
+test("projects carry their status and claims; executions, issues and procedures list through the viewer", async () => {
+  const p = await call("/api/projects/PRJ-CL3", { as: "P-004" });
+  assert.equal(p.status, 200);
+  assert.equal(p.json.status.daysSinceReport, 0); // the contractor post in the inbound test above resets the quiet clock
+  assert.equal(p.json.status.milestones.claimed, 3);
+  assert.ok(p.json.claims.length >= 4);
+  assert.ok((await call("/api/projects", { as: "P-004" })).json[0].status);
+  assert.ok((await call("/api/issues", { as: "P-028" })).json.length >= 6);
+  const procs = await call("/api/procedures", { as: "P-028" });
+  assert.ok(procs.json.some((x) => x.id === "PRC-CENTRIFUGAL_PUMP-v3" && x.state === "released"));
+  const one = await call("/api/procedures/PRC-CENTRIFUGAL_PUMP-v3", { as: "P-028" });
+  assert.equal(one.json.notes.filter((n) => n.step === 8).length, 3);
+  assert.equal(one.json.perf, null);
+  assert.ok((await call("/api/procedures/PRC-CENTRIFUGAL_PUMP-v3", { as: "P-002" })).json.perf.steps.length === 11);
+  const ex = await call("/api/executions?personId=P-028", { as: "P-029" });
+  assert.equal(ex.json.length, 0);
+});
+
+test("moving an issue to done drafts its close-out; a person can turn on agent submission for themselves only", async () => {
+  const r = await call("/api/actions/update_issue", { as: "P-009", method: "POST", body: { params: { issueId: "ISS-H01", patch: { state: "done" } } } });
+  assert.equal(r.status, 200);
+  assert.ok(sys.ont.list("Draft", (d) => d.kind === "issue-closeout" && d.aboutId === "ISS-H01").length === 1);
+  const c = await call("/api/me/consent", { as: "P-031", method: "PUT", body: { autoSubmit: true } });
+  assert.equal(c.status, 200);
+  assert.equal(sys.ont.get("P-031").autoSubmit, true);
+  assert.equal((await call("/api/me/consent", { as: "P-031", method: "PUT", body: { autoSubmit: "yes" } })).status, 400);
+});
