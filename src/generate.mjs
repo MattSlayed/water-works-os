@@ -2,8 +2,8 @@
 // generateWorks(seed) -> { objects, links, clock } — deterministic for a given seed.
 import { createHash } from "node:crypto";
 import { stepRequires } from "./functions.mjs";
-import { ZONES } from "./layout.mjs";
-import { REGION, REMOTE_ZONES, zoneGeo } from "./region.mjs";
+import { ZONES, toLonLat } from "./layout.mjs";
+import { REGION, REMOTE_ZONES, REMOTE_SITES, SITE_XY, zoneGeo, zoneAtLocal } from "./region.mjs";
 
 export const CLOCK = "2026-10-15T00:00:00Z";
 
@@ -195,6 +195,16 @@ export function generateWorks(seed = 7) {
     link("SITE-RB", "HAS_ZONE", id);
   }
   for (const r of REGION) add({ id: r.id, type: "Region", kind: r.kind, name: r.name, geometry: r.geometry, zoneId: null }, "SYNTH-GIS");
+  for (const [id, kind, name, capacityMl, sensors] of REMOTE_SITES) {
+    const [lon, lat] = toLonLat(SITE_XY[id]), zoneId = zoneAtLocal(SITE_XY[id], ZONES), k = id.slice(3);
+    add({ id, type: "RemoteSite", kind, name, lat, lon, zoneId, ...(capacityMl ? { capacityMl } : {}) }, "SYNTH-GIS");
+    link(zoneId, "CONTAINS", id);
+    for (const [key, sname, unit, alarmLo, alarmHi, sz] of sensors) {
+      const sid = `SEN-${k}-${key}`;
+      add({ id: sid, type: "Sensor", processUnitId: id, zoneId: sz || zoneId, key, name: `${name.split(" ")[0]} ${sname.toLowerCase()}`, unit, alarmLo, alarmHi, historianTag: `BULK.${k}.${key.toUpperCase()}` }, "SYNTH-HIST");
+      link(sid, "MEASURES", id);
+    }
+  }
 
   STAGES.forEach(([stage, zoneId, name], i) => {
     const id = `PU-${stage}`;

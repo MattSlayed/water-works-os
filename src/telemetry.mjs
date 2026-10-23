@@ -26,7 +26,11 @@ const PROFILE = {
   "clarifier_drive:torque": [35, 1.5, 3], "clarifier_drive:current": [9, 0.2, 0.3], "clarifier_drive:temp": [50, 0.5, 2],
   "filter:turb": [0.12, 0.015, 0], "filter:headloss": [0.8, 0.02, 0],
   "RAW-turb": [25, 1.5, 8], "RAW-flow": [110, 1.5, 6], "FW-turb": [0.15, 0.015, 0.02], "FIN-cl": [0.9, 0.03, 0.05],
-  "FIN-ph": [7.9, 0.03, 0.05], "CWR1-level": [62, 0.4, 14], "CWR2-level": [58, 0.4, 14], "OUT-flow": [108, 1.5, 12]
+  "FIN-ph": [7.9, 0.03, 0.05], "CWR1-level": [62, 0.4, 14], "CWR2-level": [58, 0.4, 14], "OUT-flow": [108, 1.5, 12],
+  // bulk line (Region design §4.2); RES2 runs on one cell while PRJ-RES2 relines the other
+  "PS1-flow": [70, 1, 8], "PS1-press": [6.2, 0.05, 0.3], "PS1-state": [1, 0, 0], "PS2-flow": [45, 1, 6], "PS2-press": [5.4, 0.05, 0.3], "PS2-state": [1, 0, 0],
+  "RES1-level": [70, 0.4, 6], "RES1-in": [62, 1, 4], "RES1-out": [45, 1, 8], "RES2-level": [62, 0.4, 3], "RES2-in": [24, 0.6, 2], "RES2-out": [25, 0.5, 2],
+  "VC1-press": [5.8, 0.05, 0.3], "VC1-pos": [100, 0, 0], "VC2-press": [5.6, 0.05, 0.3], "VC2-pos": [100, 0, 0], "VC3-press": [5.2, 0.05, 0.3], "VC3-pos": [100, 0, 0]
 };
 
 // Series are pure functions of (seed, sensor, asset state, window), so they are shared across systems.

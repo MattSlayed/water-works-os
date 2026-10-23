@@ -37,7 +37,7 @@ export const REGION = [
 export const REMOTE_ZONES = [
   ["Z13", "Bulk line and valve chambers", "technician", "none", [[760, -100, 2240, 500], [3000, -100, 3000, 500], [6000, 0, 3000, 800], [9000, 200, 2500, 600]]],
   ["Z14", "Pump station and reservoir yards", "technician", "none", [[2940, 240, 120, 120], [5900, 100, 200, 200], [7920, 390, 160, 160], [11380, 380, 240, 240]]],
-  ["Z15", "PS-2 MCC room", "supervisor", "electrical", [[7990, 460, 20, 15]]]
+  ["Z15", "PS-2 MCC room", "supervisor", "electrical", [[8030, 400, 20, 15]]]
 ];
 
 const corners = ([x, y, w, h]) => [[x, y], [x + w, y], [x + w, y + h], [x, y + h], [x, y]];
@@ -50,3 +50,17 @@ export function zoneAtLocal([x, y], plantZones) {
   const z = plantZones.find(([, , zx, zy, w, h]) => inR([zx, zy, w, h]));
   return z ? z[0] : null;
 }
+
+// Remote fixed sites on the bulk line (Region design §4.2): [id, kind, name, capacityMl, sensors [key, name, unit, alarmLo, alarmHi, zoneId?]].
+const PS = (n) => [["flow", "Discharge flow", "ML/d", null, null], ["press", "Discharge pressure", "bar", 3, 8], ["state", "Duty pump running", "on/off", null, null, n === 2 ? "Z15" : null]];
+const VC = [["press", "Line pressure", "bar", 3, 8], ["pos", "Valve position", "%", null, null]];
+const RES = [["level", "Level", "%", 30, null], ["in", "Inflow", "ML/d", null, null], ["out", "Outflow", "ML/d", null, null]];
+export const REMOTE_SITES = [
+  ["RS-PS1", "pump_station", "PS-1 booster pump station", null, PS(1)],
+  ["RS-PS2", "pump_station", "PS-2 booster pump station", null, PS(2)],
+  ["RS-RES1", "reservoir", "RES-1 command reservoir", 40, RES],
+  ["RS-RES2", "reservoir", "RES-2 town reservoir (two cells)", 30, RES],
+  ["RS-VC1", "valve_chamber", "VC-1 valve chamber", null, VC],
+  ["RS-VC2", "valve_chamber", "VC-2 valve chamber", null, VC],
+  ["RS-VC3", "valve_chamber", "VC-3 valve chamber", null, VC]
+];
