@@ -136,7 +136,8 @@ export const EVALS = {
   ]
 };
 
-export async function runEvals(factory, name) {
+// learnedFrom: the live ontology, whose LearnedEval cases (overrides with a reason) are counted for the agent.
+export async function runEvals(factory, name, learnedFrom = null) {
   const suite = EVALS[name] || [];
   const cases = [];
   for (const c of suite) {
@@ -152,5 +153,6 @@ export async function runEvals(factory, name) {
     }
     cases.push({ name: c.name, grader: c.grader, pass, ...(error ? { error } : {}) });
   }
-  return { agent: name, passed: cases.filter((c) => c.pass).length, total: cases.length, cases };
+  const learned = learnedFrom ? learnedFrom.list("LearnedEval", (e) => e.agent === name).length : 0;
+  return { agent: name, passed: cases.filter((c) => c.pass).length, total: cases.length, cases, learned };
 }

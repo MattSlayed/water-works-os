@@ -15,6 +15,7 @@ import { siteBounds, toLocal, toLonLat } from "./layout.mjs";
 import { regionPayload, sinceYouLeft, supplyRisks, focusOf, projectPanel } from "./regionview.mjs";
 import { sceneGrid } from "./scenes.mjs";
 import { liveStats } from "./geolive.mjs";
+import { applyTimeouts } from "./harness.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const WEB = path.resolve(here, "..", "web");
@@ -327,7 +328,7 @@ export function createServer(sys) {
       if (!s || s.user.id !== v.id) throw new HttpError(404, "session not found");
       try { return copilot.tag({ sessionId: s.id, ...(await body(req)) }); } catch (e) { throw new HttpError(400, e.message); }
     }],
-    ["GET", /^\/api\/evals\/([^/]+)$/, (v, m) => runEvals(() => createSystem({ seed: sys.seed }), decodeURIComponent(m[1]))],
+    ["GET", /^\/api\/evals\/([^/]+)$/, (v, m) => runEvals(() => createSystem({ seed: sys.seed }), decodeURIComponent(m[1]), ont)],
     ["GET", /^\/api\/knowledge$/, (v) => { const view = ont.view(v); return { findings: view.list("Finding"), feedback: view.list("Feedback") }; }],
     ["GET", /^\/api\/compliance$/, (v) => ({ items: dropPackEvidence(ctxFor(v)), submissions: ont.list("Submission") })],
     ["GET", /^\/api\/audit$/, (v) => { if (rank(v.clearance) < rank("supervisor")) throw new HttpError(403, "supervisor clearance needed for the audit log"); return { verified: audit.verify(), entries: audit.all().slice(-200).reverse() }; }],
@@ -412,6 +413,7 @@ export function createServer(sys) {
     const before = dueScenes();
     tel.tick(minutes);
     sys.trackers.syncTo(ont, tel.cursor(), audit); // pings and geofence events reach viewers as pruned ontology updates
+    applyTimeouts(ont, tel.now()); // unanswered proposals are dropped or held, never applied (agents design §4.5)
     if (dueScenes() > before) runtime.run("Geo Watch", { actingUser: SYSTEM_USER, trigger: { kind: "event", on: "Scene ingested" } });
     if (tel.now().slice(0, 13) !== hour) { hour = tel.now().slice(0, 13); runtime.run("Project Watch", { actingUser: SYSTEM_USER, trigger: { kind: "schedule" } }); }
     if (tel.now().slice(0, 10) !== day) { day = tel.now().slice(0, 10); runtime.run("Procedure Steward", { actingUser: SYSTEM_USER, trigger: { kind: "schedule" } }); }

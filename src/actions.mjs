@@ -3,7 +3,7 @@
 import { rank } from "./ontology.mjs";
 import { currentProcedure, stepLock, bandCheck, partNamesIn, stepRequires } from "./functions.mjs";
 import { packageHash, currentPlantModel, writePlant } from "./plant.mjs";
-import { specFor, promotionGap, MODES, checkWrite } from "./harness.mjs";
+import { specFor, promotionGap, MODES, checkWrite, approvalTerms, expectedEffect } from "./harness.mjs";
 
 export const LEVELS = ["read", "draft", "notify", "propose", "act"];
 const lv = (l) => LEVELS.indexOf(l);
@@ -478,7 +478,7 @@ export function createActionService({ ont, audit, clock = wallClock, tel = null 
     return { status: "done", decision: dec };
   }
 
-  function invoke({ action, params = {}, actor, autonomy, runId, evidence, risk }) {
+  function invoke({ action, params = {}, actor, autonomy, runId, evidence, risk, alternatives }) {
     const a = ACTIONS[action];
     if (!a) return refuse(action, actor, `unknown action ${action}`);
     if (!actor || !actor.id) return refuse(action, actor, "no actor");
@@ -492,7 +492,8 @@ export function createActionService({ ont, audit, clock = wallClock, tel = null 
       if (actor.kind === "person") return apply(action, params, actor);
       if (a.ceiling === "human") return refuse(action, actor, `${action} is human-only`);
       // the harness: evidence freshness and the inherited hard constraints (agents design §4.3, §4.4)
-      const chk = checkWrite({ ont, tel, actor, action, params, evidence, spec: specFor(ont, actor.id), now: now() });
+      const spec = specFor(ont, actor.id);
+      const chk = checkWrite({ ont, tel, actor, action, params, evidence, spec, now: now() });
       let eff = LEVELS[Math.min(lv(autonomy || "propose"), lv(a.ceiling))];
       const capped = chk.level && lv(eff) > lv(chk.level);
       const hits = [...chk.hits, ...(capped ? chk.caps : [])];
@@ -504,7 +505,8 @@ export function createActionService({ ont, audit, clock = wallClock, tel = null 
         const prp = ont.upsert({
           zoneId: zoneFor(params), audience: audienceFor(params), id: nextId("PRP"), type: "Proposal", action, params, actorId: actor.id, actorKind: actor.kind, runId: runId || null,
           assetId: params.assetId || (params.partIds && ont.get(params.partIds[0]) && ont.get(params.partIds[0]).assetId) || null,
-          evidence: evidence || [], risk: risk || null, state: "open", created: now(), ...stamp
+          evidence: evidence || [], risk: risk || null, state: "open", created: now(), ...stamp, ...approvalTerms(spec, now()),
+          card: { evidence: chk.ages, constraintsChecked: chk.checked, expectedEffect: expectedEffect(action), alternatives: Array.isArray(alternatives) ? alternatives : [] }
         });
         log({ actor: actor.id, actorKind: actor.kind, action, outcome: "proposed", ref: prp.id, ...(hits.length ? { constraints: hits } : {}) });
         return { status: "proposed", proposal: prp, hits };
@@ -523,9 +525,14 @@ export function createActionService({ ont, audit, clock = wallClock, tel = null 
     if (!["approve", "edit", "reject"].includes(verdict)) return refuse("resolve", by, "verdict must be approve, edit or reject");
     if (verdict !== "approve" && !reason) return refuse("resolve", by, "a reason is required to edit or reject");
     if (rank(by.clearance) < rank(ACTIONS[p.action].minClearance)) return refuse("resolve", by, "insufficient clearance");
+    // a named approver answers; the backup only once the escalation time has passed (agents design §4.5)
+    const backupNow = p.backup && by.id === p.backup && p.escalateAt && Date.parse(now()) >= Date.parse(p.escalateAt);
+    if (typeof p.approver === "string" && by.id !== p.approver && !backupNow) return refuse("resolve", by, `waiting for ${p.approver}${p.backup ? ` (${p.backup} may answer from ${p.escalateAt})` : ""}`);
     const fb = (v) => {
       const f = ont.upsert({ id: nextId("FBK"), type: "Feedback", targetId: proposalId, runId: p.runId, verdict: v, comment: reason || null, authorId: by.id, at: now() });
       ont.link(f.id, "ON", proposalId);
+      // an override with a reason becomes an eval case for the agent
+      if (reason && v !== "approve" && p.actorKind === "agent") ont.upsert({ id: nextId("LEV"), type: "LearnedEval", agent: p.actorId, case: { action: p.action, params: p.params }, expect: `not ${p.action}`, reason, from: proposalId, at: now() });
     };
     if (verdict === "reject") {
       ont.upsert({ id: proposalId, type: "Proposal", state: "rejected", resolvedBy: by.id, resolvedAt: now() });

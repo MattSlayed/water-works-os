@@ -4,6 +4,9 @@ import { createSystem } from "../src/system.mjs";
 import { AGENT_SPECS } from "../src/agents.mjs";
 import { HARD_CONSTRAINTS, specFor, specId, specFromManifest, statementSentences, matchShadow, shadowRecord, checkWrite } from "../src/harness.mjs";
 import { ACTIONS } from "../src/actions.mjs";
+import { applyTimeouts } from "../src/harness.mjs";
+import { runEvals } from "../src/evals.mjs";
+import { createServer } from "../src/server.mjs";
 
 const SYS = { id: "SYSTEM", kind: "person", clearance: "manager", role: "system" };
 const setMode = (s, name, mode) => s.ont.upsert({ id: specId(name), type: "AgentSpec", mode });
@@ -210,4 +213,68 @@ test("every read records its source time", () => {
   const run = s.runtime.run("Process Watch", { actingUser: SYS, chain: false });
   const cl = run.sources.find((x) => x.id === "SEN-FIN-cl");
   assert.ok(cl && typeof cl.sourceAt === "string" && cl.sourceAt <= s.tel.now(), JSON.stringify(cl));
+});
+
+const setpointProposal = (s) => {
+  s.runtime.run("Process Watch", { actingUser: SYS, chain: false });
+  return s.ont.list("Proposal", (p) => p.actorId === "Process Watch" && p.action === "request_setpoint_change" && p.state === "open")[0];
+};
+const named = (s, extra) => s.ont.upsert({ id: specId("Process Watch"), type: "AgentSpec", approver: "P-004", backup: "P-001", escalateAfterMin: 60, onTimeout: "hold", ...extra });
+const resolveAs = (s, id, by, verdict = "approve", reason) => s.actions.resolve(id, { verdict, reason, by: person(s, by) });
+
+test("approvers: a named approver answers; the backup only after the escalation window", () => {
+  const s = createSystem();
+  named(s);
+  const p = setpointProposal(s);
+  assert.deepEqual([p.approver, p.backup, p.onTimeout], ["P-004", "P-001", "hold"]);
+  assert.equal(Date.parse(p.escalateAt) - Date.parse(p.created), 60 * 60000);
+  const early = resolveAs(s, p.id, "P-001");
+  assert.equal(early.status, "refused");
+  assert.match(early.reason, /waiting for P-004/);
+  s.tel.tick(61);
+  assert.equal(resolveAs(s, p.id, "P-001").status, "done");
+});
+
+test("timeouts: an unanswered proposal is dropped or held, never applied", () => {
+  const s = createSystem();
+  named(s, { onTimeout: "drop" });
+  const p = setpointProposal(s);
+  const srv = createServer(s);
+  srv.tick(121);
+  assert.deepEqual([s.ont.get(p.id).state, s.ont.get(p.id).withdrawnReason], ["withdrawn", "timed out"]);
+  assert.equal(s.ont.list("Decision", (d) => d.proposalId === p.id).length, 0);
+
+  const h = createSystem();
+  named(h, { onTimeout: "hold" });
+  const q = setpointProposal(h);
+  h.tel.tick(121);
+  applyTimeouts(h.ont, h.tel.now());
+  assert.deepEqual([h.ont.get(q.id).state, h.ont.get(q.id).timedOut], ["open", true]);
+  assert.equal(h.ont.list("Decision", (d) => d.proposalId === q.id).length, 0);
+});
+
+test("approvers: a default agent's proposal is answered by anyone with the action's clearance, as today", () => {
+  const s = createSystem();
+  const p = s.ont.list("Proposal", (x) => x.actorId === "Geo Watch" && x.action === "start_sampling_round" && x.state === "open")[0];
+  const sup = s.ont.list("Person", (x) => x.role === "shift_supervisor")[0];
+  assert.equal(resolveAs(s, p.id, sup.id).status, "done");
+});
+
+test("approval cards: evidence with its age, the constraints checked, the expected effect", () => {
+  const s = createSystem();
+  const { card } = setpointProposal(s);
+  assert.ok(card.evidence.length && card.evidence.every((e) => /^SEN-/.test(e.id) && Number.isFinite(e.ageMin)), JSON.stringify(card));
+  assert.ok(card.constraintsChecked.includes("permit-holder"));
+  assert.ok(card.expectedEffect.length > 10);
+  assert.deepEqual(card.alternatives, []);
+});
+
+test("overrides are learnt: a rejection with a reason becomes an eval case", async () => {
+  const s = createSystem();
+  const p = setpointProposal(s);
+  assert.equal(resolveAs(s, p.id, "P-004", "reject", "artisan on leave").status, "rejected");
+  const learned = s.ont.list("LearnedEval");
+  assert.equal(learned.length, 1);
+  assert.deepEqual([learned[0].agent, learned[0].expect, learned[0].reason], ["Process Watch", "not request_setpoint_change", "artisan on leave"]);
+  assert.equal((await runEvals(() => createSystem(), "Process Watch", s.ont)).learned, 1);
 });

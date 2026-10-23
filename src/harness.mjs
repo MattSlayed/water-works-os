@@ -156,3 +156,38 @@ export function checkWrite({ ont, tel, actor, action, params, evidence, spec, no
   if (permit && permit.holderId !== (actor.onBehalfOf || actor.id) && rank(actor.clearance) < rank("supervisor")) cap("permit-holder");
   return out;
 }
+
+// Approval that means something (agents design §4.5): who answers, when the backup may, what happens on silence.
+const EFFECTS = {
+  request_setpoint_change: "Records a request for the process controller to change the setpoint; nothing is written to the control system.",
+  propose_dose_change: "Records a dosing change for the process controller to make; nothing is written to the control system.",
+  start_sampling_round: "Sends the lab analyst a raw-water sampling job by chat.",
+  schedule_work: "Assigns the work order to the named person in the window shown.",
+  update_work_order: "Changes the work order fields shown.",
+  raise_purchase_requisition: "Raises a purchase requisition for the item and quantity shown.",
+  change_asset_state: "Changes the asset's state as shown.",
+  raise_deviation: "Raises a deviation for an engineer to decide.",
+  rank_alert: "Sets the alert's consequence and priority.",
+  reserve_parts: "Reserves the parts shown from stock."
+};
+export const expectedEffect = (action) => EFFECTS[action] || `Applies ${words(action)} with the parameters shown.`;
+
+export function approvalTerms(spec, nowIso) {
+  const s = spec || {}, win = s.escalateAfterMin || null;
+  return {
+    approver: s.approver || { clearanceOf: "action" }, backup: s.backup || null, escalateAfterMin: win,
+    escalateAt: win ? new Date(Date.parse(nowIso) + win * 60000).toISOString() : null,
+    onTimeout: s.onTimeout === "drop" ? "drop" : "hold" // never "apply"
+  };
+}
+
+// Called on each plant tick: a proposal nobody answered by escalateAt + escalateAfterMin is dropped or held. Never applied.
+export function applyTimeouts(ont, nowIso) {
+  const done = [];
+  for (const p of ont.list("Proposal", (x) => x.state === "open" && x.escalateAt && x.escalateAfterMin && !x.timedOut)) {
+    if (Date.parse(nowIso) < Date.parse(p.escalateAt) + p.escalateAfterMin * 60000) continue;
+    ont.upsert(p.onTimeout === "drop" ? { id: p.id, type: "Proposal", state: "withdrawn", withdrawnAt: nowIso, withdrawnReason: "timed out" } : { id: p.id, type: "Proposal", timedOut: true });
+    done.push(p.id);
+  }
+  return done;
+}
