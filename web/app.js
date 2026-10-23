@@ -113,7 +113,7 @@ const views = {
     const tree = Object.entries(groups).map(([g, ps]) => `<div class="grp">${esc(g)}</div>${ps.map((p) => `<button data-part="${esc(p.id)}">${esc(p.name)} <span class="meta">${esc(p.din)}</span></button>`).join("")}`).join("");
     const alarmed = m.sensors.some(isAlarm);
     view.innerHTML = `<div class="row"><div><h2>${esc(a.zoneId)} · ${esc(a.serial || "")} · ${esc(a.make)} ${esc(a.model)}</h2><h1>${esc(a.name)} (${esc(a.positionTag)})</h1></div>
-        <div class="btns">${pill(a.state)}${alarmed ? pill("sensor above alarm", "high") : ""}<a class="btn" href="#/object/${encodeURIComponent(a.id)}">Object view</a></div></div>
+        <div class="btns">${pill(a.state)}${alarmed ? pill("sensor above alarm", "high") : ""}<a class="btn" href="#/object/${encodeURIComponent(a.id)}">Object view</a>${["supervisor", "engineer", "manager"].includes(state.me.clearance) ? `<button class="btn" id="permit">Open permit and isolate</button>` : ""}</div></div>
       <div class="work">
         <nav class="panel tree" aria-label="Components"><label class="field">Filter components<input id="pf" type="search"></label><div id="tree">${tree || `<p class="empty">No part breakdown for this asset yet.</p>`}</div></nav>
         <section class="panel stage3d" aria-label="3D model"><div class="disclose">TEMPLATE 3D · built from the released asset model · not the OEM's geometry</div>
@@ -201,6 +201,13 @@ const views = {
     };
     $("#ask").addEventListener("submit", async (e) => { e.preventDefault(); const q = $("#q").value.trim(); if (!q) return; $("#q").value = ""; try { await ask(q); } catch (err) { toast(err.message); } });
     drawTab();
+    $("#permit")?.addEventListener("click", async () => {
+      try {
+        const p = await api("/api/actions/open_permit", { method: "POST", body: { params: { assetId: a.id, kind: "general", holderId: state.user } } });
+        await api("/api/actions/record_isolation", { method: "POST", body: { params: { permitId: p.decision.objects[0], point: `Local isolator at ${a.positionTag}`, by: state.user } } });
+        toast(`${p.decision.objects[0]} open on ${a.positionTag}, isolation recorded.`);
+      } catch (e) { toast(e.message); }
+    });
   },
 
   async work() {

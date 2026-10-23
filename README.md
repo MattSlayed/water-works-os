@@ -20,7 +20,7 @@ autonomy dial), P-004 (planner, resolves proposals) and P-028 (millwright, artis
 Phase 2, Workforce Intelligence (design: `docs/superpowers/specs/2026-10-23-workforce-intelligence-design.md`):
 
 - **P-028, Chat:** send `start`. Step 1 is locked until a permit exists. Switch to **P-009** and open a permit and
-  isolation on HLP-B (Assets & twin, or `POST /api/actions/open_permit`), then back to P-028 and send `done` per step,
+  isolation on HLP-B (Assets & twin → HLP-B → **Open permit and isolate**), then back to P-028 and send `done` per step,
   `done 110.065` at step 7 (out of band: a deviation is proposed), and a sentence ending in `?` to ask the Copilot.
   After the last step, answer the question: it becomes a field note, and the Scribe sends the job card for a yes/no.
 - **P-004, Projects:** the CL-3 contract, read from its WhatsApp group. Confirm the claimed milestone.
