@@ -29,6 +29,9 @@ const PROFILE = {
   "FIN-ph": [7.9, 0.03, 0.05], "CWR1-level": [62, 0.4, 14], "CWR2-level": [58, 0.4, 14], "OUT-flow": [108, 1.5, 12]
 };
 
+// Series are pure functions of (seed, sensor, asset state, window), so they are shared across systems.
+const CACHE = new Map();
+
 export function createTelemetry({ ont, seed = 7, start = "2026-10-01T00:00:00Z", minutes = 14 * 24 * 60, startCursorMin } = {}) {
   const t0 = Date.parse(start);
   const series = new Map();
@@ -41,6 +44,8 @@ export function createTelemetry({ ont, seed = 7, start = "2026-10-01T00:00:00Z",
     const tpl = a ? a.template || (a.assetClass === "Rapid gravity filter" ? "filter" : null) : null;
     const key = tpl ? `${tpl}:${s.key}` : s.id.replace("SEN-", "");
     const [base, noise, diurnal] = PROFILE[key] || [0, 0, 0];
+    const ck = `${seed}|${start}|${minutes}|${s.id}|${a ? a.state : ""}`;
+    if (CACHE.has(ck)) { series.set(s.id, CACHE.get(ck)); continue; }
     const rand = rng(hash(s.id, seed));
     const v = new Float32Array(minutes + 1);
     const tag = a ? a.positionTag : null;
@@ -72,6 +77,7 @@ export function createTelemetry({ ont, seed = 7, start = "2026-10-01T00:00:00Z",
       v[i] = Math.max(0, x);
     }
     series.set(s.id, v);
+    CACHE.set(ck, v);
   }
 
   let cursor = startCursorMin ?? minutes - 18 * 60; // replay begins 18 h before the end of the window

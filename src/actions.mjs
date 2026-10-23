@@ -27,13 +27,13 @@ const create = (ont, obj, linksTo = []) => {
 };
 
 export const ACTIONS = {
-  create_work_order: def("act", "propose", ["assetId", "title"], (ont, p) => {
+  create_work_order: def("act", "act", ["assetId", "title"], (ont, p) => {
     const wo = create(ont, { id: nextId("WO-N"), type: "WorkOrder", assetId: p.assetId, title: p.title, kind: p.kind || "CM", priority: p.priority || "P3", state: "requested", requested: now(), source: p.source || null }, [["TARGETS", p.assetId]]);
     return { objects: [wo.id], revert: () => setProps(ont, wo.id, { state: "cancelled" }) };
   }),
   update_work_order: def("act", "propose", ["workOrderId", "patch"], (ont, p) => ({ objects: [p.workOrderId], revert: setProps(ont, p.workOrderId, p.patch) })),
   draft_document: def("draft", "act", ["kind", "title", "body"], (ont, p) => {
-    const d = create(ont, { id: nextId("DRF"), type: "Draft", kind: p.kind, title: p.title, body: p.body, aboutId: p.aboutId || null, assetId: p.assetId || null, created: now(), state: "draft" }, [["ABOUT", p.aboutId]]);
+    const d = create(ont, { id: nextId("DRF"), type: "Draft", kind: p.kind, title: p.title, body: p.body, data: p.data || null, aboutId: p.aboutId || null, assetId: p.assetId || null, created: now(), state: "draft" }, [["ABOUT", p.aboutId]]);
     return { objects: [d.id], revert: () => setProps(ont, d.id, { state: "withdrawn" }) };
   }),
   reserve_parts: def("act", "act", ["partIds"], (ont, p) => {
@@ -73,6 +73,7 @@ export const ACTIONS = {
     const al = create(ont, { id: nextId("ALT"), type: "Alert", targetId: p.targetId, assetId: t && t.type === "Asset" ? t.id : t && t.assetId, zoneId: t && t.zoneId, title: p.title, severity: p.severity || "medium", evidence: p.evidence || [], score: p.score ?? null, state: "active", at: now() }, [["ON", p.targetId]]);
     return { objects: [al.id], revert: () => setProps(ont, al.id, { state: "withdrawn" }) };
   }),
+  rank_alert: def("act", "act", ["alertId", "consequence"], (ont, p) => ({ objects: [p.alertId], revert: setProps(ont, p.alertId, { consequence: p.consequence, priority: p.priority || null, rankedAt: now() }) })),
   acknowledge_alert: def("act", "act", ["alertId"], (ont, p) => ({ objects: [p.alertId], revert: setProps(ont, p.alertId, { state: "acknowledged" }) })),
   notify: def("notify", "act", ["to", "message"], (ont, p) => {
     const n = create(ont, { id: nextId("NTF"), type: "Notification", to: p.to, message: p.message, aboutId: p.aboutId || null, at: now() });
