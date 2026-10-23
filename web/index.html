@@ -1,1 +1,49 @@
-<!doctype html><html><head><title>Water Works OS</title></head><body></body></html>
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Water Works OS</title>
+  
+  
+  <link rel="stylesheet" href="/styles.css">
+  <script type="importmap">
+    { "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+    } }
+  </script>
+</head>
+<body>
+  <div class="shell">
+    <header class="top">
+      <a class="brand" href="#/console">NOVA<span class="mark">TEK</span> Water Works OS <small>Riverbend WTW · synthetic</small></a>
+      <form class="cmd" id="cmd" role="search">
+        <label for="cmd-input" class="sr">Search or ask</label>
+        <input id="cmd-input" placeholder="Search a tag, ask a question, or run an agent  (Ctrl+K)" autocomplete="off">
+      </form>
+      <div class="status">
+        <span class="clock" id="clock" title="Plant clock">—</span>
+        <span class="chip" id="llm-chip">—</span>
+        <label for="role" class="sr">Acting as</label>
+        <select id="role" aria-label="Acting as"></select>
+      </div>
+    </header>
+    <nav class="rail" aria-label="Main">
+      <a href="#/console" data-nav="console">Console</a>
+      <a href="#/map" data-nav="map">Site map</a>
+      <a href="#/assets" data-nav="assets">Assets & twin</a>
+      <a href="#/work" data-nav="work">Work</a>
+      <a href="#/agents" data-nav="agents">Agents</a>
+      <a href="#/proposals" data-nav="proposals">Proposals <b id="prop-count"></b></a>
+      <a href="#/knowledge" data-nav="knowledge">Knowledge</a>
+      <a href="#/compliance" data-nav="compliance">Compliance</a>
+      <a href="#/ontology" data-nav="ontology">Ontology</a>
+      <a href="#/audit" data-nav="audit">Audit</a>
+    </nav>
+    <main id="view" tabindex="-1"></main>
+  </div>
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  <script type="module" src="/app.js"></script>
+</body>
+</html>
