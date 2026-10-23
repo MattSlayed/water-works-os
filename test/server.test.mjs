@@ -258,3 +258,30 @@ test("plant payload carries sample readings with alarm limits and machine alert 
   assert.equal(sp.reading.alarmHi, 0.5);
   assert.ok(r.json.machines.every((m) => !m.assetId || Number.isInteger(m.alerts)));
 });
+
+// ---------- final review fixes ----------
+test("final: a technician gets no PlantModel cells or items through the generic object routes", async () => {
+  const list = await call("/api/objects?type=PlantModel", { as: techId() });
+  assert.equal(list.status, 200);
+  assert.ok(list.json.length >= 1);
+  for (const m of list.json) assert.ok(!Array.isArray(m.cells) && !m.items && !m.bindings, `${m.id} carries raw cells`);
+  const one = await call(`/api/objects/${encodeURIComponent(list.json[0].id)}`, { as: techId() });
+  assert.equal(one.status, 200);
+  assert.ok(!JSON.stringify(one.json).includes("16UGH01"));
+  const search = await call("/api/objects?q=PM-RB", { as: techId() });
+  assert.ok(!JSON.stringify(search.json).includes("16UGH01"));
+});
+
+test("final: filter-outlet sample points (Z05) are visible to a technician; after-dose points in Z06 are not", async () => {
+  const r = await call("/api/plant", { as: techId() });
+  const tags = r.json.samplePoints.map((s) => s.tag);
+  assert.ok(tags.includes("SP-15CQ07"), tags.join(","));
+  assert.ok(!tags.includes("SP-16CQ01") && !tags.includes("SP-15CQ00"));
+});
+
+test("final: Show upstream works for a machine by its plant id", async () => {
+  const m = (await call("/api/plant")).json.model.id;
+  const r = await call(`/api/plant/graph/upstream/${encodeURIComponent(`${m}:MCH-HLP-B`)}`);
+  assert.equal(r.status, 200);
+  assert.ok(r.json.items.some((x) => x.id.endsWith("STR-20UBA01")), JSON.stringify(r.json.items.slice(0, 5)));
+});

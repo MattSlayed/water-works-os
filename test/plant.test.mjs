@@ -96,3 +96,56 @@ test("rev B: ingest, carried-forward marks, refusals, four-eyes release", () => 
   assert.match(run(sys, "release_plant_model", { modelId: "PM-RB-B", hash: hash() }, "P-003").reason, /not a draft/);
   assert.equal(issues().length, 1);
 });
+
+// ---------- final review fixes ----------
+const reviewB = (sys) => {
+  const bIds = sys.ont.list("Drawing", (d) => d.rev === "B").map((d) => d.id);
+  sys.plant.ingest(bIds, person(sys, "P-002"));
+  const decs = [];
+  for (const sheet of new Set(sys.ont.get("PM-RB-B").cells.map((c) => c.sheet))) decs.push(run(sys, "review_cells", { modelId: "PM-RB-B", accept: "EXTRACTED", sheet }, "P-002"));
+  return decs.filter((d) => d.status === "done");
+};
+
+test("final: reversing a review after release is refused and the released plant stays current", () => {
+  const sys = createSystem();
+  reviewB(sys);
+  const marks = sys.ont.get("PM-RB-B").cells.filter((c) => !c.reviewed).map((c) => ({ key: c.key }));
+  const last = run(sys, "review_cells", { modelId: "PM-RB-B", marks }, "P-002");
+  assert.equal(run(sys, "release_plant_model", { modelId: "PM-RB-B", hash: sys.ont.get("PM-RB-B").packageHash }, "P-001").status, "done");
+  const r = sys.actions.reverse(last.decision.id, person(sys, "P-002"));
+  assert.equal(r.status, "refused");
+  assert.equal(currentPlantModel(sys.ont).id, "PM-RB-B");
+});
+
+test("final: reversing an earlier review keeps later reviewers' marks and corrections", () => {
+  const sys = createSystem();
+  const [first] = reviewB(sys);
+  assert.equal(run(sys, "review_cells", { modelId: "PM-RB-B", marks: [{ key: "RB-L-421X|presence", value: "excluded" }] }, "P-003").status, "done");
+  assert.equal(sys.actions.reverse(first.decision.id, person(sys, "P-002")).status, "done");
+  const m = sys.ont.get("PM-RB-B");
+  const c = m.cells.find((x) => x.key === "RB-L-421X|presence");
+  assert.deepEqual([c.value, c.reviewed && c.reviewed.by], ["excluded", "P-003"]);
+  assert.ok(m.reviews.some((x) => x.by === "P-003"));
+  assert.ok(m.cells.some((x) => x.grade === "EXTRACTED" && !x.reviewed), "the first review's bulk accept is undone");
+  assert.equal(m.packageHash, packageHash(m));
+});
+
+test("final: a corrected binding is what the release links; no Issue for a resolved disagreement", () => {
+  const sys = createSystem();
+  reviewB(sys);
+  const marks = sys.ont.get("PM-RB-B").cells.filter((c) => !c.reviewed && c.key !== "15CQ13|binding").map((c) => ({ key: c.key }));
+  run(sys, "review_cells", { modelId: "PM-RB-B", marks }, "P-002");
+  // 15CQ13|binding was reviewed in rev A and carried forward; correct it in B
+  assert.equal(run(sys, "review_cells", { modelId: "PM-RB-B", marks: [{ key: "15CQ13|binding", value: "SEN-F12-turb" }] }, "P-002").status, "done");
+  assert.equal(run(sys, "release_plant_model", { modelId: "PM-RB-B", hash: sys.ont.get("PM-RB-B").packageHash }, "P-001").status, "done");
+  assert.equal(sys.ont.get("PM-RB-B:SPT-SP-15CQ13").sensorId, "SEN-F12-turb");
+  assert.equal(sys.ont.list("Issue", (i) => i.title === "Drawing disagrees with record: 15CQ13|binding").length, 0);
+});
+
+test("final: a review that marks nothing is refused, so it cannot satisfy four eyes", () => {
+  const sys = createSystem();
+  reviewB(sys);
+  const r = run(sys, "review_cells", { modelId: "PM-RB-B", accept: "EXTRACTED", sheet: "RB-NOPE-001" }, "P-003");
+  assert.equal(r.status, "refused");
+  assert.match(r.reason, /nothing to review|no cells/);
+});

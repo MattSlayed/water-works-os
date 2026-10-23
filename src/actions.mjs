@@ -291,12 +291,24 @@ export const ACTIONS = {
       if (unknown) throw new Error(`no cell ${unknown.key} in ${m.id}`);
       hit = new Map(p.marks.map((k) => [k.key, k]));
     }
+    if (!hit.size) throw new Error(`nothing to review: no cells match on ${p.sheet || "the marks"}`);
     const mark = { by: actorId(ctx), at: ctx.now() }, fix = (c) => "value" in hit.get(c.key);
     const cells = m.cells.map((c) => (!hit.has(c.key) ? c : { ...c, ...(fix(c) ? { value: hit.get(c.key).value, reasoning: `${c.reasoning} — corrected by ${mark.by} from ${JSON.stringify(c.value)}` } : {}), reviewed: mark }));
     const items = m.items.map((it) => { const fixed = cells.filter((c) => c.key.startsWith(`${it.tag}|`) && hit.has(c.key) && fix(c)); return fixed.length ? { ...it, fields: { ...it.fields, ...Object.fromEntries(fixed.map((c) => [c.field, c.value])) } } : it; });
-    const reviews = [...m.reviews, { ...mark, cells: hit.size }];
+    const rid = `RV-${m.reviews.length + 1}-${mark.by}-${mark.at}`, reviews = [...m.reviews, { ...mark, id: rid, cells: hit.size }];
     ont.upsert({ id: m.id, type: "PlantModel", cells, items, reviews, status: "in_review", packageHash: packageHash({ ...m, cells, items }) });
-    return { objects: [m.id], revert: () => ont.upsert({ id: m.id, type: "PlantModel", cells: m.cells, items: m.items, reviews: m.reviews, status: m.status, packageHash: m.packageHash }) };
+    // Undo only this review: cells still as it left them go back; later reviews by others stay. A released model is final.
+    const before = new Map(m.cells.filter((c) => hit.has(c.key)).map((c) => [c.key, c])), wrote = new Map(cells.filter((c) => hit.has(c.key)).map((c) => [c.key, JSON.stringify(c)]));
+    const revert = () => {
+      const cur = ont.get(m.id);
+      if (!["draft", "in_review"].includes(cur.status)) throw new Error(`${m.id} is ${cur.status}; its reviews can no longer be undone`);
+      const back = new Set([...wrote].filter(([k, json]) => JSON.stringify(cur.cells.find((c) => c.key === k)) === json).map(([k]) => k));
+      const cells2 = cur.cells.map((c) => (back.has(c.key) ? before.get(c.key) : c));
+      const items2 = cur.items.map((it) => { const f = cells2.filter((c) => back.has(c.key) && c.key.startsWith(`${it.tag}|`)); return f.length ? { ...it, fields: { ...it.fields, ...Object.fromEntries(f.map((c) => [c.field, c.value])) } } : it; });
+      const reviews2 = cur.reviews.filter((r) => r.id !== rid);
+      ont.upsert({ id: m.id, type: "PlantModel", cells: cells2, items: items2, reviews: reviews2, status: reviews2.length ? cur.status : "draft", packageHash: packageHash({ ...cur, cells: cells2, items: items2 }) });
+    };
+    return { objects: [m.id], revert };
   }, "engineer"),
   // Four-eyes release of a plant model (design §4.3 step 5). Writes revision-scoped objects; never rewrites existing records.
   release_plant_model: def("act", "human", ["modelId", "hash"], (ont, p, ctx) => {
@@ -318,7 +330,8 @@ export const ACTIONS = {
     for (const c of m.cells.filter((x) => x.grade === "AMBIGUOUS" && x.reviewed)) {
       const cites = [...new Set(c.reasoning.match(/\b[A-Z]{2,4}-[\w-]+/g) || [])].map((id) => ont.get(id)).filter((o) => o && !o.modelId && !["Drawing", "PlantModel"].includes(o.type));
       const title = `Drawing disagrees with record: ${c.key}`;
-      if (!cites.length || ont.list("Issue", (i) => i.title === title).length) continue;
+      // a disagreement the reviewer corrected is resolved; only an accepted one goes to the record's owner
+      if (!cites.length || c.reasoning.includes(" — corrected by ") || ont.list("Issue", (i) => i.title === title).length) continue;
       const rec = cites[0];
       const iss = create(ont, { id: nextId("ISS"), type: "Issue", title, state: "open", raisedBy: by, assetId: rec.assetId || null, partId: null, workOrderId: null, projectId: null, procedureId: null, step: null, recordIds: cites.map((o) => o.id), evidence: [m.id, c.key, c.reasoning], assigneeId: rec.ownerId || null, at }, [["ON", rec.assetId], ["ABOUT", rec.id]]);
       issues.push(iss.id);

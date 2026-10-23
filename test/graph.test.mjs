@@ -81,3 +81,17 @@ test("shares never exceed 1, even when a dose reaches a node by two routes", () 
   assert.ok(up.every((x) => x.share <= 1), JSON.stringify(up.filter((x) => x.share > 1)));
   assert.equal(up.find((x) => x.id === S("12UHB01")).share, 1);
 });
+
+test("final: backwash mode walks washwater back to the recycle; the loop terminates", () => {
+  const down = downstreamOf(S("15UGG01"), g, { mode: "backwash" });
+  assert.ok(ids(down).includes(S("17UGW01")), "dirty washwater reaches the washwater tank");
+  const up = upstreamOf(S("17UGW01"), g, { mode: "backwash" });
+  for (const t of ["15UGG01", "15UMB01", "20UBA01", "15HFA07", "11UGA01"]) assert.ok(ids(up).includes(S(t)), t);
+  assert.ok(!ids(upstreamOf(S("17UGW01"), g)).includes(S("15UGG01")), "not in normal mode");
+});
+
+test("final: a machine's upstream is its structure's upstream", () => {
+  const up = upstreamOf("PM-RB-A:MCH-HLP-B", g);
+  assert.ok(ids(up).includes(S("20UBA01")) && ids(up).includes(S("15HFA07")));
+  assert.deepEqual(upstreamOf("POS-HLP-B", g), up);
+});

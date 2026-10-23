@@ -528,6 +528,7 @@ export function mountPlant(container, data, { mode = "physical", quality = "medi
     if (blue && !bp) bp = buildBlueprint();
     phys.visible = !blue; sky.visible = !blue;
     for (const lab of [hoverLabel, selLabel]) lab.element.classList.toggle("bp", blue);
+    if (bp && !blue) for (const t of bp.tags) t.lab.visible = false; // CSS2D ignores a hidden parent
     if (bp) { bp.g.visible = blue; bp.occluder.visible = blue && !bpOpts.xray && !bpOpts.skeletal; bp.edgeLines.visible = !bpOpts.skeletal; bp.footLines.visible = bpOpts.skeletal; bp.arrowMesh.visible = !bpOpts.skeletal; }
     scene.background = blue ? new THREE.Color(NAVY) : null;
     scene.fog = blue ? null : physFog;
@@ -560,7 +561,7 @@ export function mountPlant(container, data, { mode = "physical", quality = "medi
     const u = quad.material.uniforms, ex = (m) => (m === "physical" ? renderer.toneMappingExposure : 0);
     u.a.value = rtA.texture; u.b.value = rtB.texture; u.k.value = t * t * (3 - 2 * t); u.ea.value = ex(fade.from); u.eb.value = ex(fade.to);
     renderer.render(quadScene, quadCam);
-    if (t >= 1) { applyMode(fade.to); fade = null; }
+    if (t >= 1) { applyMode(fade.to); fade = null; dirty = true; } // one more frame: labels and declutter for the new mode
   };
 
   // ---- render on demand; a continuous loop only while water, rakes or alerts move and motion is allowed ----

@@ -171,6 +171,7 @@ export function graphFrom(objects) {
   for (const o of objects) if (o.type === "MachinePlacement") {
     const id = o.positionId || o.id;
     nodes.set(id, o);
+    if (id !== o.id) alias.set(o.id, id);
     if (nodes.has(o.structureId)) add({ from: id, to: o.structureId, kind: "contains", split: null, mode: "continuous", recycle: false });
   }
   for (const l of objects) if (l.type === "Line" && l.causal && nodes.has(l.fromId)) {
@@ -187,7 +188,10 @@ const flowTotal = (edges) => edges.filter((e) => e.kind === "flow").reduce((s, e
 // Sets with shares: the fraction of the node's water that passed through each item (flow), or 1 for a dose or a
 // machine acting on all of it. Every path keeps its own visited set, and recycle edges stop the walk.
 function walk(start, g, up, { depth = 20, mode = "normal" } = {}) {
-  const id0 = g.alias.get(start) || start, res = new Map();
+  let id0 = g.alias.get(start) || start;
+  const n0 = g.nodes.get(id0);
+  if (up && n0 && n0.type === "MachinePlacement" && g.nodes.has(n0.structureId)) id0 = n0.structureId; // what feeds a machine is what feeds its structure
+  const res = new Map();
   const step = (id, share, d, seen) => {
     if (d >= depth) return;
     const edges = live((up ? g.in : g.out).get(id), mode), total = flowTotal(edges);

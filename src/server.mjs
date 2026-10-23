@@ -144,7 +144,7 @@ export function createServer(sys) {
   const modelSummary = (m) => {
     const open = {};
     for (const c of m.cells) if (!c.reviewed) open[c.grade] = (open[c.grade] || 0) + 1;
-    return { id: m.id, rev: m.rev, status: m.status, governs: m.governs, release: m.release, packageHash: m.packageHash, sources: m.sources, reviews: m.reviews, cells: m.cells.length, unreviewed: open, ingestedBy: m.ingestedBy || null, disclosure: disclosureFor(m.rev) };
+    return { id: m.id, type: m.type, name: m.name, rev: m.rev, status: m.status, governs: m.governs, release: m.release, packageHash: m.packageHash, sources: m.sources, reviews: m.reviews, cells: m.cells.length, unreviewed: open, ingestedBy: m.ingestedBy || null, disclosure: disclosureFor(m.rev) };
   };
   function plantPayload(v) {
     const m = currentModel(), view = ont.view(v), rects = hiddenZones(v).map((z) => z.rect);
@@ -184,9 +184,11 @@ export function createServer(sys) {
   }
   const nodeOf = (g, id) => { const n = g.alias.get(id) || id; if (!id || !g.nodes.has(n)) throw new HttpError(404, "not found"); return n; };
 
+  // A PlantModel's cells describe every zone; the generic routes give its summary only (cells come from /api/plant/models/:id, pruned).
+  const shown = (o) => (o && o.type === "PlantModel" ? modelSummary(o) : o);
   function objectPayload(v, id) {
     const view = ont.view(v);
-    const o = view.get(id);
+    const o = shown(view.get(id));
     if (!o) throw new HttpError(404, "not found");
     const links = view.links(id).map((l) => ({ rel: l.rel, dir: l.from === id ? "out" : "in", props: l.props || null, other: brief(view.get(l.from === id ? l.to : l.from)) }));
     const sensors = tel.sensorsFor(id).filter((s) => view.get(s.id)).map(latest);
@@ -233,7 +235,7 @@ export function createServer(sys) {
       const flowMlD = given || Math.round(meas * 10) / 10 || 120;
       return { path, flowMlD, measured: !given && !!meas, window: travelWindow(path, g, { flowMlD, lagMin: Number(url.searchParams.get("lag")) || 0 }) };
     }],
-    ["GET", /^\/api\/objects$/, (v, m, url) => { const view = ont.view(v); const q = url.searchParams.get("q"); const type = url.searchParams.get("type"); return (q ? view.search(q, 50) : view.list(type || null)).filter((o) => !type || o.type === type).slice(0, 500); }],
+    ["GET", /^\/api\/objects$/, (v, m, url) => { const view = ont.view(v); const q = url.searchParams.get("q"); const type = url.searchParams.get("type"); return (q ? view.search(q, 50) : view.list(type || null)).filter((o) => !type || o.type === type).slice(0, 500).map(shown); }],
     ["GET", /^\/api\/objects\/([^/]+)$/, (v, m) => objectPayload(v, decodeURIComponent(m[1]))],
     ["GET", /^\/api\/schema$/, (v) => { const view = ont.view(v); const types = {}; for (const o of view.list()) types[o.type] = (types[o.type] || 0) + 1; return { types }; }],
     ["GET", /^\/api\/assets\/([^/]+)\/model$/, (v, m) => {

@@ -29,7 +29,7 @@ export const LINES = [
   L("RB-L-401", "backwash supply", "pipe", 600, "20UBA01", "15UMB01", 0.1, { mode: "intermittent", pumped: true }),
   L("RB-L-402", "backwash supply", "pipe", 600, "15UMB01", "15UGG01", 0.1, { mode: "intermittent", pumped: true }),
   L("RB-L-411", "air scour", "pipe", 350, "15UMB01", "15UGG01", 0, { causal: false, mode: "intermittent" }),
-  L("RB-L-421", "dirty washwater", "channel", [1.0, 0.8], "15UGG01", "17UGW01", 0.03, { causal: false, mode: "intermittent" }),
+  L("RB-L-421", "dirty washwater", "channel", [1.0, 0.8], "15UGG01", "17UGW01", 0.03, { mode: "intermittent" }),
   L("RB-L-431", "supernatant return", "pipe", 250, "17UGW01", "11UGA01", 0.05, { recycle: true }),
   ...[1, 2, 3, 4].map((n) => L(`RB-L-44${n}`, "sludge", "pipe", 150, `14UGE0${n}`, "17UGT01", 0.005, { causal: false })),
   L("RB-L-501", "coagulant", "pipe", 25, "13UHA01", "13UGB01", 0, { injectionAt: "13UGB01" }),
@@ -38,7 +38,7 @@ export const LINES = [
   L("RB-L-511", "chlorine (vacuum)", "pipe", 40, "16UHC01", "16UGH01", 0, { injectionAt: "16UGH01" })
 ];
 // Rev B: filter media replacement on F01–F04 adds filter-to-waste lines and moves the washwater outlet.
-const FTW = ["01", "02", "03", "04"].map((f) => L(`RB-L-6${f}`, "filter-to-waste", "pipe", 300, `15HFA${f}`, "17UGW01", 0, { causal: false, mode: "intermittent" }));
+const FTW = ["01", "02", "03", "04"].map((f) => L(`RB-L-6${f}`, "filter-to-waste", "pipe", 300, `15HFA${f}`, "17UGW01", 0, { mode: "intermittent" }));
 
 // Instruments: [tag, historianTag, measuredAt, samplePosition, lagMin]
 export const INSTRUMENTS = [

@@ -221,24 +221,29 @@ const views = {
     const val = (v) => (typeof v === "string" ? v : JSON.stringify(v));
     const row = (c) => `<tr class="${c.grade === "AMBIGUOUS" ? "amb" : c.grade === "INFERRED" ? "inf" : ""}" data-key="${esc(c.key)}"><td class="mono">${esc(c.key)}</td><td class="meta">${esc(c.sheet)}</td><td>${pill(c.grade, c.grade === "AMBIGUOUS" ? "medium" : c.grade === "INFERRED" ? "agent" : "low")}</td><td class="mono cv">${esc(val(c.value)).slice(0, 80)}</td><td class="why">${esc(c.reasoning)}</td>
       <td>${c.reviewed ? `<span class="meta">${esc(c.reviewed.by)} ${time(c.reviewed.at)}</span>` : open && eng ? `<div class="btns"><button class="btn" data-accept="${esc(c.key)}">Accept</button><button class="btn" data-correct="${esc(c.key)}">Correct</button>${c.field === "presence" ? `<button class="btn" data-exclude="${esc(c.key)}" title="Not on site: left out of the released model">Exclude</button>` : ""}</div>` : ""}</td></tr>`;
-    view.innerHTML = `<div class="row"><div><h2>03 / review · ${esc(m.status)} · ${m.cells} cells · hash ${esc(m.packageHash.slice(0, 12))}</h2><h1>${esc(m.id)}</h1></div>
+    view.innerHTML = `<div id="review"><div class="row"><div><h2>03 / review · ${esc(m.status)} · ${m.cells} cells · hash ${esc(m.packageHash.slice(0, 12))}</h2><h1>${esc(m.id)}</h1></div>
         <div class="btns"><a class="btn" href="#/plantmodels">All revisions</a><a class="btn" href="#/plant">Plant</a>${open && eng ? `<button class="btn primary" id="release" title="${canRelease ? "Four eyes: someone other than the last reviewer releases" : "You do not hold c-model; the server will refuse"}">Release</button>` : ""}</div></div>
       <p class="sub">${esc(m.disclosure)} · ${todo.length} cells to review (${todo.filter((c) => c.grade === "AMBIGUOUS").length} ambiguous, ${todo.filter((c) => c.grade === "INFERRED").length} inferred). Extracted cells may be accepted per sheet; inferred and ambiguous cells one by one. Release needs a second person who holds c-model.</p>
       <div id="relmsg" role="status"></div>
       ${open && eng && sheets.length ? `<div class="btns" style="margin:8px 0">${sheets.map(([sh, n]) => `<button class="btn" data-sheet="${esc(sh)}">Accept extracted · ${esc(sh)} (${n})</button>`).join("")}</div>` : ""}
       <section class="panel"><div class="row"><h2>To review · ${todo.length}</h2><label class="field" style="min-width:260px">Filter cells<input id="cf" type="search" placeholder="tag, field or sheet"></label></div>
         <table class="cells"><thead><tr><th>Cell</th><th>Sheet</th><th>Grade</th><th>Value</th><th>Reasoning</th><th></th></tr></thead><tbody id="todo">${todo.slice(0, 400).map(row).join("") || `<tr><td colspan="6" class="empty">Nothing left to review.</td></tr>`}</tbody></table></section>
-      <section class="panel" style="margin-top:12px"><h2>Reviewed · ${cells.length - todo.length}</h2><table class="cells"><tbody id="done">${cells.filter((c) => c.reviewed).slice(0, 150).map(row).join("")}</tbody></table>${cells.length - todo.length > 150 ? `<p class="meta">Showing 150; filter to find others.</p>` : ""}</section>`;
+      <section class="panel" style="margin-top:12px"><h2>Reviewed · ${cells.length - todo.length}</h2><table class="cells"><tbody id="done">${cells.filter((c) => c.reviewed).slice(0, 150).map(row).join("")}</tbody></table>${cells.length - todo.length > 150 ? `<p class="meta">Showing 150; filter to find others.</p>` : ""}</section></div>`;
     const act = async (params) => { try { await api("/api/actions/review_cells", { method: "POST", body: { params: { modelId: id, ...params } } }); views.plantmodels(id); } catch (err) { toast(err.message); } };
     view.querySelectorAll("[data-sheet]").forEach((b) => b.addEventListener("click", () => act({ accept: "EXTRACTED", sheet: b.dataset.sheet })));
-    view.querySelectorAll("[data-accept]").forEach((b) => b.addEventListener("click", () => act({ marks: [{ key: b.dataset.accept }] })));
-    view.querySelectorAll("[data-exclude]").forEach((b) => b.addEventListener("click", () => act({ marks: [{ key: b.dataset.exclude, value: "excluded" }] })));
-    view.querySelectorAll("[data-correct]").forEach((b) => b.addEventListener("click", () => {
-      const tr = b.closest("tr"), c = m.cells.find((x) => x.key === b.dataset.correct), td = tr.querySelector(".cv");
-      td.innerHTML = `<input aria-label="Corrected value for ${esc(c.key)}" value="${esc(val(c.value))}"><button class="btn primary" style="margin-top:4px">Save</button>`;
-      td.querySelector("button").addEventListener("click", () => { const raw = td.querySelector("input").value; let v = raw; try { v = JSON.parse(raw); } catch {} act({ marks: [{ key: c.key, value: v }] }); });
-      td.querySelector("input").focus();
-    }));
+    const onGrid = (e) => {
+      const b = e.target.closest("button");
+      if (!b) return;
+      if (b.dataset.accept) return act({ marks: [{ key: b.dataset.accept }] });
+      if (b.dataset.exclude) return act({ marks: [{ key: b.dataset.exclude, value: "excluded" }] });
+      if (b.dataset.save) { const raw = b.closest("td").querySelector("input").value; let v = raw; try { v = JSON.parse(raw); } catch {} return act({ marks: [{ key: b.dataset.save, value: v }] }); }
+      if (b.dataset.correct) {
+        const c = m.cells.find((x) => x.key === b.dataset.correct), td = b.closest("tr").querySelector(".cv");
+        td.innerHTML = `<input aria-label="Corrected value for ${esc(c.key)}" value="${esc(val(c.value))}"><button class="btn primary" style="margin-top:4px" data-save="${esc(c.key)}">Save</button>`;
+        td.querySelector("input").focus();
+      }
+    };
+    $("#review").addEventListener("click", onGrid);
     $("#cf").addEventListener("input", (e) => {
       const q = e.target.value.toLowerCase();
       $("#todo").innerHTML = todo.filter((c) => !q || `${c.key} ${c.sheet}`.toLowerCase().includes(q)).slice(0, 400).map(row).join("");

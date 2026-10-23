@@ -44,5 +44,6 @@
   <Stream ID="RB-L-321" From="20UMC01" To="20UMD01" DesignFlowM3h="5000" SplitFraction="1" Recycle="no" Mode="continuous"/>
   <Stream ID="RB-L-401" From="20UBA01" To="15UMB01" DesignFlowM3h="500" SplitFraction="0.1" Recycle="no" Mode="intermittent"/>
   <Stream ID="RB-L-402" From="15UMB01" To="15UGG01" DesignFlowM3h="500" SplitFraction="0.1" Recycle="no" Mode="intermittent"/>
+  <Stream ID="RB-L-421" From="15UGG01" To="17UGW01" DesignFlowM3h="150" SplitFraction="0.03" Recycle="no" Mode="intermittent"/>
   <Stream ID="RB-L-431" From="17UGW01" To="11UGA01" DesignFlowM3h="250" SplitFraction="0.05" Recycle="yes" Mode="continuous"/>
 </PlantModel>

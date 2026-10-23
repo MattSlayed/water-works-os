@@ -71,3 +71,10 @@ test("blueprint mode and the plant model review view are wired", async () => {
   const src = await (await fetch(base + "/plant.js")).text();
   for (const s of ["setMode(m)", "buildBlueprint", "LineSegments2", "setOption", "caption("]) assert.ok(src.includes(s), s);
 });
+
+test("final: blueprint labels hide outside blueprint; review grid buttons survive filtering", async () => {
+  const src = await (await fetch(base + "/plant.js")).text();
+  assert.ok(src.includes("for (const t of bp.tags) t.lab.visible = false"));
+  const app = await (await fetch(base + "/app.js")).text();
+  assert.ok(app.includes('$("#review").addEventListener("click", onGrid)'));
+});

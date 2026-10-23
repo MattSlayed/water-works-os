@@ -38,7 +38,9 @@ const zonesOn = (path) => {
 
 // The objects a model release writes. Machine placements and filter structures name their Position; sample points their Sensor.
 export function materialise(model) {
-  const mid = model.id, bound = (tag) => model.bindings[tag]?.id || null, items = new Map(model.items.map((i) => [i.tag, i]));
+  const mid = model.id, items = new Map(model.items.map((i) => [i.tag, i]));
+  // the reviewed binding cell, not the extractor's guess: a reviewer's correction is what gets linked
+  const bound = (tag) => { const b = items.get(tag)?.fields.binding; return b && b !== "unbound" ? b : null; };
   const out = [];
   for (const { kind, tag, fields } of model.items) {
     if (fields.presence === "excluded") continue; // a reviewer resolved a drawing-only item as not on site
@@ -51,7 +53,8 @@ export function materialise(model) {
     else if (kind === "samplepoint") {
       const onLine = items.get(f.at)?.kind === "line", where = items.get(f.at)?.fields ?? {};
       out.push({ ...base, type: "SamplePoint", position: f.position, lagMin: f.lagMin, instrument: f.instrument, sensorId: bound(f.instrument),
-        ...(onLine ? { lineId: plantId(mid, "line", f.at), zones: where.path ? zonesOn(where.path) : [] } : { structureId: plantId(mid, "structure", f.at), zoneId: where.zoneId ?? null }) });
+        // an analyser draws its sample where its line starts (the outlet of the structure upstream), so it takes that zone
+        ...(onLine ? { lineId: plantId(mid, "line", f.at), zoneId: where.path ? zoneAt(where.path[0]) ?? null : null } : { structureId: plantId(mid, "structure", f.at), zoneId: where.zoneId ?? null }) });
     }
   }
   return out;

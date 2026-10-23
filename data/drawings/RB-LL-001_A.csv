@@ -44,7 +44,7 @@ RB-L-321,final,pipe,1000,,,20UMC01,20UMD01,continuous,yes,no,,yes
 RB-L-401,backwash supply,pipe,600,,,20UBA01,15UMB01,intermittent,yes,no,,yes
 RB-L-402,backwash supply,pipe,600,,,15UMB01,15UGG01,intermittent,yes,no,,yes
 RB-L-411,air scour,pipe,350,,,15UMB01,15UGG01,intermittent,no,no,,no
-RB-L-421,dirty washwater,channel,,1,0.8,15UGG01,17UGW01,intermittent,no,no,,no
+RB-L-421,dirty washwater,channel,,1,0.8,15UGG01,17UGW01,intermittent,yes,no,,no
 RB-L-431,supernatant return,pipe,250,,,17UGW01,11UGA01,continuous,yes,yes,,no
 RB-L-441,sludge,pipe,150,,,14UGE01,17UGT01,continuous,no,no,,no
 RB-L-442,sludge,pipe,150,,,14UGE02,17UGT01,continuous,no,no,,no
