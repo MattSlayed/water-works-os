@@ -1,6 +1,6 @@
 # Design: The agent harness, the root-cause agent and the Agent Studio (Phase 3, project 3 of 3)
 
-Status: **for Matthew's approval**. The builder check is answered in §14a.
+Status: **approved by Matthew 2026-10-24**. The builder check is answered in §14a.
 
 Phase 3 so far:
 
