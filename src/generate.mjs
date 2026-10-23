@@ -5,6 +5,8 @@ import { stepRequires } from "./functions.mjs";
 import { ZONES, toLonLat } from "./layout.mjs";
 import { makeScenes } from "./scenes.mjs";
 import { REGION, REMOTE_ZONES, REMOTE_SITES, SITE_XY, PROJECTS, TRACKERS, zoneGeo, zoneAtLocal } from "./region.mjs";
+import { AGENT_SPECS } from "./agents.mjs";
+import { specFromManifest } from "./harness.mjs";
 
 export const CLOCK = "2026-10-15T00:00:00Z";
 
@@ -545,5 +547,7 @@ export function generateWorks(seed = 7) {
   note("KN-H08", "DP-2", "Suction check valve", "PRC-DOSING_PUMP-v3", 2, fitter.id, "2026-10-12T11:05:00Z", "Air collects at the high point of the suction line; bleed it there.");
   note("KN-H09", "CL-1", "Worm gearbox", "PRC-CLARIFIER_DRIVE-v3", 3, millwrights[0].id, "2026-03-30T10:00:00Z", "Gearbox oil looked milky: water ingress through the breather. Fit the desiccant breather.");
 
+  // one decision statement per agent (agents design §4.1)
+  for (const m of AGENT_SPECS) add(specFromManifest(m), "SYNTH-HARNESS");
   return { objects, links, clock: CLOCK };
 }

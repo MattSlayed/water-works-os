@@ -6,7 +6,7 @@ import { LEVELS } from "./actions.mjs";
 import * as F from "./functions.mjs";
 import { baseline } from "./scenes.mjs";
 
-const v = (s) => ({ version: "1.0.0", owner: "reliability_engineer", ...s });
+const v = (s) => ({ version: "1.0.0", owner: "P-002", ...s }); // P-002, a reliability engineer, owns the default agents (agents design §4.1)
 export const AGENT_SPECS = [
   v({ name: "Shift Handover", purpose: "Draft the shift handover: process, alerts, filters, assets out of service, permits, chemicals, incoming crew", trigger: { kind: "schedule", every: "30 min before shift" }, tools: ["draft_document"], autonomy: { draft_document: "act" } }),
   v({ name: "Process Watch", purpose: "Watch filters, dosing and disinfection; alert on breakthrough risk and dose loss; propose backwash", trigger: { kind: "schedule", every: "5 min" }, tools: ["raise_alert", "request_setpoint_change"], autonomy: { raise_alert: "act", request_setpoint_change: "propose" } }),
