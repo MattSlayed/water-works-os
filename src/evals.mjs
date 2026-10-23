@@ -2,7 +2,16 @@
 // grades the result. Graders: "rule" (a predicate over run and system) and "exact" (a value equals an expected value).
 // shortcut: no LLM-as-judge grader yet; add one in src/llm.mjs when agent outputs become free text from a model.
 
+import { parseMessage } from "./parse.mjs";
+
 const mgr = { id: "P-001", clearance: "manager" };
+// An inbound message as the channel stub would store it, for Chat Intake cases.
+const inbound = (s, channelId, from, text, ctx = {}) => {
+  s.ont.upsert({ id: "MSG-EVAL", type: "Message", channelId, direction: "in", from, at: s.tel.now(), text, media: [], parsed: parseMessage({ text }, { group: !!s.ont.get(channelId).groupName, ...ctx }), audience: s.ont.get(channelId).audience });
+  const p = s.ont.get(from);
+  return { scope: { messageId: "MSG-EVAL" }, actingUser: p.type === "Person" ? { id: p.id, clearance: p.clearance } : { id: p.id, clearance: "technician" } };
+};
+const outbound = (s, channelId) => s.ont.list("Message", (m) => m.channelId === channelId && m.direction === "out" && m.inReplyTo === "MSG-EVAL");
 const tech = { id: "P-023", clearance: "technician" };
 const drafts = (sys, kind) => sys.ont.list("Draft", (d) => d.kind === kind);
 const assetByTag = (sys, tag) => sys.ont.list("Asset", (a) => a.positionTag === tag)[0];
@@ -81,6 +90,11 @@ export const EVALS = {
     { name: "answers about F07", prep: () => ({ mission: "Status of F07?" }), grader: "rule", check: (r) => /F07/.test(r.outputs[0].text) },
     { name: "says so when nothing matches", prep: () => ({ mission: "how are things" }), grader: "rule", check: (r) => /could not find/.test(r.outputs[0].text) },
     { name: "is read-only", prep: () => ({ mission: "HLP-B" }), grader: "exact", value: (r, s) => s.ont.list("Decision").length, expect: 0 }
+  ],
+  "Chat Intake": [
+    { name: "start begins the assigned job and replies with step 1 and its lock", prep: (s) => inbound(s, "CHN-P-028", "P-028", "start"), grader: "rule", check: (r, s) => s.ont.list("Execution", (e) => e.personId === "P-028" && e.state === "running").length === 1 && outbound(s, "CHN-P-028").length === 1 && /Step 1\/11.*Locked/.test(outbound(s, "CHN-P-028")[0].text) },
+    { name: "done without a job asks once and writes nothing else", prep: (s) => inbound(s, "CHN-P-030", "P-030", "done"), grader: "rule", check: (r, s) => outbound(s, "CHN-P-030").length === 1 && r.outputs.filter((o) => o.action && o.action !== "send_message").length === 0 },
+    { name: "a contractor's progress is a claim, never a confirmation", prep: (s) => inbound(s, "CHN-GRP-CL3", "PAR-001", "Bearings out and slewing ring replaced"), grader: "rule", check: (r, s) => s.ont.list("ProgressClaim", (c) => c.milestoneId === "M3" && c.by === "PAR-001").length === 1 && !s.ont.get("PRJ-CL3").milestones.find((m) => m.id === "M3").confirmedAt && outbound(s, "CHN-GRP-CL3").length === 0 }
   ],
   "Tag Matcher": [
     { name: "no unmatched tags in the synthetic works", grader: "exact", value: (r, s) => drafts(s, "tag-match")[0].data.unmatched.length, expect: 0 },

@@ -141,3 +141,9 @@ test("evals run for every catalogue agent", async () => {
     assert.equal(r.passed, r.total, `${s.name}: ${JSON.stringify(r.cases.filter((c) => !c.pass))}`);
   }
 });
+
+test("an agent that exits early with return ctx.think(...) completes and chains nothing", () => {
+  const sys = createSystem({ seed: 7 });
+  const run = sys.runtime.run("Work Pack", { actingUser: mgr, scope: {} });
+  assert.equal(run.status, "completed");
+});

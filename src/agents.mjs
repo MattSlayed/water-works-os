@@ -20,6 +20,7 @@ export const AGENT_SPECS = [
   v({ name: "Permit Guard", purpose: "Check people in hazardous zones against competence and permits", trigger: { kind: "event", on: "Presence or permit change" }, tools: ["raise_alert", "notify"], autonomy: { raise_alert: "act", notify: "act" } }),
   v({ name: "Drop Pack", purpose: "Keep the Blue Drop evidence pack current and list gaps", trigger: { kind: "schedule", every: "daily" }, tools: ["draft_document"], autonomy: { draft_document: "act" } }),
   v({ name: "Ask", purpose: "Answer questions about the works from the ontology", trigger: { kind: "manual" }, tools: [], autonomy: {} }),
+  v({ name: "Chat Intake", purpose: "Turn a message on the works number into job steps, readings, issues, field notes and progress claims, and reply once", trigger: { kind: "event", on: "Inbound message" }, tools: ["start_execution", "complete_step", "raise_issue", "add_knowledge_note", "record_progress_claim", "send_message", "raise_deviation"], autonomy: { start_execution: "act", complete_step: "act", raise_issue: "act", add_knowledge_note: "act", record_progress_claim: "act", send_message: "act", raise_deviation: "propose" } }),
   v({ name: "Tag Matcher", purpose: "Match historian tags to positions and report unmatched keys", trigger: { kind: "event", on: "Connector import" }, tools: ["draft_document"], autonomy: { draft_document: "act" } })
 ];
 
@@ -53,7 +54,137 @@ export function assetInsight(ctx, assetId, partId) {
   return { asset, part, sensors, alerts, findings, notes, history, deviations, permit, isolated, hazards: zone ? zone.hazard : null, zone, procedure, allSteps: steps, manual };
 }
 
+const ASSET_TAG = /\b(HLP|RWP|BWP|SLP|DP|CL|BLW|CHL|GEN)-?([A-D]|\d{1,2})\b/i;
+const tagIn = (text) => { const m = String(text || "").match(ASSET_TAG); return m ? `${m[1].toUpperCase()}-${m[2].toUpperCase()}` : null; };
+// The part a message names, by the last word of the part's name ("the sleeve is scored" -> Shaft sleeve).
+const partIn = (ctx, text, assetId) => {
+  const t = String(text || "").toLowerCase();
+  return ctx.list("Part", (p) => p.assetId === assetId).find((p) => { const w = p.name.toLowerCase().split(/[\s-]+/).pop(); return w.length >= 4 && new RegExp(`\\b${w}`).test(t); }) || null;
+};
+
 const LOGIC = {
+  // Groups: only progress and issues are written, and the bot stays quiet. One-to-one: one reply per message.
+  "Chat Intake"(ctx) {
+    const m = ctx.get(ctx.scope.messageId);
+    if (!m) return ctx.think("The message is not visible to the sender's view.");
+    const ch = ctx.get(m.channelId);
+    const { kind, fields: f = {} } = m.parsed || {};
+    const awaiting = (m.replyTo && (ctx.get(m.replyTo) || {}).awaiting) || null;
+    const outcome = (o) => ctx.output({ kind: "outcome", outcome: o });
+    const say = (text, wait) => ctx.act("send_message", { channelId: ch.id, text, inReplyTo: m.id, ...(wait ? { awaiting: wait } : {}) });
+    ctx.think(`${m.id} from ${m.from} read as ${kind}.`);
+
+    if (ch.groupName) {
+      const prj = ch.projectId ? ctx.get(ch.projectId) : null;
+      if (kind === "progress" && prj) {
+        const ms = f.milestoneHint ? prj.milestones.find((x) => (x.keywords || []).includes(f.milestoneHint)) : null;
+        ctx.act("record_progress_claim", { projectId: prj.id, milestoneId: ms ? ms.id : null, messageId: m.id, text: m.text, evidence: m.media });
+        return outcome("recorded");
+      }
+      if (kind === "issue") {
+        ctx.act("raise_issue", { title: f.title, projectId: prj ? prj.id : null, assetId: prj ? prj.assetId : null, evidence: m.media });
+        return outcome("recorded");
+      }
+      return outcome("noted");
+    }
+
+    const me = m.from;
+    const ex = ctx.list("Execution", (e) => e.personId === me && e.state === "running")[0] || null;
+    const permitOn = (assetId) => {
+      const permit = ctx.list("Permit", (p) => p.assetId === assetId && p.state === "open")[0] || null;
+      return { permit, isolated: !!(permit && (permit.isolations || []).some((i) => i.state === "applied")) };
+    };
+    const stepLine = (e) => {
+      const pr = ctx.get(e.procedureId);
+      const st = pr.steps.find((s) => s.step === e.steps.find((x) => x.state === "todo").step);
+      const lock = ctx.fn("stepLock", st, permitOn(e.assetId));
+      const r = st.requires && st.requires.reading;
+      return `Step ${st.step}/${pr.steps.length}: ${st.text}.${r ? ` Reply "done" with the ${r.measure} in ${r.unit}.` : ' Reply "done" when finished.'}${lock.locked ? ` Locked: ${lock.reason}` : ""}`;
+    };
+    const tagOf = (id) => (ctx.get(id) || {}).positionTag || id;
+
+    switch (kind) {
+      case "start": {
+        if (ex) { say(`You are on ${ex.workOrderId}. ${stepLine(ex)}`); return outcome("asked"); }
+        const wos = ctx.list("WorkOrder", (w) => w.assigneeId === me && !["closed", "cancelled"].includes(w.state) && (!f.workOrderId || w.id === f.workOrderId));
+        if (!wos.length) { say(f.workOrderId ? `${f.workOrderId} is not an open job assigned to you.` : "No open job is assigned to you."); return outcome("asked"); }
+        if (wos.length > 1) { say(`You have ${wos.length} open jobs: ${wos.map((w) => `${w.id} (${w.title})`).join("; ")}. Reply "start <WO id>".`); return outcome("asked"); }
+        const r = ctx.act("start_execution", { workOrderId: wos[0].id, personId: me });
+        if (r.status !== "done") { say(`Could not start ${wos[0].id}: ${r.reason}`); return outcome("asked"); }
+        const e = ctx.get(r.objects[0]);
+        say(`${wos[0].id} ${wos[0].title} (${tagOf(e.assetId)}), ${ctx.get(e.procedureId).title} v${e.procedureVersion}. ${stepLine(e)}`);
+        return outcome("recorded");
+      }
+      case "done": {
+        if (!ex) { say('No job is running. Reply "start" first.'); return outcome("asked"); }
+        const next = ex.steps.find((s) => s.state === "todo");
+        if (f.step && f.step !== next.step) { say(`The next step is ${next.step}. ${stepLine(ex)}`); return outcome("asked"); }
+        const r = ctx.act("complete_step", { executionId: ex.id, step: next.step, value: f.value });
+        if (r.status !== "done") { say(r.reason); return outcome("asked"); }
+        const st = ctx.get(ex.procedureId).steps.find((s) => s.step === next.step);
+        const need = st.requires && st.requires.reading;
+        let lead = `Step ${next.step} done.`, out = "recorded";
+        if (need) {
+          const part = ctx.list("Part", (p) => p.assetId === ex.assetId && p.name === need.partName)[0];
+          const b = ctx.fn("bandCheck", part, f.value);
+          if (b.inBand) lead += ` ${b.finding}.`;
+          else {
+            const d = ctx.act("raise_deviation", { targetId: part.id, finding: b.finding, disposition: "repair or replace; engineer to decide", assetId: ex.assetId });
+            lead += ` ${need.measure} is ${b.by} ${need.unit} ${b.side} the band. Do not reuse the ${part.name.toLowerCase()} as it is; I have proposed a deviation for the engineer${d.ref ? ` (${d.ref})` : ""}.`;
+            out = "proposed";
+          }
+        }
+        const after = ctx.get(ex.id);
+        if (after.state === "done") say(`${lead} Job done on ${tagOf(ex.assetId)}. What would you tell the next person who does this job?`, { kind: "note", executionId: ex.id });
+        else say(`${lead} ${stepLine(after)}`);
+        return outcome(out);
+      }
+      case "note": {
+        const e = awaiting && awaiting.executionId ? ctx.get(awaiting.executionId) : null;
+        if (!e) { say("Thanks."); return outcome("recorded"); }
+        const pr = ctx.get(e.procedureId);
+        const part = partIn(ctx, f.text, e.assetId);
+        const step = (part && (pr.steps.find((s) => s.partNames.includes(part.name)) || {}).step) || pr.steps[pr.steps.length - 1].step;
+        ctx.act("add_knowledge_note", { text: f.text, executionId: e.id, procedureId: e.procedureId, assetId: e.assetId, partId: part ? part.id : null, step, messageId: m.id });
+        say(`Noted on ${tagOf(e.assetId)}${part ? ` (${part.name})` : ""}, step ${step} of the procedure. The next person will see it.`);
+        return outcome("recorded");
+      }
+      case "observation":
+      case "question": {
+        const assetId = ex ? ex.assetId : (ctx.list("Asset", (a) => a.positionTag === tagIn(m.text))[0] || {}).id;
+        if (!assetId) { say("Which asset is that on? Send the tag, for example HLP-B."); return outcome("asked"); }
+        const part = partIn(ctx, m.text, assetId);
+        const step = ex ? ex.steps.find((s) => s.state === "todo").step : null;
+        const ctxIds = { assetId, partId: part ? part.id : null, workOrderId: ex ? ex.workOrderId : null };
+        ctx.output({ kind: "question", text: m.text, ...ctxIds, step, offerIssue: kind === "observation" ? { title: m.text, ...ctxIds, evidence: m.media } : null });
+        return outcome("recorded");
+      }
+      case "yes": {
+        if (awaiting && awaiting.kind === "issue") {
+          const r = ctx.act("raise_issue", { title: awaiting.title, assetId: awaiting.assetId, partId: awaiting.partId, workOrderId: awaiting.workOrderId, evidence: awaiting.evidence });
+          say(r.status === "done" ? `Raised ${r.objects[0]}. The planner sees it on the issues board.` : `Could not raise the issue: ${r.reason}`);
+          return outcome("recorded");
+        }
+        if (awaiting && awaiting.kind === "submit") { ctx.output({ kind: "submit", draftId: awaiting.draftId }); return outcome("recorded"); }
+        say("Noted.");
+        return outcome("recorded");
+      }
+      case "no":
+        say(awaiting && awaiting.kind === "submit" ? "Left as a draft. You can change it on the console." : "OK, nothing raised.");
+        return outcome("recorded");
+      case "issue": {
+        const r = ctx.act("raise_issue", { title: f.title, assetId: ex ? ex.assetId : (ctx.list("Asset", (a) => a.positionTag === tagIn(f.title))[0] || {}).id || null, workOrderId: ex ? ex.workOrderId : null, evidence: m.media });
+        say(r.status === "done" ? `Raised ${r.objects[0]}. The planner sees it on the issues board.` : `Could not raise the issue: ${r.reason}`);
+        return outcome("recorded");
+      }
+      case "ask":
+        say(f.question);
+        return outcome("asked");
+      default:
+        return outcome("noted");
+    }
+  },
+
   "Shift Handover"(ctx) {
     const lines = [];
     const shifts = ctx.list("Shift").sort((a, b) => a.start.localeCompare(b.start));
@@ -358,14 +489,15 @@ export function createRuntime({ ont, tel, actions }) {
     };
     let next = [];
     try {
-      next = logic.get(name)(makeCtx(spec, r, opts)) || [];
+      const chain = logic.get(name)(makeCtx(spec, r, opts));
+      next = Array.isArray(chain) ? chain : []; // only a returned list chains; "return ctx.think(...)" is an early exit
       r.status = "completed";
     } catch (e) {
       r.status = "failed";
       r.error = e.message;
     }
     r.endedAt = new Date().toISOString();
-    ont.upsert({ ...r, minClearance: opts.actingUser.clearance });
+    ont.upsert({ ...r, minClearance: opts.actingUser.clearance, audience: opts.audience || null });
     runs.push(r);
     if (opts.chain !== false && depth < 6) for (const x of next) run(x.agent, { ...opts, scope: x.scope, mission: null, trigger: { kind: "chain", from: r.id } }, depth + 1);
     return r;

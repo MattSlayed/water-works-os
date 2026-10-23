@@ -51,7 +51,7 @@ export const ACTIONS = {
     return { objects: [p.workOrderId], revert: setProps(ont, p.workOrderId, p.patch) };
   }),
   draft_document: def("draft", "act", ["kind", "title", "body"], (ont, p, ctx) => {
-    const d = create(ont, { id: nextId("DRF"), type: "Draft", minClearance: ctx.actor.kind === "agent" ? ctx.actor.clearance : null, kind: p.kind, title: p.title, body: p.body, data: p.data || null, aboutId: p.aboutId || null, assetId: p.assetId || null, created: ctx.now(), state: "draft" }, [["ABOUT", p.aboutId]]);
+    const d = create(ont, { id: nextId("DRF"), type: "Draft", minClearance: ctx.actor.kind === "agent" ? ctx.actor.clearance : null, audience: Array.isArray(p.audience) ? p.audience.map(String) : null, kind: p.kind, title: p.title, body: p.body, data: p.data || null, aboutId: p.aboutId || null, assetId: p.assetId || null, created: ctx.now(), state: "draft" }, [["ABOUT", p.aboutId]]);
     return { objects: [d.id], revert: () => setProps(ont, d.id, { state: "withdrawn" }) };
   }),
   reserve_parts: def("act", "act", ["partIds"], (ont, p, ctx) => {
@@ -280,9 +280,18 @@ export function createActionService({ ont, audit, clock = wallClock }) {
     return best;
   }
 
+  // A decision or proposal about an audience-limited object (a private chat, a person's job) is limited the same way.
+  function audienceFor(params) {
+    for (const id of Object.keys(TARGET_TYPES).flatMap((k) => (params[k] == null ? [] : [].concat(params[k])))) {
+      const o = typeof id === "string" ? ont.get(id) : null;
+      if (o && o.audience) return o.audience;
+    }
+    return null;
+  }
+
   function apply(action, params, actor, extra = {}) {
     const res = ACTIONS[action].apply(ont, params, { actor, now });
-    const dec = ont.upsert({ zoneId: zoneFor(params),
+    const dec = ont.upsert({ zoneId: zoneFor(params), audience: audienceFor(params),
       id: nextId("DEC"), type: "Decision", action, params, actorId: actor.id, actorKind: actor.kind, autonomy: extra.autonomy || null,
       approvedBy: extra.approvedBy || null, proposalId: extra.proposalId || null, runId: extra.runId || null,
       assetId: params.assetId || null, objects: res.objects, reversible: !!res.revert, reversed: false, at: now()
@@ -310,7 +319,7 @@ export function createActionService({ ont, audit, clock = wallClock }) {
       if (lv(eff) >= lv(a.needs)) return apply(action, params, actor, { autonomy: eff, runId });
       if (lv(eff) >= lv("propose")) {
         const prp = ont.upsert({
-          zoneId: zoneFor(params), id: nextId("PRP"), type: "Proposal", action, params, actorId: actor.id, actorKind: actor.kind, runId: runId || null,
+          zoneId: zoneFor(params), audience: audienceFor(params), id: nextId("PRP"), type: "Proposal", action, params, actorId: actor.id, actorKind: actor.kind, runId: runId || null,
           assetId: params.assetId || (params.partIds && ont.get(params.partIds[0]) && ont.get(params.partIds[0]).assetId) || null,
           evidence: evidence || [], risk: risk || null, state: "open", created: now()
         });

@@ -29,7 +29,7 @@ export function createCopilot({ ont, tel, actions, runtime, llm = askClaude }) {
   const agentActor = (user) => ({ kind: "agent", id: "Technician Copilot", clearance: user.clearance, onBehalfOf: user.id });
   const autonomy = (action) => (runtime && runtime.spec("Technician Copilot").autonomy[action]) || "propose";
 
-  function open({ assetId, partId, workOrderId, user }) {
+  function open({ assetId, partId, workOrderId, step, user }) {
     if (!user || !user.id) throw new Error("user required");
     const ctx = ctxFor(user);
     if (partId) { const part = ctx.get(partId); if (!part || part.assetId !== assetId) throw new Error("part not found"); }
@@ -37,7 +37,7 @@ export function createCopilot({ ont, tel, actions, runtime, llm = askClaude }) {
     if (!insight) throw new Error("asset not found");
     if (runtime) runtime.run("Technician Copilot", { actingUser: user, scope: { assetId, partId }, chain: false, trigger: { kind: "copilot-open" } });
     const id = `COP-${String(++n).padStart(5, "0")}`;
-    const s = { id, assetId, partId: partId || null, workOrderId: workOrderId || null, user, insight, transcript: [] };
+    const s = { id, assetId, partId: partId || null, workOrderId: workOrderId || null, step: step || null, user, insight, transcript: [] };
     sessions.set(id, s);
     return { id, insight, ask: (q) => ask(id, q), tag: (a) => tag({ sessionId: id, ...a }) };
   }
@@ -51,6 +51,7 @@ export function createCopilot({ ont, tel, actions, runtime, llm = askClaude }) {
     const relevant = (st) => keywords.some((k) => st.text.toLowerCase().includes(k.toLowerCase().replace("check-valve", "check valve")));
     const steps = (s.partId ? ins.procedure : ins.allSteps).slice();
     steps.sort((a, b) => (a.intrusive - b.intrusive) || (relevant(b) - relevant(a)) || a.step - b.step);
+    if (s.step) steps.sort((a, b) => (b.step === s.step) - (a.step === s.step));
     const safe = ins.permit && ins.isolated;
     const shown = steps.filter((st) => !st.intrusive || safe);
     const hidden = steps.length - shown.length;
