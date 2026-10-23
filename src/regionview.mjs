@@ -60,7 +60,7 @@ export function regionPayload(sys, v, { clipLine = (c) => [c], trails = [], live
   const cutoff = Date.parse(now) - 60 * DAY;
   return {
     clock: now, dataEnd: dataEndIso(sys), disclosure: "Synthetic works: every place, scene and value here is synthetic. Satellite indices are indices, not calibrated.",
-    works: { id: "SITE-RB", name: nameOf(sys.ont.get("SITE-RB")), centre: toLonLat([380, 90]) },
+    works: { id: "SITE-RB", name: nameOf(sys.ont.get("SITE-RB")), centre: toLonLat([380, 90]), plantModelId: (currentPlantModel(sys.ont) || {}).id || null },
     region, zones: view.list("Zone", (z) => z.remote).map((z) => ({ id: z.id, name: z.name, clearance: z.clearance, geo: z.geo })),
     sites: view.list("RemoteSite").map((s) => ({ ...s, readings: sensorsOf(s.id) })),
     trackers,

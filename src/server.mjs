@@ -18,7 +18,7 @@ import { liveStats } from "./geolive.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const WEB = path.resolve(here, "..", "web");
-const MIME = { ".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8", ".json": "application/json", ".svg": "image/svg+xml", ".woff2": "font/woff2" };
+const MIME = { ".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8", ".json": "application/json", ".svg": "image/svg+xml", ".woff2": "font/woff2", ".png": "image/png" };
 const SYSTEM_USER = { id: "SYSTEM", kind: "person", clearance: "manager", role: "system" };
 
 class HttpError extends Error { constructor(status, msg) { super(msg); this.status = status; } }

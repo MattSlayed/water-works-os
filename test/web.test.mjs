@@ -78,3 +78,26 @@ test("final: blueprint labels hide outside blueprint; review grid buttons surviv
   const app = await (await fetch(base + "/app.js")).text();
   assert.ok(app.includes('$("#review").addEventListener("click", onGrid)'));
 });
+
+// ---------- Region view (Region design §6) ----------
+test("region: Leaflet 1.9.4 is vendored with its licence and images, wired through the import map", async () => {
+  const lic = await fetch(base + "/vendor/leaflet@1.9.4/LICENSE");
+  assert.equal(lic.status, 200);
+  assert.match(await lic.text(), /BSD/);
+  const js = await fetch(base + "/vendor/leaflet@1.9.4/leaflet-src.esm.js");
+  assert.match(js.headers.get("content-type"), /javascript/);
+  assert.ok((await js.text()).includes('var version = "1.9.4"'));
+  const png = await fetch(base + "/vendor/leaflet@1.9.4/images/layers.png");
+  assert.equal(png.status, 200);
+  assert.match(png.headers.get("content-type"), /image\/png/);
+  await png.arrayBuffer();
+  const html = await (await fetch(base + "/")).text();
+  for (const s of ['data-nav="region"', '"leaflet": "/vendor/leaflet@1.9.4/leaflet-src.esm.js"', 'href="/vendor/leaflet@1.9.4/leaflet.css"']) assert.ok(html.includes(s), s);
+});
+
+test("region: the view carries the 07:00 cards, honest labels, offline and Enter plant", async () => {
+  const app = await (await fetch(base + "/app.js")).text();
+  for (const s of ["async region(", "Since you left", "Today's supply risks", "index, not calibrated", "Mark seen"]) assert.ok(app.includes(s), s);
+  const reg = await (await fetch(base + "/region.js")).text();
+  for (const s of ["export function mountRegion", "basemap offline", "Enter plant", "synthetic works", "tile.openstreetmap.org"]) assert.ok(reg.includes(s), s);
+});

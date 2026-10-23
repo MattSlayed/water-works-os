@@ -119,6 +119,113 @@ const views = {
     view.querySelectorAll("[data-checkin]").forEach((b) => b.addEventListener("click", async () => { await api("/api/muster/checkin", { method: "POST", body: { personId: b.dataset.checkin } }); views.map(); }));
   },
 
+  // ---------- Region (Region design §6): the site manager's 07:00 screen, and where analysis starts outside the fence ----------
+  async region(arg) {
+    const q = new URLSearchParams(arg || ""), enc = encodeURIComponent;
+    const [d, since, risks] = await Promise.all([api("/api/region"), api("/api/region/since"), api("/api/region/risks")]);
+    state.region?.dispose();
+    state.region = null;
+    const phone = matchMedia("(max-width: 720px)").matches;
+    const band = (b) => `<span class="band ${esc(b)}">${esc(b)}</span>`;
+    const res = risks.storage.sites.map((s) => `<li>${esc(s.name)}: ${s.storageHours ?? "—"} h ${s.flagged ? pill("under 12 h", "red") : ""}</li>`).join("");
+    const cards = `<section class="panel rcard" aria-label="Since you left"><div class="row"><h3>Since you left <small class="meta">${time(since.since)}</small></h3><button class="btn" id="seen">Mark seen</button></div>
+        <ul class="rlist">${since.items.map((i) => `<li><button class="linkish" data-si="${esc(i.kind)}|${esc(i.trackerId || i.id)}">${esc(i.text)}</button>${i.stillOpen ? ` ${pill("still open", "amber")}` : ""}</li>`).join("") || "<li>Nothing new.</li>"}</ul>${since.more ? `<p class="meta">${since.more} more</p>` : ""}</section>
+      <section class="panel rcard" aria-label="Today's supply risks"><h3>Today's supply risks</h3><ul class="rlist">
+        <li>Raw water: ${band(risks.rawWater.band)} <small class="meta">satellite NDTI is an index, not calibrated; intake ${num(risks.rawWater.inputs[2].value)} NTU</small></li>
+        <li>Out of service: <b>${risks.capacity.outOfServiceMlD} ML/d</b> <small class="meta">treatment ${risks.capacity.capacityMlD} ML/d, limited by ${esc(risks.capacity.limiting)}</small></li>${res}</ul></section>`;
+    const timeline = `<div class="rtimeline" role="group" aria-label="Scene timeline">${d.scenes.filter((s) => s.inWindow || s.mission === "S2").slice(-14).map((s) => {
+      const ok = Object.values(s.usable).some(Boolean);
+      return `<button class="scene ${ok ? "" : "cloudy"} ${s.processed ? "" : "pending"}" data-scene="${esc(s.id)}" ${!s.inWindow || !s.processed ? "disabled" : ""} title="${esc(s.id)} · ${s.mission === "S2" ? `${s.cloudPct}% cloud${ok ? "" : ", unusable"}` : "radar"}">${esc(s.acquiredAt.slice(5, 10))}<small>${s.mission}${s.mission === "S2" ? ` ${s.cloudPct}%` : ""}</small></button>`;
+    }).join("")}<label class="sr" for="gidx">Index</label><select id="gidx"><option value="ndti">NDTI turbidity</option><option value="ndci">NDCI chlorophyll</option><option value="ndwi">NDWI water</option><option value="mndwi">MNDWI water</option></select><small class="meta">index, not calibrated</small></div>`;
+    const LAYERS = [["region", "Catchment and river", true], ["grid", "Satellite index grid", false], ["detections", "Detections", true], ["plant", "Fixed plant and remote sites", true], ["trackers", "Tagged things", true], ["alerts", "Alerts", true]];
+    const FILTERS = [["pump_station", "Pump stations"], ["reservoir", "Reservoirs"], ["valve_chamber", "Valve chambers"], ["vehicle", "Works vehicles"], ["portable", "Portable plant"], ["contractor", "Contractors"]];
+    const rail = `<section class="panel rrail" aria-label="Layers and filters"><h3>Layers</h3>${LAYERS.map(([k, label, def]) => `<label><input type="checkbox" data-rlayer="${k}" ${def ? "checked" : ""}> ${label}</label>`).join("")}
+      <h3>Filter</h3>${FILTERS.map(([k, label]) => `<label><input type="checkbox" data-rfilter="${k}" checked> ${label}</label>`).join("")}
+      <label><input type="checkbox" data-rfilter="alarmOnly"> In alarm only</label><label><input type="checkbox" data-rfilter="staleOnly"> Stale or lost tags only</label>${d.live ? `<p class="meta">Live: ${esc(d.live.ok ? `${d.live.name}, ${d.live.scene.acquiredAt.slice(0, 10)}, NDTI mean ${num(d.live.stats.ndti.mean)} (index, not calibrated)` : d.live.reason)}</p>` : ""}</section>`;
+    const ops = [...d.detections.filter((x) => x.status === "suggested" || x.status === "confirmed").map((x) => ({ kind: "detection", id: x.id, label: `${x.kind} ${x.status} · ${x.sceneId}` })),
+      ...d.alerts.filter((a) => !String(a.targetId).startsWith("GEO-")).map((a) => ({ kind: "alert", id: a.id, label: a.title }))];
+    const tabs = `<section class="panel rtabs"><div class="btns" role="tablist"><button class="btn" role="tab" data-rtab="projects" aria-selected="true">Projects (${d.projects.length})</button><button class="btn" role="tab" data-rtab="ops" aria-selected="false">Operations (${ops.length})</button></div>
+      <ul class="rlist" id="rtab-projects">${d.projects.map((p) => `<li><button class="linkish" data-proj="${esc(p.id)}">${esc(p.title)}</button> ${p.status.overdue.length ? pill("overdue", "amber") : ""}<small class="meta">${esc(p.start)} to ${esc(p.end)}</small></li>`).join("")}</ul>
+      <ul class="rlist" id="rtab-ops" hidden>${ops.map((o) => `<li><button class="linkish" data-op="${esc(o.kind)}|${esc(o.id)}">${esc(o.label)}</button></li>`).join("") || "<li>No operations running.</li>"}</ul>
+      <div id="rpanel" aria-live="polite"></div></section>`;
+    view.innerHTML = `<div id="regionv"><div class="row"><div><h2>03 / the region · ${esc(d.clock.slice(0, 16).replace("T", " "))} plant · synthetic works</h2><h1>Region</h1></div><div class="btns"><a class="btn" href="#/map">Site map</a><a class="btn" href="#/plant">Plant</a><button class="btn" id="clearfocus" hidden>Clear focus</button></div></div>
+      <div class="rcards">${cards}</div>${phone ? "" : timeline}
+      <div class="rgrid ${phone ? "phone" : ""}">${phone ? "" : rail}<section class="panel rmap" aria-label="Region map">${phone ? `<button class="btn primary" id="showmap">Show on map</button>` : ""}</section>${tabs}</div></div>`;
+
+    const panel = $("#rpanel");
+    let lastView = { center: (q.get("c") || "").split(",").map(Number).filter(Number.isFinite), zoom: Number(q.get("z")) || null };
+    const keepHash = (v) => { lastView = v; history.replaceState(null, "", `#/region/c=${v.center.map((x) => x.toFixed(5)).join(",")}&z=${v.zoom}${q.get("focus") ? `&focus=${q.get("focus")}` : ""}`); };
+    const mount = async () => {
+      try {
+        const { mountRegion } = await import("/region.js");
+        state.region = mountRegion($(".rmap"), d, {
+          start: { center: lastView.center.length === 2 ? lastView.center : null, zoom: lastView.zoom },
+          onSelect: (s) => select(s), onView: keepHash,
+          onEnterPlant: () => { location.hash = `#/plant/${enc(d.works.plantModelId ? `${d.works.plantModelId}:STR-10UPA01` : "")}`; }
+        });
+        if (q.get("focus")) { const [k, id] = q.get("focus").split(":"); focus(k, id); }
+      } catch (e) {
+        $(".rmap").innerHTML = `<p class="sub">The map could not load (${esc(e.message)}). The cards and lists above still work.</p>`;
+      }
+    };
+    const focus = async (kind, id) => {
+      try {
+        const f = await api(`/api/region/focus/${kind}/${enc(id)}`);
+        if (f.trackerIds.length) { const t = await api(`/api/region?trails=${f.trackerIds.map(enc).join(",")}`); state.region?.setData(t); }
+        state.region?.focus(f);
+        $("#clearfocus").hidden = false;
+        q.set("focus", `${kind}:${id}`);
+      } catch (e) { toast(e.message); }
+    };
+    const clearFocus = () => { state.region?.clearFocus(); state.region?.setData(d); $("#clearfocus").hidden = true; q.delete("focus"); };
+    const showProject = async (id) => {
+      const p = await api(`/api/projects/${enc(id)}/panel`);
+      const pct = p.progress.budgetZar ? Math.round((p.progress.spendZar / p.progress.budgetZar) * 100) : 0;
+      panel.innerHTML = `<h3>${esc(p.title)}</h3><p class="meta">${esc(p.start)} to ${esc(p.end)} · owner ${esc(p.ownerId)}</p>
+        <h4>Footprint and who is on it</h4><ul class="rlist">${p.footprint.trackers.map((t) => `<li>${esc(t.name)} ${t.signal !== "live" ? pill(t.signal, "amber") : ""}</li>`).join("") || "<li>Nobody tagged on site now.</li>"}${p.footprint.permits.map((x) => `<li>Permit ${link(x.id)} open</li>`).join("")}</ul>
+        <h4>Progress and money</h4><p>${p.progress.status.milestones.claimed} of ${p.progress.status.milestones.total} milestones claimed, ${p.progress.status.milestones.confirmed} confirmed. R ${(p.progress.spendZar / 1e6).toFixed(2)} m committed of R ${(p.progress.budgetZar / 1e6).toFixed(2)} m (${pct}%).</p><p class="meta">${p.progress.lastReport ? `Last report ${time(p.progress.lastReport.at)}: ${esc(p.progress.lastReport.text)}` : "No report yet."}</p>
+        <h4>Impact on operations</h4><p>${esc(p.impact.text || "None recorded.")}</p><p class="meta">${esc(p.impact.supplyRisk)}</p>
+        <h4>Issues and risks</h4><ul class="rlist">${p.issues.map((i) => `<li>${esc(i.text)}${i.auditId ? ` <a href="#/audit" class="meta">log #${i.auditId}</a>` : ""}</li>`).join("") || "<li>None open.</li>"}</ul>`;
+      focus("project", id);
+    };
+    const select = (s) => {
+      if (s.kind === "detection") {
+        const x = d.detections.find((y) => y.id === s.id);
+        panel.innerHTML = `<h3>${esc(x.kind)} · ${esc(x.status)}</h3><p>${esc(x.index.toUpperCase())} z ${x.z} against the 90-day baseline in ${esc(x.aoiId)}, scene ${esc(x.sceneId)} (${x.cloudPct ?? "—"}% cloud). Confidence ${x.confidence}.</p><p class="meta">Index, not calibrated: a person confirms it with a raw-water sample.</p><p>${link(x.id, "Open the record")}</p><button class="btn" data-op="detection|${esc(x.id)}">Focus the response</button>`;
+        loadGrid(x.sceneId);
+      } else if (s.kind === "tracker") {
+        const t = d.trackers.find((y) => y.id === s.id);
+        panel.innerHTML = `<h3>${esc(t.name)}</h3><p>${t.signal === "live" ? "Live" : `${esc(t.signal)}: last seen ${time(t.pingAt)}`} · ${num(t.speedKmh)} km/h${t.eta ? ` · ETA ${esc(t.eta.slice(11, 16))}` : ""}${t.state ? ` · ${esc(t.state)}` : ""}${t.fuelPct != null && t.kind === "portable" ? ` · fuel ${t.fuelPct}% · ${t.runHours} h` : ""}</p>${t.projectId ? `<p><button class="linkish" data-proj="${esc(t.projectId)}">${esc(t.projectId)}</button></p>` : ""}`;
+      } else if (s.kind === "site") {
+        const x = d.sites.find((y) => y.id === s.id);
+        panel.innerHTML = `<h3>${esc(x.name)}</h3><ul class="rlist">${x.readings.map((r) => `<li>${esc(r.name)}: ${num(r.value)} ${esc(r.unit)}${isAlarm(r) ? ` ${pill("alarm", "red")}` : ""}</li>`).join("")}</ul>`;
+      } else panel.innerHTML = `<p>${link(s.id)}</p>`;
+    };
+    const loadGrid = async (sceneId) => {
+      try { state.region?.setGrid(await api(`/api/region/scenes/${enc(sceneId)}/grid?index=${$("#gidx") ? $("#gidx").value : "ndti"}`)); const c = view.querySelector('[data-rlayer="grid"]'); if (c) c.checked = true; } catch (e) { toast(e.message); }
+    };
+
+    $("#regionv").addEventListener("click", (e) => {
+      const b = e.target.closest("button");
+      if (!b) return;
+      if (b.dataset.proj) showProject(b.dataset.proj);
+      if (b.dataset.op) { const [k, id] = b.dataset.op.split("|"); focus(k, id); if (k === "detection") select({ kind: "detection", id }); }
+      if (b.dataset.si) { const [k, id] = b.dataset.si.split("|"); if (k === "detection") { focus("detection", id); select({ kind: "detection", id }); } else if (k === "project") showProject(id); else if (k === "geofence" || k === "tracker") { select({ kind: "tracker", id }); state.region?.select(id); } }
+      if (b.dataset.scene) loadGrid(b.dataset.scene);
+      if (b.dataset.rtab) { for (const t of view.querySelectorAll("[data-rtab]")) t.setAttribute("aria-selected", String(t === b)); $("#rtab-projects").hidden = b.dataset.rtab !== "projects"; $("#rtab-ops").hidden = b.dataset.rtab !== "ops"; }
+    });
+    view.querySelectorAll("[data-rlayer]").forEach((c) => c.addEventListener("change", () => state.region?.setLayer(c.dataset.rlayer, c.checked)));
+    view.querySelectorAll("[data-rfilter]").forEach((c) => c.addEventListener("change", () => state.region?.setFilter(c.dataset.rfilter, c.checked)));
+    $("#seen").addEventListener("click", async () => { await api("/api/region/since", { method: "POST" }); views.region(location.hash.replace(/^#\/region\/?/, "")); });
+    $("#clearfocus").addEventListener("click", clearFocus);
+    document.onkeydown = (e) => { if (e.key === "Escape" && state.region) clearFocus(); };
+    if (phone) $("#showmap").addEventListener("click", () => { $("#showmap").remove(); mount(); });
+    else await mount();
+  },
+  async refreshRegion() {
+    if (!state.region) return;
+    state.region.setData(await api("/api/region"));
+  },
   async assets() {
     const assets = await api("/api/objects?type=Asset");
     const rows = assets.sort((a, b) => String(a.positionTag).localeCompare(String(b.positionTag))).map((a) => `<tr><td><a href="#/asset/${encodeURIComponent(a.id)}"><b>${esc(a.positionTag || a.name)}</b></a></td><td>${esc(a.name)}</td><td>${esc(a.assetClass)}</td><td>${pill(a.state)}</td><td>${a.hero ? pill("3D model", "agent") : ""}</td><td class="meta">${esc(a.zoneId)}</td></tr>`).join("");
@@ -621,6 +728,7 @@ async function route() {
   document.querySelectorAll("[data-nav]").forEach((a) => a.classList.toggle("active", a.dataset.nav === name || a.dataset.nav === `${name}s` || (name === "plantmodels" && a.dataset.nav === "plant") || (name === "run" && a.dataset.nav === "agents")));
   if (name !== "asset") { state.twin?.dispose(); state.twin = null; state.copilot = null; }
   if (name !== "plant") { state.plant?.dispose(); state.plant = null; }
+  if (name !== "region") { state.region?.dispose(); state.region = null; }
   const fn = views[name];
   if (!fn) { view.innerHTML = `<h1>Not found</h1>`; return; }
   try { await fn(arg ? decodeURIComponent(arg) : undefined); } catch (e) { view.innerHTML = `<h1>${e.status === 404 ? "Not found, or not visible to you" : "Something went wrong"}</h1><p class="sub">${esc(e.message)}</p>`; }
@@ -677,6 +785,7 @@ function connect() {
       const typing = document.activeElement.closest?.("form") || $("#say")?.value || $("#stepval")?.value;
       if (live.includes(name) && !typing) views[name](arg ? decodeURIComponent(arg) : undefined);
       if (name === "plant" && state.plant) views.refreshPlant().catch(() => {});
+      if (name === "region" && state.region) views.refreshRegion().catch(() => {});
       try { const c = await api("/api/proposals?state=open"); $("#prop-count").textContent = c.length || ""; } catch {}
     }, 1500);
   };

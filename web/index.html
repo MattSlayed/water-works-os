@@ -7,10 +7,12 @@
   
   
   <link rel="stylesheet" href="/styles.css">
+  <link rel="stylesheet" href="/vendor/leaflet@1.9.4/leaflet.css">
   <script type="importmap">
     { "imports": {
         "three": "/vendor/three@0.160.0/three.module.js",
-        "three/addons/": "/vendor/three@0.160.0/addons/"
+        "three/addons/": "/vendor/three@0.160.0/addons/",
+        "leaflet": "/vendor/leaflet@1.9.4/leaflet-src.esm.js"
     } }
   </script>
 </head>
@@ -32,6 +34,7 @@
     <nav class="rail" aria-label="Main">
       <a href="#/console" data-nav="console">Console</a>
       <a href="#/map" data-nav="map">Site map</a>
+      <a href="#/region" data-nav="region">Region</a>
       <a href="#/plant" data-nav="plant">Plant</a>
       <a href="#/assets" data-nav="assets">Assets & twin</a>
       <a href="#/work" data-nav="work">Work</a>
