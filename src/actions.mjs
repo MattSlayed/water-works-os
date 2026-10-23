@@ -29,7 +29,7 @@ const create = (ont, obj, linksTo = []) => {
 };
 
 // Parameters that name an object: the type it must be. Every named object must also be visible to the actor.
-const TARGET_TYPES = { modelId: ["PlantModel"], channelId: ["Channel"], messageId: ["Message"], documentId: ["Draft"], onBehalfOf: ["Person", "Project"], procedureId: ["Procedure"], executionId: ["Execution"], issueId: ["Issue"], noteId: ["KnowledgeNote"], personId: ["Person"], projectId: ["Project"], workOrderId: ["WorkOrder"], assetId: ["Asset"], partIds: ["Part"], partId: ["Part"], alertId: ["Alert"], permitId: ["Permit"], assigneeId: ["Person"], holderId: ["Person"], itemId: ["Part", "Chemical"], targetId: null };
+const TARGET_TYPES = { sceneId: ["Scene"], aoiId: ["Region"], detectionId: ["GeoDetection"], chemicalId: ["Chemical"], modelId: ["PlantModel"], channelId: ["Channel"], messageId: ["Message"], documentId: ["Draft"], onBehalfOf: ["Person", "Project"], procedureId: ["Procedure"], executionId: ["Execution"], issueId: ["Issue"], noteId: ["KnowledgeNote"], personId: ["Person"], projectId: ["Project"], workOrderId: ["WorkOrder"], assetId: ["Asset"], partIds: ["Part"], partId: ["Part"], alertId: ["Alert"], permitId: ["Permit"], assigneeId: ["Person"], holderId: ["Person"], itemId: ["Part", "Chemical"], targetId: null };
 const PATCHABLE = ["title", "priority", "state", "planned", "hours", "closed"];
 const ISSUE_STATES = ["open", "triaged", "in_work", "done", "dropped"];
 // The person an action is done by or for: an agent acts for the person who launched it.
@@ -39,6 +39,18 @@ const isolatedPermit = (ont, assetId) => {
   const permit = ont.list("Permit", (x) => x.assetId === assetId && x.state === "open")[0] || null;
   return { permit, isolated: !!(permit && (permit.isolations || []).some((i) => i.state === "applied")) };
 };
+
+// A job follows the procedure version released when it starts; shared by start_execution and the sampling round.
+function openExecution(ont, wo, personId, proc, at) {
+  // performance data: the person, their own supervisor and engineers (the manager sees everything)
+  const audience = [...new Set([personId, ont.get(personId).supervisorId, ...ont.list("Person", (x) => x.clearance === "engineer").map((x) => x.id)].filter(Boolean))];
+  const ex = create(ont, { id: nextId("EXE"), type: "Execution", workOrderId: wo.id, assetId: wo.assetId, personId, procedureId: proc.id, procedureVersion: proc.version, startedAt: at, finishedAt: null, state: "running", audience,
+    steps: proc.steps.map((s) => ({ step: s.step, state: "todo", at: null, minutes: null, value: null, readingId: null, note: null })) }, [["FOR", wo.id], ["FOLLOWS", proc.id], ["BY", personId]]);
+  const undoWo = setProps(ont, wo.id, { state: "in_progress" });
+  return { ex, revert: () => { setProps(ont, ex.id, { state: "cancelled" }); undoWo(); } };
+}
+// The lab analyst who takes raw-water samples: lab analysts work days, so the first on the roster.
+const samplerOf = (ont) => ont.list("Person", (x) => x.role === "lab_analyst").sort((a, b) => a.id.localeCompare(b.id))[0];
 
 export const ACTIONS = {
   create_work_order: def("act", "act", ["assetId", "title"], (ont, p, ctx) => {
@@ -162,12 +174,8 @@ export const ACTIONS = {
     if (ont.list("Execution", (e) => e.workOrderId === wo.id && e.state === "running").length) throw new Error(`${wo.id} already has a running job`);
     const proc = currentProcedure(ont.list("Procedure"), asset && asset.template);
     if (!proc) throw new Error(`no released procedure for ${wo.id}`);
-    // performance data: the person, their own supervisor and engineers (the manager sees everything)
-    const audience = [...new Set([p.personId, ont.get(p.personId).supervisorId, ...ont.list("Person", (x) => x.clearance === "engineer").map((x) => x.id)].filter(Boolean))];
-    const ex = create(ont, { id: nextId("EXE"), type: "Execution", workOrderId: wo.id, assetId: wo.assetId, personId: p.personId, procedureId: proc.id, procedureVersion: proc.version, startedAt: ctx.now(), finishedAt: null, state: "running", audience,
-      steps: proc.steps.map((s) => ({ step: s.step, state: "todo", at: null, minutes: null, value: null, readingId: null, note: null })) }, [["FOR", wo.id], ["FOLLOWS", proc.id], ["BY", p.personId]]);
-    const undoWo = setProps(ont, wo.id, { state: "in_progress" });
-    return { objects: [ex.id, wo.id], revert: () => { setProps(ont, ex.id, { state: "cancelled" }); undoWo(); } };
+    const { ex, revert } = openExecution(ont, wo, p.personId, proc, ctx.now());
+    return { objects: [ex.id, wo.id], revert };
   }),
   complete_step: def("act", "act", ["executionId", "step"], (ont, p, ctx) => {
     const ex = ont.get(p.executionId);
@@ -188,6 +196,10 @@ export const ACTIONS = {
       if (part.band) inBand = bandCheck(part, value).inBand;
       readingId = create(ont, { id: nextId("RDG"), type: "Reading", targetId: part.id, assetId: ex.assetId, measure: need.measure, value, unit: need.unit, workOrderId: ex.workOrderId, executionId: ex.id, at: ctx.now(), source: "field" }, [["OF", part.id]]).id;
     }
+    // a reading on a sampling round for a satellite detection is also the Sample that confirms or rejects it (Region design §5.4)
+    const wo = ont.get(ex.workOrderId), det = need && wo && String(wo.source || "").startsWith("GEO-") ? ont.get(wo.source) : null;
+    const sampleId = det ? create(ont, { id: nextId("SMP-G"), type: "Sample", point: "Raw water", processUnitId: "PU-intake", zoneId: "Z01", analyte: need.measure, value, limit: null, unit: need.unit, takenAt: ctx.now(), compliant: null, response: null, detectionId: det.id, executionId: ex.id }, [["FOR", det.id]]).id : null;
+    const undoDet = sampleId ? setProps(ont, det.id, { sampleIds: [...(det.sampleIds || []), sampleId] }) : null;
     const prevAt = [...ex.steps].reverse().find((s) => s.at)?.at || ex.startedAt;
     const minutes = Math.round((Date.parse(ctx.now()) - Date.parse(prevAt)) / 60000);
     const steps = ex.steps.map((s) => (s.step === next.step ? { ...s, state: "done", at: ctx.now(), minutes, value, inBand, readingId, note: p.note ? String(p.note) : null } : s));
@@ -199,9 +211,10 @@ export const ACTIONS = {
       if (doneSteps[doneSteps.length - 1].step !== next.step) throw new Error(`reverse the later steps of ${ex.id} first`);
       ont.upsert({ id: ex.id, type: "Execution", state: "running", finishedAt: null, steps: now.steps.map((s) => (s.step === next.step ? { ...s, state: "todo", at: null, minutes: null, value: null, inBand: null, readingId: null, note: null } : s)) });
       if (readingId) setProps(ont, readingId, { state: "withdrawn" });
+      if (sampleId) { setProps(ont, sampleId, { state: "withdrawn" }); undoDet(); }
       if (undoWo) undoWo();
     };
-    return { objects: [ex.id, ...(readingId ? [readingId] : []), ...(last ? [ex.workOrderId] : [])], revert };
+    return { objects: [ex.id, ...(readingId ? [readingId] : []), ...(sampleId ? [sampleId] : []), ...(last ? [ex.workOrderId] : [])], revert };
   }),
   raise_issue: def("act", "act", ["title"], (ont, p, ctx) => {
     const assetId = p.assetId || (p.partId && ont.get(p.partId).assetId) || null;
@@ -259,6 +272,33 @@ export const ACTIONS = {
     return { objects: [prj.id], revert: () => { setMs({ confirmedAt: null, confirmedBy: null }); for (const id of claims) ont.upsert({ id, type: "ProgressClaim", confirmed: false }); } };
   }, "supervisor"),
   // The works number's outbound side. One reply per inbound message; only Project Watch posts to a group.
+  // ---------- Geo Watch (Region design §5.4): detections stay suggested until a person confirms them with a sample ----------
+  record_detection: def("act", "act", ["sceneId", "aoiId", "kind", "z"], (ont, p, ctx) => {
+    const d = create(ont, { id: nextId("GEO"), type: "GeoDetection", sceneId: p.sceneId, aoiId: p.aoiId, kind: p.kind, index: p.index || null, z: p.z, confidence: p.confidence ?? null, cloudPct: p.cloudPct ?? null,
+      status: "suggested", reviewedBy: null, reviewedAt: null, sampleIds: [], zoneId: null, at: ctx.now(), note: "index, not calibrated" }, [["SEEN_IN", p.sceneId], ["IN", p.aoiId]]);
+    return { objects: [d.id], revert: () => setProps(ont, d.id, { status: "withdrawn" }) };
+  }),
+  propose_dose_change: def("act", "propose", ["chemicalId", "change"], (ont, p, ctx) => {
+    const r = create(ont, { id: nextId("DCH"), type: "DoseChange", chemicalId: p.chemicalId, change: String(p.change), reason: p.reason ? String(p.reason) : null, detectionId: p.detectionId || null, state: "requested", at: ctx.now() }, [["FOR", p.chemicalId]]);
+    return { objects: [r.id], revert: () => setProps(ont, r.id, { state: "withdrawn" }) };
+  }),
+  start_sampling_round: def("act", "propose", ["detectionId"], (ont, p, ctx) => {
+    const det = ont.get(p.detectionId), who = samplerOf(ont), point = ont.get("AST-SMP-RAW");
+    const proc = currentProcedure(ont.list("Procedure"), point && point.template);
+    if (!who || !proc) throw new Error("no lab analyst or no released sampling procedure");
+    const wo = create(ont, { id: nextId("WO-N"), type: "WorkOrder", assetId: point.id, title: `Raw-water grab sample for ${det.id}`, kind: "sampling", priority: "P2", state: "scheduled", requested: ctx.now(), assigneeId: who.id, source: det.id }, [["TARGETS", point.id], ["ASSIGNED_TO", who.id]]);
+    const { ex, revert } = openExecution(ont, wo, who.id, proc, ctx.now());
+    const st = proc.steps[0], area = ont.get(det.aoiId);
+    const msg = ACTIONS.send_message.apply(ont, { channelId: `CHN-${who.id}`, text: `Sampling round ${wo.id}: satellite ${det.kind} suggested in the ${area ? area.name.toLowerCase() : det.aoiId} (${det.sceneId}, index not calibrated). Step 1/${proc.steps.length}: ${st.text}. Reply with the turbidity in NTU.` }, ctx);
+    return { objects: [wo.id, ex.id, ...msg.objects], revert: () => { revert(); setProps(ont, wo.id, { state: "cancelled" }); } };
+  }),
+  review_detection: def("act", "human", ["detectionId", "verdict"], (ont, p, ctx) => {
+    const d = ont.get(p.detectionId);
+    if (!["confirmed", "rejected"].includes(p.verdict)) throw new Error("verdict must be confirmed or rejected");
+    if (d.status !== "suggested") throw new Error(`${d.id} is already ${d.status}`);
+    if (p.verdict === "confirmed" && !(d.sampleIds || []).length) throw new Error("confirm a detection with a sample attached");
+    return { objects: [d.id], revert: setProps(ont, d.id, { status: p.verdict, reviewedBy: actorId(ctx), reviewedAt: ctx.now() }) };
+  }, "operator"),
   send_message: def("notify", "act", ["channelId", "text"], (ont, p, ctx) => {
     const ch = ont.get(p.channelId);
     if (ch.groupName && ctx.actor.kind === "agent" && ctx.actor.id !== "Project Watch") throw new Error("only Project Watch posts to a group");

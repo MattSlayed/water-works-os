@@ -76,8 +76,17 @@ export function makeScenes({ seed = 7, historyFrom = "2025-10-01T00:00:00Z", win
       if (mission === "S1" && a === "AOI-DAM") stats[a].waterAreaKm2 = r4(5.8 + 0.08 * (hash(`${id}|area`, seed) * 2 - 1));
     }
     const scene = { id, type: "Scene", mission, acquiredAt: new Date(t).toISOString(), cloudPct, usable, stats, inWindow: t >= w0, zoneId: null };
+    // In the telemetry window the only signal is the plume: other window scenes are held within 1.5σ of their baseline,
+    // because the spring rise in turbidity would otherwise outrun a 90-day baseline and raise false detections.
+    const plumeScene = id === idFor("S2", w0 + PLUME.sceneDay * DAY + 8 * 3600000);
+    if (t >= w0 && mission === "S2" && !plumeScene) {
+      for (const a of AOIS) for (const ix of ["ndti", "ndci"]) {
+        const b = baseline(scenes, a, ix, scene.acquiredAt);
+        if (b && b.std && stats[a][ix].mean > b.mean + 1.5 * b.std) stats[a][ix] = stat(b.mean + 1.5 * b.std, 0.01, AREA_M2[a], validPct);
+      }
+    }
     // The plume scene: turbid water in the inflow arm at z = 2.6 against its own baseline; the rest of the dam at its usual level.
-    if (id === idFor("S2", w0 + PLUME.sceneDay * DAY + 8 * 3600000)) {
+    if (plumeScene) {
       for (const a of AOIS) {
         const b = baseline(scenes, a, "ndti", scene.acquiredAt);
         if (b) stats[a].ndti = stat(a === "AOI-INFLOW" ? b.mean + 2.6 * b.std : b.mean, 0.01, AREA_M2[a], validPct);

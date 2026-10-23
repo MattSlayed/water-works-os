@@ -7,10 +7,10 @@ import { competenceCheck } from "../src/functions.mjs";
 
 const mgr = { id: "P-001", clearance: "manager" };
 
-test("catalogue has the 14 PRD agents and the 4 workforce agents, with triggers, tools and autonomy", () => {
-  assert.equal(AGENT_SPECS.length, 18);
+test("catalogue has the 14 PRD agents, the 4 workforce agents and Geo Watch, with triggers, tools and autonomy", () => {
+  assert.equal(AGENT_SPECS.length, 19);
   const names = AGENT_SPECS.map((s) => s.name);
-  for (const n of ["Shift Handover", "Process Watch", "Asset Watch", "Maintenance Triage", "Work Pack", "Parts Readiness", "Scheduler", "Technician Copilot", "Debrief", "Shift Cover", "Permit Guard", "Drop Pack", "Ask", "Tag Matcher", "Chat Intake", "Scribe", "Project Watch", "Procedure Steward"]) {
+  for (const n of ["Shift Handover", "Process Watch", "Asset Watch", "Maintenance Triage", "Work Pack", "Parts Readiness", "Scheduler", "Technician Copilot", "Debrief", "Shift Cover", "Permit Guard", "Drop Pack", "Ask", "Tag Matcher", "Chat Intake", "Scribe", "Project Watch", "Procedure Steward", "Geo Watch"]) {
     assert.ok(names.includes(n), n);
   }
   for (const s of AGENT_SPECS) {
@@ -22,7 +22,7 @@ test("Asset Watch alerts on HLP-B and not on HLP-A", () => {
   const sys = createSystem({ seed: 7 });
   const run = sys.runtime.run("Asset Watch", { actingUser: mgr, chain: false });
   assert.equal(run.status, "completed");
-  const alerts = sys.ont.list("Alert");
+  const alerts = sys.ont.list("Alert", (a) => a.assetId); // Geo Watch's detection alerts are not on an asset
   const tags = alerts.map((a) => sys.ont.get(a.assetId).positionTag);
   assert.ok(tags.includes("HLP-B"), tags.join());
   assert.ok(!tags.includes("HLP-A"));

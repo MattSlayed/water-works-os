@@ -22,5 +22,7 @@ export function createSystem({ seed = 7 } = {}) {
   const copilot = createCopilot({ ont, tel, actions, runtime });
   const channels = createChannels({ ont, tel, actions, runtime, copilot, audit });
   const plant = createPlantService({ ont, tel, actions, audit });
+  // scenes already processed when the shift starts have been through Geo Watch (Region design §5.4)
+  runtime.run("Geo Watch", { actingUser: { id: "SYSTEM", kind: "person", clearance: "manager", role: "system" }, trigger: { kind: "event", on: "Scene ingested" }, chain: false });
   return { seed, ont, tel, trackers, audit, actions, runtime, copilot, channels, plant };
 }

@@ -278,6 +278,16 @@ export function generateWorks(seed = 7) {
     add({ id, type: "Procedure", template: tpl, documentId: docsByTemplate[tpl], title: `${t.label}: inspection and overhaul`, version: 3, state: "released", steps, releasedBy: "P-001", releasedAt: "2025-02-01T00:00:00Z", reason: "Converted from SOP revision C" }, "SYNTH-DOCS");
     link(id, "PART_OF", docsByTemplate[tpl]);
   }
+  // The raw-water sample point at the intake jetty and its one-step round (Region design §5.4): Geo Watch's sampling
+  // rounds run on the existing job machinery, so the reading needs a part and a released procedure.
+  {
+    add({ id: "AST-SMP-RAW", type: "Asset", name: "Raw-water sample point (intake jetty)", template: "raw_sampling", assetClass: "Sample point", zoneId: "Z01", hero: false, criticality: "C", state: "in service" }, "SYNTH-ERP");
+    add({ id: "PRT-SMP-RAW-01", type: "Part", assetId: "AST-SMP-RAW", name: "Grab sample", band: null }, "SYNTH-ERP");
+    link("AST-SMP-RAW", "HAS_PART", "PRT-SMP-RAW-01");
+    const step = { id: "PRC-RAW_SAMPLING-v1-S01", step: 1, text: "Take a raw-water grab sample at the intake jetty and measure its turbidity", intrusive: false, partNames: ["Grab sample"], hazard: "Working near water", documentId: null,
+      requires: { permit: false, isolation: false, reading: { measure: "turbidity", unit: "NTU", partName: "Grab sample" } }, expectedMinutes: 20 };
+    add({ id: "PRC-RAW_SAMPLING-v1", type: "Procedure", template: "raw_sampling", documentId: null, title: "Raw-water grab sample", version: 1, state: "released", steps: [step], releasedBy: "P-001", releasedAt: "2025-02-01T00:00:00Z", reason: "Raw-water sampling round (Region design §5.4)" }, "SYNTH-DOCS");
+  }
 
   // Filters and process sensors
   for (let f = 1; f <= 12; f++) {

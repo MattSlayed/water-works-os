@@ -4,6 +4,7 @@
 // Claude (src/llm.mjs). Upgrade path: run each spec through the Claude Agent SDK with the same tool wrapper.
 import { LEVELS } from "./actions.mjs";
 import * as F from "./functions.mjs";
+import { baseline } from "./scenes.mjs";
 
 const v = (s) => ({ version: "1.0.0", owner: "reliability_engineer", ...s });
 export const AGENT_SPECS = [
@@ -24,6 +25,7 @@ export const AGENT_SPECS = [
   v({ name: "Scribe", purpose: "Write the paperwork from what happened: job cards, issue close-outs and weekly project reports; submit only with consent", trigger: { kind: "event", on: "Job finished, issue done, or weekly for a project" }, tools: ["draft_document", "submit_document", "send_message", "notify"], autonomy: { draft_document: "act", submit_document: "act", send_message: "act", notify: "act" } }),
   v({ name: "Project Watch", purpose: "Keep projects and contracts visible: flag quiet ones daily and post a weekly status to the project group", trigger: { kind: "schedule", every: "daily; Fridays from 15:00 for the weekly status" }, tools: ["send_message", "notify"], autonomy: { send_message: "act", notify: "act" } }),
   v({ name: "Procedure Steward", purpose: "Point engineers at procedure steps that run long or collect notes and issues", trigger: { kind: "schedule", every: "weekly" }, tools: ["notify"], autonomy: { notify: "act" } }),
+  v({ name: "Geo Watch", purpose: "Watch the dam and catchment in each new scene; raise and triage index anomalies and extent changes; ask for a raw-water sample", trigger: { kind: "event", on: "Scene ingested" }, tools: ["record_detection", "raise_alert", "propose_dose_change", "start_sampling_round", "notify"], autonomy: { record_detection: "act", raise_alert: "act", propose_dose_change: "propose", start_sampling_round: "propose", notify: "act" } }),
   v({ name: "Tag Matcher", purpose: "Match historian tags to positions and report unmatched keys", trigger: { kind: "event", on: "Connector import" }, tools: ["draft_document"], autonomy: { draft_document: "act" } })
 ];
 
@@ -144,7 +146,7 @@ const LOGIC = {
         let lead = `Step ${next.step} done.`, out = "recorded";
         if (need) {
           const part = ctx.list("Part", (p) => p.assetId === ex.assetId && p.name === need.partName)[0];
-          const b = ctx.fn("bandCheck", part, f.value);
+          const b = part && part.band ? ctx.fn("bandCheck", part, f.value) : { inBand: true, finding: `${need.measure} ${f.value} ${need.unit} recorded` };
           if (b.inBand) lead += ` ${b.finding}.`;
           else {
             const d = ctx.act("raise_deviation", { targetId: part.id, finding: b.finding, disposition: "repair or replace; engineer to decide", assetId: ex.assetId });
@@ -509,6 +511,42 @@ const LOGIC = {
       ctx.act("notify", { to: engineers, message: `${pr.title} v${pr.version} may need revising: ${lines.join(" · ")}.`, aboutId: pr.id });
     }
   },
+  // Region design §5.4: each scene in the telemetry window, once it is processed (3 h after acquisition). A detection is
+  // suggested, never confirmed here; a person confirms it with a raw-water sample.
+  "Geo Watch"(ctx) {
+    const scenes = ctx.list("Scene").sort((a, b) => a.acquiredAt.localeCompare(b.acquiredAt));
+    const due = scenes.filter((s) => s.inWindow && Date.parse(s.acquiredAt) + 3 * 3600000 <= Date.parse(ctx.now));
+    const supervisors = ctx.list("Person", (p) => p.role === "shift_supervisor").map((p) => p.id);
+    const LABEL = { plume: "Turbid plume", bloom: "Possible algal bloom", extent_change: "Water extent change" };
+    for (const s of due) {
+      for (const aoi of Object.keys(s.stats)) {
+        if (!s.usable[aoi]) { ctx.think(`${s.id} ${aoi}: ${s.cloudPct}% cloud, not usable; no reading of clear water`); continue; }
+        const found = [];
+        if (s.mission === "S2") for (const [index, kind] of [["ndti", "plume"], ["ndci", "bloom"]]) {
+          const b = baseline(scenes, aoi, index, s.acquiredAt);
+          if (b && b.std && (s.stats[aoi][index].mean - b.mean) / b.std >= 2) found.push({ kind, index, z: (s.stats[aoi][index].mean - b.mean) / b.std });
+        }
+        if (s.mission === "S1" && s.stats[aoi].waterAreaKm2) {
+          const prior = scenes.filter((x) => x.mission === "S1" && x.acquiredAt < s.acquiredAt && Date.parse(x.acquiredAt) >= Date.parse(s.acquiredAt) - 90 * 86400000 && x.stats[aoi] && x.stats[aoi].waterAreaKm2).map((x) => x.stats[aoi].waterAreaKm2);
+          const m = prior.reduce((a, b) => a + b, 0) / (prior.length || 1), ch = prior.length >= 3 ? (s.stats[aoi].waterAreaKm2 - m) / m : 0;
+          if (Math.abs(ch) >= 0.05) found.push({ kind: "extent_change", index: "waterAreaKm2", z: Math.round(ch * 1000) / 10 });
+        }
+        for (const f of found) {
+          if (ctx.list("GeoDetection", (d) => d.sceneId === s.id && d.aoiId === aoi && d.kind === f.kind).length) continue;
+          const z = Math.round(f.z * 10) / 10, confidence = Math.round(Math.min(0.95, f.kind === "extent_change" ? 0.6 : 0.5 + 0.15 * (f.z - 2)) * (s.cloudPct > 30 ? 0.9 : 1) * 100) / 100;
+          const d = ctx.act("record_detection", { sceneId: s.id, aoiId: aoi, kind: f.kind, index: f.index, z, confidence, cloudPct: s.cloudPct });
+          if (d.status !== "done") continue;
+          const id = d.objects[0], where = (ctx.get(aoi) || {}).name || aoi, evidence = [s.id, aoi];
+          ctx.think(`${s.id} ${where}: ${f.index} ${f.kind === "extent_change" ? `${z}% change` : `z ${z}`} against the 90-day baseline; cloud ${s.cloudPct ?? "n/a"}%`);
+          ctx.act("raise_alert", { targetId: id, title: `${LABEL[f.kind]} in the ${where.toLowerCase()} (${f.index.toUpperCase()} ${f.kind === "extent_change" ? `${z}%` : `z ${z}`}; index, not calibrated; suggested)`, severity: "medium", evidence });
+          if (f.kind === "plume") ctx.act("propose_dose_change", { chemicalId: "CHEM-COAG", change: "Raise the coagulant dose ahead of turbid raw water reaching the intake", reason: `Suggested plume ${id}`, detectionId: id }, { evidence });
+          ctx.act("start_sampling_round", { detectionId: id }, { evidence });
+          ctx.act("notify", { to: supervisors, message: `${LABEL[f.kind]} suggested in the ${where.toLowerCase()} on ${s.id}. A raw-water sampling round is waiting for approval.`, aboutId: id });
+        }
+      }
+    }
+  },
+
   "Tag Matcher"(ctx) {
     const unmatched = [];
     for (const s of ctx.list("Sensor", (x) => x.assetId)) {
@@ -523,7 +561,7 @@ const addDays = (d, n) => new Date(Date.parse(d) + n * 86400000).toISOString().s
 
 export function dropPackEvidence(ctx) {
   const items = [];
-  const samples = ctx.list("Sample");
+  const samples = ctx.list("Sample", (s) => s.point === "Final water"); // raw-water samples (Geo Watch) are not compliance results
   const bad = samples.filter((s) => !s.compliant);
   const pct = samples.length ? Math.round(((samples.length - bad.length) / samples.length) * 1000) / 10 : 0;
   items.push({ requirementId: "REQ-BD-QUAL", status: pct >= 97 ? "met" : "gap", detail: `${pct}% of ${samples.length} final-water results within SANS 241 limits.`, refs: bad.map((s) => s.id) });

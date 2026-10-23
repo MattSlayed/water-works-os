@@ -378,8 +378,12 @@ export function createServer(sys) {
   // Plant clock: scheduled agents run every 15 plant minutes, as the system user; Project Watch every plant hour
   // (it posts the weekly status from Friday 15:00), Procedure Steward each plant day (it notifies once a week).
   let since = 0, hour = tel.now().slice(0, 13), day = tel.now().slice(0, 10);
+  // a scene is processed 3 h after acquisition; Geo Watch runs when one becomes due (Region design §5.4)
+  const dueScenes = () => ont.list("Scene", (s) => s.inWindow && Date.parse(s.acquiredAt) + 3 * 3600000 <= Date.parse(tel.now())).length;
   function tick(minutes) {
+    const before = dueScenes();
     tel.tick(minutes);
+    if (dueScenes() > before) runtime.run("Geo Watch", { actingUser: SYSTEM_USER, trigger: { kind: "event", on: "Scene ingested" } });
     if (tel.now().slice(0, 13) !== hour) { hour = tel.now().slice(0, 13); runtime.run("Project Watch", { actingUser: SYSTEM_USER, trigger: { kind: "schedule" } }); }
     if (tel.now().slice(0, 10) !== day) { day = tel.now().slice(0, 10); runtime.run("Procedure Steward", { actingUser: SYSTEM_USER, trigger: { kind: "schedule" } }); }
     since += minutes;
