@@ -6,6 +6,8 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createSystem } from "./system.mjs";
 import { dropPackEvidence } from "./agents.mjs";
+import { catalogueAllows } from "./actions.mjs";
+import { jobBrief, correctionsFor } from "./brief.mjs";
 import { runEvals } from "./evals.mjs";
 import { rank } from "./ontology.mjs";
 import { llmEnabled } from "./llm.mjs";
@@ -119,8 +121,34 @@ export function createServer(sys) {
       people,
       chemicals: view.list("Chemical"),
       workOrders: view.list("WorkOrder", (w) => !["closed", "cancelled"].includes(w.state)),
-      drafts: view.list("Draft").slice(-10).reverse()
+      drafts: view.list("Draft").slice(-10).reverse(),
+      // spec changes waiting for the site manager (job brief design §8), for managers only
+      specChanges: rank(v.clearance) >= rank("manager") ? ont.list("Proposal", (p) => p.action === "update_spec" && p.state === "open").length : null
     };
+  }
+
+  // May this viewer read a source's own text? Mail, files and sheets by IT's catalogue for their role; a chat message
+  // or a document by whether they can see it. Anyone who can see a spec sees its citations (job brief design §4.2).
+  const readsSource = (v, src) => {
+    if (!src) return false;
+    if (["m365.mail", "m365.files", "google.sheets"].includes(src.kind)) return catalogueAllows(ont, { kind: src.kind, op: "read", role: (ont.get(v.id) || {}).role }).ok;
+    return !!ont.view(v).get(src.id);
+  };
+  const cite = (v, c) => ({ id: c.id, sourceId: c.source.id, title: c.source.title, kind: c.source.kind, at: c.source.at, authorId: c.source.authorId, authority: c.authority, grade: c.grade, verdict: c.verdict, reason: c.reason,
+    lo: c.lo, hi: c.hi, target: c.target, unit: c.unit, text: readsSource(v, c.source) ? c.source.text : null });
+  const withInherited = (cors, projectId) => cors.map((c) => ({ ...c, inheritedFrom: c.fromId && c.fromId !== projectId && (ont.get(c.fromId) || {}).type === "Project" ? c.fromId : null }));
+  function specsPayload(v, assetId) {
+    const view = ont.view(v), asset = view.get(assetId);
+    if (!asset) throw new HttpError(404, "not found");
+    const specs = view.list("Spec", (x) => x.assetId === assetId).map((sp) => {
+      const p = ont.list("Proposal", (x) => x.action === "update_spec" && x.state === "open" && x.params.specId === sp.id)[0];
+      const c = p && ont.get(p.params.candidateId);
+      return { ...sp, pending: p ? { proposalId: p.id, lo: p.params.lo, hi: p.params.hi, target: p.params.target, why: p.params.why, flag: p.params.flag || null,
+          sourceTitle: c ? c.source.title : null, at: c ? c.source.at : null, text: c && readsSource(v, c.source) ? c.source.text : null } : null,
+        sources: ont.list("SpecCandidate", (x) => x.specId === sp.id && ["supports", "winner"].includes(x.verdict)).map((x) => cite(v, x)) };
+    });
+    const open = view.list("WorkOrder", (w) => w.assetId === assetId && !["closed", "cancelled"].includes(w.state)).sort((a, b) => String(b.planned).localeCompare(String(a.planned)))[0];
+    return { asset: { id: asset.id, positionTag: asset.positionTag, template: asset.template || null }, specs, corrections: withInherited(correctionsFor(view, asset), null), candidates: view.list("SpecCandidate", (x) => x.subject === assetId).map((x) => cite(v, x)), workOrderId: open ? open.id : null };
   }
 
   function mapPayload(v) {
@@ -313,6 +341,12 @@ export function createServer(sys) {
       try { return replay(sys, b.spec); } catch (e) { throw new HttpError(403, e.message); }
     }],
     // IT's catalogue: IT administrators edit it (through the action route); the works manager reads it
+    ["GET", /^\/api\/assets\/([^/]+)\/specs$/, (v, m) => specsPayload(v, decodeURIComponent(m[1]))],
+    ["GET", /^\/api\/workorders\/([^/]+)\/brief$/, (v, m) => {
+      const b = jobBrief(ont.view(v), decodeURIComponent(m[1]));
+      if (!b) throw new HttpError(404, "not found");
+      return { lines: b.lines, full: b.full };
+    }],
     ["POST", /^\/api\/assets\/([^/]+)\/recheck-specs$/, (v, m) => {
       const id = decodeURIComponent(m[1]);
       if (!ont.view(v).get(id)) throw new HttpError(404, "not found");
@@ -384,7 +418,16 @@ export function createServer(sys) {
     ["POST", /^\/api\/copilot\/([^/]+)\/ask$/, async (v, m, url, req) => {
       const s = copilot.get(decodeURIComponent(m[1]));
       if (!s || s.user.id !== v.id) throw new HttpError(404, "session not found");
-      return copilot.ask(s.id, (await body(req)).question);
+      const question = (await body(req)).question;
+      // "brief me on DP-2": the brief for that asset's newest open job, from the asker's view (job brief design §6)
+      const bm = String(question || "").match(/^brief me on (\S+)/i);
+      if (bm) {
+        const view = ont.view(v), a = view.list("Asset", (x) => x.positionTag && x.positionTag.toLowerCase() === bm[1].replace(/[?.!]$/, "").toLowerCase())[0];
+        const wo = a && view.list("WorkOrder", (w) => w.assetId === a.id && !["closed", "cancelled"].includes(w.state)).sort((x, y) => String(y.planned).localeCompare(String(x.planned)))[0];
+        const b = wo && jobBrief(view, wo.id);
+        return { answer: b && b.lines.length ? b.lines.join("\n") : a ? `No open job on ${a.positionTag} to brief you on.` : `I do not know ${bm[1]}.`, citations: wo ? [{ id: wo.id, label: wo.title }] : [], lookHere: [] };
+      }
+      return copilot.ask(s.id, question);
     }],
     ["POST", /^\/api\/copilot\/([^/]+)\/tag$/, async (v, m, url, req) => {
       const s = copilot.get(decodeURIComponent(m[1]));
@@ -445,7 +488,12 @@ export function createServer(sys) {
       const view = ont.view(v), id = decodeURIComponent(m[1]);
       const p = view.get(id);
       if (!p || p.type !== "Project") throw new HttpError(404, "not found");
-      return { project: p, status: projectStatus(p, ont.list("ProgressClaim"), ont.list("Issue"), tel.now()), claims: view.list("ProgressClaim", (c) => c.projectId === id), issues: view.list("Issue", (i) => i.projectId === id), channel: view.get(p.channelId) };
+      // corrections that reach the project's assets, and its organisations' own (job brief design §4.5)
+      const cors = new Map();
+      for (const aid of new Set([...(p.assetIds || []), p.assetId].filter(Boolean))) { const a = view.get(aid); if (a) for (const c of correctionsFor(view, a)) cors.set(c.id, c); }
+      for (const c of view.list("Correction", (x) => x.scope && [p.clientOrgId, p.contractorOrgId].includes(x.scope.orgId))) cors.set(c.id, c);
+      return { project: p, status: projectStatus(p, ont.list("ProgressClaim"), ont.list("Issue"), tel.now()), claims: view.list("ProgressClaim", (c) => c.projectId === id), issues: view.list("Issue", (i) => i.projectId === id), channel: view.get(p.channelId),
+        corrections: withInherited([...cors.values()], id) };
     }],
     ["GET", /^\/api\/performance\/person\/([^/]+)$/, (v, m) => {
       const id = decodeURIComponent(m[1]), p = ont.get(id);

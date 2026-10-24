@@ -74,6 +74,26 @@ const SHARE = { 0.25: "¼", 0.5: "½", 0.0833: "1/12", 0.3333: "⅓" };
 const plantStates = (d) => Object.fromEntries([...d.machines.filter((m) => m.positionId).map((m) => [m.positionId, { state: m.state, alerts: m.alerts }]), ...d.samplePoints.map((sp) => [sp.id, { reading: sp.reading }])]);
 
 // ---------- views ----------
+// ---------- job briefs and specs (job brief design §8) ----------
+const BRIEF_SECTIONS = { target: "Target", corrections: "Corrections that apply", lastTime: "Last time", open: "Open now", watchOuts: "Watch-outs", changed: "Changed since the last job here" };
+const pendingText = (t) => /waits for the site manager|^Waiting:/.test(t);
+function briefHtml(full) {
+  const parts = Object.entries(BRIEF_SECTIONS).filter(([k]) => full && full[k] && full[k].length)
+    .map(([k, label]) => `<h3 class="meta" style="margin:10px 0 4px">${label}</h3><ul class="list">${full[k].map((x) => `<li${pendingText(x.text) ? ' style="color:var(--amber)"' : ""}>${esc(x.text)} <span class="meta">${x.refs.map((r) => link(r)).join(" ")}</span></li>`).join("")}</ul>`);
+  return parts.join("") || `<p class="empty">Nothing to brief on this job.</p>`;
+}
+const correctionsHtml = (cs) => (cs && cs.length ? `<ul class="list">${cs.map((c) => `<li>${esc(c.line)} <span class="meta">${link(c.id)}${c.inheritedFrom ? ` · from ${esc(c.inheritedFrom)}` : ""}</span></li>`).join("")}</ul>` : `<p class="empty">No corrections.</p>`);
+function specsHtml(d) {
+  if (!d) return `<p class="empty">No specs for this asset.</p>`;
+  const rows = d.specs.map((s) => `<section style="margin-bottom:12px"><div class="row"><b>${esc(s.measure)}</b><span class="meta">v${esc(s.version)} · confirmed by ${link(s.confirmedBy)}</span></div>
+    <p style="margin:4px 0">${esc(s.lo)}–${esc(s.hi)} ${esc(s.unit)}${s.condition ? ` · until ${esc(s.condition)}` : ""} · ${esc((s.sourceRefs[0] || {}).title || "no source")}</p>
+    ${s.pending ? `<p style="color:var(--amber);margin:4px 0">Waiting for the site manager: ${esc(s.pending.lo)}–${esc(s.pending.hi)} ${esc(s.unit)} from ${esc(s.pending.sourceTitle || "a source")}${s.pending.at ? `, ${esc(String(s.pending.at).slice(0, 10))}` : ""}${s.pending.text ? ` · “${esc(s.pending.text)}”` : ""}${s.pending.flag ? ` · ${esc(s.pending.flag)}` : ""}</p>` : ""}
+    ${s.sources.length ? `<p class="meta">Agreeing sources: ${s.sources.map((x) => `${esc(x.title)} (${esc(x.grade.toLowerCase())})`).join(" · ")}</p>` : ""}
+    ${s.history.length ? `<details><summary class="meta">History · ${s.history.length}</summary><ul class="list">${s.history.slice().reverse().map((h) => `<li>v${esc(h.version)} ${esc(h.lo)}–${esc(h.hi)} · ${esc(h.reason)}</li>`).join("")}</ul></details>` : ""}</section>`).join("");
+  return `${rows || `<p class="empty">No specs for this asset.</p>`}<button class="btn" id="recheck">Re-check sources</button>
+    <h3 class="meta" style="margin:12px 0 4px">Corrections · ${d.corrections.length}</h3>${correctionsHtml(d.corrections)}`;
+}
+
 const views = {
   async console() {
     const [c, m] = await Promise.all([api("/api/console"), api("/api/map")]);
@@ -83,7 +103,7 @@ const views = {
     const people = Object.entries(c.people).sort((a, b) => b[1].count - a[1].count).map(([z, p]) => `<li class="row"><span>${esc(z)} ${esc(m.zones.find((x) => x.id === z)?.name || "")}</span><span class="val">${p.count}</span></li>`).join("");
     const handover = c.drafts.find((d) => d.kind === "handover");
     view.innerHTML = `
-      <div class="row"><div><h2>01 / the works now</h2><h1>Riverbend works console</h1></div><span class="meta">demonstrable · synthetic data</span></div>
+      <div class="row"><div><h2>01 / the works now</h2><h1>Riverbend works console</h1></div><span class="meta">${c.specChanges != null ? `<a href="#/proposals">Spec changes waiting: ${esc(c.specChanges)}</a> · ` : ""}demonstrable · synthetic data</span></div>
       <section class="panel" aria-label="Process train" style="margin:12px 0"><div class="train">${train}</div></section>
       <div class="grid console">
         <div class="grid">
@@ -423,6 +443,8 @@ const views = {
 
   async asset(id) {
     const m = await api(`/api/assets/${encodeURIComponent(id)}/model`);
+    const specsD = await api(`/api/assets/${encodeURIComponent(id)}/specs`).catch(() => null);
+    const briefD = specsD && specsD.workOrderId ? await api(`/api/workorders/${encodeURIComponent(specsD.workOrderId)}/brief`).catch(() => null) : null;
     const a = m.asset;
     const groups = {};
     for (const p of m.parts) (groups[p.group] ||= []).push(p);
@@ -436,7 +458,7 @@ const views = {
           <div class="ctl"><label style="flex:1;display:flex;gap:8px;align-items:center">Explode <input id="ex" type="range" min="0" max="100" value="0" style="flex:1"></label>
           <button class="btn" id="iso">Isolate</button><button class="btn" id="loc">Locate</button><button class="btn" id="reset">Reset</button></div></section>
         <aside class="side">
-          <section class="panel"><div class="tabs" role="tablist"><button class="on" data-tab="part" role="tab">Part</button><button data-tab="tel" role="tab">Telemetry</button><button data-tab="proc" role="tab">Procedure</button></div><div id="tab"></div></section>
+          <section class="panel"><div class="tabs" role="tablist"><button class="on" data-tab="part" role="tab">Part</button><button data-tab="tel" role="tab">Telemetry</button><button data-tab="proc" role="tab">Procedure</button><button data-tab="brief" role="tab">Brief</button><button data-tab="specs" role="tab">Specs</button></div><div id="tab"></div></section>
           <section class="panel" aria-label="Technician Copilot"><h2 style="color:var(--violet)">Technician Copilot</h2><div class="chat" id="chat"><div class="msg">Select a part or ask what to check next.</div></div>
             <form id="ask" class="btns" style="flex-wrap:nowrap"><label class="sr" for="q">Ask the Copilot</label><input id="q" placeholder="What should I check next?" style="flex:1;background:var(--bg2);border:1px solid var(--line);padding:8px"><button class="btn primary">Ask</button></form></section>
         </aside>
@@ -453,12 +475,18 @@ const views = {
           <form id="tagf" style="margin-top:10px"><label class="field">Tag this part<textarea id="tnote" rows="2" required></textarea></label><label class="field">Reading${p.band ? ` (${esc(p.band.unit)})` : ""}<input id="tread" inputmode="decimal"></label><button class="btn primary">Save tag</button></form>`;
       },
       tel: () => m.sensors.map((s) => `<div style="margin-bottom:10px"><div class="row"><span>${esc(s.name)}</span><span class="val" style="color:${isAlarm(s) ? "var(--red)" : "inherit"}">${num(s.value)} ${esc(s.unit)}</span></div><div data-spark="${esc(s.id)}"></div></div>`).join("") || `<p class="empty">No sensors.</p>`,
+      brief: () => (briefD ? `<p class="meta">Before ${link(specsD.workOrderId)}</p>${briefHtml(briefD.full)}` : `<p class="empty">No open job on this asset to brief on.</p>`),
+      specs: () => specsHtml(specsD),
       proc: () => `<ol style="padding-left:18px;margin:0">${m.procedure.map((s) => `<li style="margin-bottom:6px">${esc(s.text)} ${s.intrusive ? pill("permit + isolation", "medium") : ""}</li>`).join("")}</ol>`
     };
     let tab = "part";
     const drawTab = async () => {
       $("#tab").innerHTML = tabs[tab]();
       if (tab === "tel") for (const el of view.querySelectorAll("[data-spark]")) { const t = await api(`/api/telemetry/${encodeURIComponent(el.dataset.spark)}?n=1440`); el.innerHTML = spark(t.values.filter((_, i) => i % 10 === 0), isAlarm(m.sensors.find((s) => s.id === el.dataset.spark))); }
+      const rc = $("#recheck");
+      if (rc) rc.addEventListener("click", async () => {
+        try { const r = await api(`/api/assets/${encodeURIComponent(id)}/recheck-specs`, { method: "POST" }); toast(r.proposals.length ? `${r.proposals.length} spec change(s) waiting for the site manager.` : "Sources checked: nothing new."); views.asset(id); } catch (e) { toast(e.message); }
+      });
       const f = $("#tagf");
       if (f) f.addEventListener("submit", async (e) => {
         e.preventDefault();
@@ -609,8 +637,28 @@ const views = {
 
   async proposals() {
     const ps = await api("/api/proposals");
-    const open = ps.filter((p) => p.state === "open"), done = ps.filter((p) => p.state !== "open");
+    const open = ps.filter((p) => p.state === "open" && p.action !== "update_spec"), done = ps.filter((p) => p.state !== "open");
+    // spec changes (job brief design §8): the winner beside every passed-over source; only the site manager acts
+    const specP = ps.filter((p) => p.state === "open" && p.action === "update_spec"), specData = {};
+    for (const p of specP) if (p.params.assetId && !specData[p.params.assetId]) specData[p.params.assetId] = await api(`/api/assets/${encodeURIComponent(p.params.assetId)}/specs`).catch(() => null);
+    const orgs = specP.length ? await api("/api/objects?type=Organisation").catch(() => []) : [];
+    const specCard = (p) => {
+      const d = specData[p.params.assetId], byId = Object.fromEntries((d ? d.candidates : []).map((c) => [c.id, c]));
+      const sp = d && d.specs.find((s) => s.id === p.params.specId), win = byId[p.params.candidateId], mine = state.me.id === p.approver;
+      return `<section class="panel" style="margin-bottom:12px"><div class="row"><b>${esc(d ? d.asset.positionTag : "")} ${esc(sp ? sp.measure.toLowerCase() : p.params.specId)}: ${sp ? `${esc(sp.lo)}–${esc(sp.hi)} → ` : ""}${esc(p.params.lo)}–${esc(p.params.hi)} ${esc(p.params.unit || "")}</b><span class="meta">${esc(p.id)} · ${link(p.params.assetId)}</span></div>
+        <p>${esc(p.params.why || "")}${p.params.flag ? ` <span style="color:var(--amber)">${esc(p.params.flag)}</span>` : ""}</p>${win && win.text ? `<blockquote class="meta">“${esc(win.text)}”</blockquote>` : ""}
+        <table><thead><tr><th>Passed over</th><th>Value</th><th>Why</th>${mine ? "<th>Wrong, not just older?</th>" : ""}</tr></thead><tbody>${p.params.passedOver.map((x) => { const c = byId[x.candidateId] || {}; return `<tr><td>${esc(x.title)}${c.text ? `<div class="meta">${esc(c.text)}</div>` : ""}</td><td>${esc(x.value ?? "unread")}</td><td>${esc(x.reason)}</td>${mine ? `<td>
+          <label><input type="checkbox" data-wrong="${esc(x.candidateId)}"> this source is wrong</label>
+          <select data-scope="${esc(x.candidateId)}" aria-label="Correction scope"><option value="asset">this asset</option><option value="template">this make and model</option>${orgs.map((o) => `<option value="org:${esc(o.id)}">this organisation: ${esc(o.name)}</option>`).join("")}</select>
+          <input data-note="${esc(x.candidateId)}" maxlength="100" placeholder="One-line note" aria-label="Correction note"></td>` : ""}</tr>`; }).join("")}</tbody></table>
+        ${mine ? `<label class="field">Reason (needed to edit or reject)<textarea rows="2" data-sreason="${esc(p.id)}"></textarea></label>
+          <div class="btns"><label>Low <input data-lo="${esc(p.id)}" value="${esc(p.params.lo)}" size="8"></label><label>High <input data-hi="${esc(p.id)}" value="${esc(p.params.hi)}" size="8"></label></div>
+          <div class="btns"><button class="btn primary" data-spec="approve" data-id="${esc(p.id)}">Confirm</button><button class="btn" data-spec="edit" data-id="${esc(p.id)}">Edit value</button><button class="btn" data-spec="reject" data-id="${esc(p.id)}">Reject</button></div>`
+          : `<p class="meta">Only the site manager confirms a spec change.</p>`}</section>`;
+    };
+    const unsure = Object.values(specData).flatMap((d) => (d ? d.candidates.filter((c) => c.grade === "AMBIGUOUS") : []));
     view.innerHTML = `<h2>06 / agents propose, people decide</h2><h1>Proposals</h1>
+      ${specP.length ? `<h2>Spec changes · ${specP.length}</h2>${specP.map(specCard).join("")}${unsure.length ? `<section class="panel" style="margin-bottom:12px"><h2>Read these yourself</h2><p class="meta">Triage could not read these, so it proposes nothing from them.</p><ul class="list">${unsure.map((c) => `<li>${esc(c.title)} <span class="meta">${esc(c.text || "")}</span></li>`).join("")}</ul></section>` : ""}` : ""}
       ${open.map((p) => `<section class="panel" style="margin-bottom:12px"><div class="row"><b>${esc(p.action)}</b><span class="meta">${esc(p.id)} · ${esc(p.actorId)}${p.runId ? ` · <a href="#/run/${esc(p.runId)}">${esc(p.runId)}</a>` : ""}</span></div>
         <pre>${esc(JSON.stringify(p.params, null, 2))}</pre>${p.evidence?.length ? `<p class="meta">Evidence: ${p.evidence.map((e) => esc(typeof e === "string" ? e : JSON.stringify(e))).join(" · ")}</p>` : ""}
         ${p.card ? `<dl class="kv"><dt>Expected effect</dt><dd>${esc(p.card.expectedEffect)}</dd><dt>Evidence age</dt><dd>${p.card.evidence.map((e) => `${esc(e.id)} ${e.ageMin == null ? "" : `(${esc(e.ageMin)} min old)`}`).join(" · ") || "none cited"}</dd>
@@ -620,6 +668,26 @@ const views = {
         <label class="field">Edited parameters (JSON, for Edit and approve)<textarea rows="2" data-params="${esc(p.id)}">${esc(JSON.stringify(p.params))}</textarea></label>
         <div class="btns"><button class="btn decide" data-verdict="approve" data-id="${esc(p.id)}">Approve</button><button class="btn decide" data-verdict="edit" data-id="${esc(p.id)}">Edit and approve</button><button class="btn decide" data-verdict="reject" data-id="${esc(p.id)}">Reject</button></div></section>`).join("") || `<p class="empty">Nothing is waiting for you.</p>`}
       <section class="panel"><h2>Resolved</h2><table><thead><tr><th>Proposal</th><th>Action</th><th>By agent</th><th>State</th><th>Resolved by</th></tr></thead><tbody>${done.map((p) => `<tr><td>${link(p.id)}</td><td>${esc(p.action)}</td><td>${esc(p.actorId)}</td><td>${pill(p.state)}</td><td>${esc(p.resolvedBy)}</td></tr>`).join("")}</tbody></table></section>`;
+    view.querySelectorAll("[data-spec]").forEach((b) => b.addEventListener("click", async () => {
+      const id = b.dataset.id, p = specP.find((x) => x.id === id), d = specData[p.params.assetId], verdict = b.dataset.spec;
+      const reason = view.querySelector(`[data-sreason="${CSS.escape(id)}"]`).value.trim();
+      const params = verdict === "edit" ? { lo: Number(view.querySelector(`[data-lo="${CSS.escape(id)}"]`).value), hi: Number(view.querySelector(`[data-hi="${CSS.escape(id)}"]`).value), target: null, candidateId: null } : undefined;
+      try {
+        await api(`/api/proposals/${encodeURIComponent(id)}/resolve`, { method: "POST", body: { verdict, reason, params } });
+        let made = 0;
+        if (verdict !== "reject") for (const po of p.params.passedOver) {
+          const box = view.querySelector(`[data-wrong="${CSS.escape(po.candidateId)}"]`);
+          if (!box || !box.checked) continue;
+          const c = d.candidates.find((x) => x.id === po.candidateId) || {}, sc = view.querySelector(`[data-scope="${CSS.escape(po.candidateId)}"]`).value;
+          const note = view.querySelector(`[data-note="${CSS.escape(po.candidateId)}"]`).value.trim();
+          const scope = sc === "asset" ? { assetId: p.params.assetId } : sc === "template" ? { template: d.asset.template } : { orgId: sc.slice(4) };
+          await api("/api/actions/record_correction", { method: "POST", body: { params: { line: (note || `${po.title} is wrong for ${d.asset.positionTag}.`).slice(0, 100), scope, wrongSourceRef: { kind: c.kind, id: c.sourceId }, wrongValue: po.value, fromId: id } } });
+          made++;
+        }
+        toast(`${id}: ${verdict}${made ? `, ${made} correction(s) recorded` : ""}`);
+        views.proposals();
+      } catch (e) { toast(e.message); }
+    }));
     view.querySelectorAll("[data-verdict]").forEach((b) => b.addEventListener("click", async () => {
       const id = b.dataset.id, reason = view.querySelector(`[data-reason="${CSS.escape(id)}"]`).value.trim();
       let params;
@@ -660,10 +728,11 @@ const views = {
   async object(id) {
     const o = await api(`/api/objects/${encodeURIComponent(id)}`);
     const ob = o.object;
+    const wb = ob.type === "WorkOrder" ? await api(`/api/workorders/${encodeURIComponent(ob.id)}/brief`).catch(() => null) : null;
     const props = Object.entries(ob).filter(([k]) => !["prov", "geom", "explode"].includes(k)).map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(typeof v === "object" ? JSON.stringify(v) : v)}</dd>`).join("");
     view.innerHTML = `<h2>${esc(ob.type)}</h2><h1>${esc(ob.name || ob.title || ob.id)}</h1>${ob.type === "Asset" && ob.template ? `<p><a class="btn primary" href="#/asset/${encodeURIComponent(ob.id)}">Open in the Asset Workbench</a></p>` : ""}${ob.type === "Alert" && ob.assetId ? `<p><button class="btn primary" data-rca="${esc(ob.id)}">Find root cause</button></p>` : ""}
       <div class="grid console"><section class="panel"><h2>Properties</h2><dl class="kv">${props}</dl><h2 style="margin-top:12px">Provenance</h2><dl class="kv">${Object.entries(ob.prov || {}).map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join("")}</dl></section>
-      <div class="grid"><section class="panel"><h2>Links · ${o.links.length}</h2><ul class="list">${o.links.map((l) => `<li>${l.dir === "out" ? "→" : "←"} <span class="mono">${esc(l.rel)}</span> ${l.other ? link(l.other.id, `${l.other.type} ${l.other.name}`) : ""}</li>`).join("") || `<li class="empty">None visible.</li>`}</ul></section>
+      <div class="grid">${wb ? `<section class="panel" aria-label="Brief"><h2>Brief before you start</h2>${briefHtml(wb.full)}</section>` : ""}<section class="panel"><h2>Links · ${o.links.length}</h2><ul class="list">${o.links.map((l) => `<li>${l.dir === "out" ? "→" : "←"} <span class="mono">${esc(l.rel)}</span> ${l.other ? link(l.other.id, `${l.other.type} ${l.other.name}`) : ""}</li>`).join("") || `<li class="empty">None visible.</li>`}</ul></section>
       ${o.sensors.length ? `<section class="panel"><h2>Live values</h2><ul class="list">${o.sensors.map((s) => `<li class="row"><span>${esc(s.name)}</span><span class="val" style="color:${isAlarm(s) ? "var(--red)" : "inherit"}">${num(s.value)} ${esc(s.unit)}</span></li>`).join("")}</ul></section>` : ""}
       ${o.runs.length ? `<section class="panel"><h2>Agents that read this</h2><ul class="list">${o.runs.map((r) => `<li><a href="#/run/${r.id}">${esc(r.agent)}</a> <span class="meta">${time(r.plantTime)}</span></li>`).join("")}</ul></section>` : ""}
       ${o.related.decisions.length ? `<section class="panel"><h2>Decisions</h2><ul class="list">${o.related.decisions.map((d) => `<li class="row"><span>${esc(d.action)} by ${esc(d.actorId)}${d.approvedBy ? ` · approved by ${esc(d.approvedBy)}` : ""}</span>${d.reversed ? pill("reversed", "rejected") : d.reversible ? `<button class="btn" data-reverse="${esc(d.id)}">Reverse</button>` : ""}</li>`).join("")}</ul></section>` : ""}
@@ -750,6 +819,7 @@ const views = {
         <div class="grid">
           <section class="panel" aria-label="Claims"><h2>Claims from the group · ${d.claims.length}</h2><ul class="list">${d.claims.slice().reverse().map((c) => `<li><div class="row"><b>${esc(c.milestoneId || "general")}</b>${c.confirmed ? pill("confirmed", "done") : pill("claim")}</div><div>${esc(c.text)}</div><div class="meta">${esc(c.by)} · ${time(c.at)}${c.evidence.length ? ` · ${c.evidence.map(esc).join(", ")}` : ""}</div></li>`).join("") || `<li class="empty">No claims yet.</li>`}</ul></section>
           <section class="panel" aria-label="Issues"><h2>Issues · ${d.issues.length}</h2><ul class="list">${d.issues.map((i) => `<li><div class="row"><b>${esc(i.title)}</b>${pill(i.state)}</div><div class="meta">${link(i.id)}</div></li>`).join("") || `<li class="empty">None.</li>`}</ul>${d.channel ? `<div class="btns"><a class="btn" href="#/chat/${encodeURIComponent(d.channel.id)}">Open the group chat</a></div>` : ""}</section>
+          <section class="panel" aria-label="Corrections"><h2>Corrections · ${(d.corrections || []).length}</h2>${correctionsHtml(d.corrections || [])}</section>
         </div>
       </div>`;
     view.querySelectorAll("[data-confirm]").forEach((b) => b.addEventListener("click", async () => {
