@@ -4,6 +4,7 @@ import { rank } from "./ontology.mjs";
 import { currentProcedure, stepLock, bandCheck, partNamesIn, stepRequires } from "./functions.mjs";
 import { packageHash, currentPlantModel, writePlant } from "./plant.mjs";
 import { specFor, promotionGap, MODES, checkWrite, approvalTerms, expectedEffect, shadowId } from "./harness.mjs";
+import { digestDoc } from "./digest.mjs";
 
 export const LEVELS = ["read", "draft", "notify", "propose", "act"];
 const lv = (l) => LEVELS.indexOf(l);
@@ -37,7 +38,7 @@ const create = (ont, obj, linksTo = []) => {
 };
 
 // Parameters that name an object: the type it must be. Every named object must also be visible to the actor.
-const TARGET_TYPES = { sceneId: ["Scene"], aoiId: ["Region"], detectionId: ["GeoDetection"], chemicalId: ["Chemical"], modelId: ["PlantModel"], channelId: ["Channel"], messageId: ["Message"], documentId: ["Draft"], onBehalfOf: ["Person", "Project"], procedureId: ["Procedure"], executionId: ["Execution"], issueId: ["Issue"], noteId: ["KnowledgeNote"], personId: ["Person"], projectId: ["Project"], workOrderId: ["WorkOrder"], assetId: ["Asset"], partIds: ["Part"], partId: ["Part"], alertId: ["Alert"], permitId: ["Permit"], assigneeId: ["Person"], holderId: ["Person"], itemId: ["Part", "Chemical"], targetId: null };
+const TARGET_TYPES = { sceneId: ["Scene"], aoiId: ["Region"], detectionId: ["GeoDetection"], chemicalId: ["Chemical"], modelId: ["PlantModel"], channelId: ["Channel"], messageId: ["Message"], documentId: ["Draft"], onBehalfOf: ["Person", "Project"], procedureId: ["Procedure"], executionId: ["Execution"], issueId: ["Issue"], noteId: ["KnowledgeNote"], personId: ["Person"], projectId: ["Project"], workOrderId: ["WorkOrder"], assetId: ["Asset"], partIds: ["Part"], partId: ["Part"], alertId: ["Alert"], permitId: ["Permit"], assigneeId: ["Person"], holderId: ["Person"], intakeId: ["DocumentIntake"], itemId: ["Part", "Chemical"], targetId: null };
 const PATCHABLE = ["title", "priority", "state", "planned", "hours", "closed"];
 const ISSUE_STATES = ["open", "triaged", "in_work", "done", "dropped"];
 // The person an action is done by or for: an agent acts for the person who launched it.
@@ -63,6 +64,11 @@ export function catalogueAllows(ont, { kind, op, role, level }) {
   if (level && lv(level) > lv(line.maxLevel)) return { ok: false, reason: `${kind} ${op} for ${role}: ${level} is above ${line.maxLevel}`, locked: false, maxLevel: line.maxLevel };
   return { ok: true, reason: null, locked: !!line.itSignOff && !(line.signedOff || {})[role], maxLevel: line.maxLevel };
 }
+// The catalogue line an action is bound to (file_document is m365.files write), or null.
+export const catalogueLine = (ont, action) => {
+  for (const con of ont.list("Connector")) { const l = con.lines.find((x) => x.action === action); if (l) return { kind: con.kind, op: l.op }; }
+  return null;
+};
 const itOnly = (ont, ctx) => { if (!(ont.get(actorId(ctx)) || {}).itAdmin) throw new Error("IT administrators only"); };
 const lineOf = (ont, kind, op) => {
   const con = ont.get(connectorId(kind));
@@ -70,6 +76,22 @@ const lineOf = (ont, kind, op) => {
   const i = con.lines.findIndex((l) => l.op === op);
   return { con, i };
 };
+
+// The digester's documents (agents design §8): who built the agent and who approves for it see the intake.
+const digestParties = (ont, ctx) => {
+  const spec = ctx.actor.kind === "agent" ? specFor(ont, ctx.actor.id) : null, builder = (spec && spec.builderId) || actorId(ctx);
+  const approver = spec && typeof spec.approver === "string" ? spec.approver : (ont.get(builder) || {}).supervisorId || null;
+  return { builder, approver };
+};
+const intakeOf = (ont, p) => {
+  const d = p.intakeId ? ont.get(p.intakeId) : ont.list("DocumentIntake", (x) => x.attachmentId === p.attachmentId && x.state !== "withdrawn").at(-1);
+  if (!d) throw new Error(`${p.attachmentId} has not been digested`);
+  if (d.attachmentId !== p.attachmentId) throw new Error(`${d.id} is not ${p.attachmentId}`);
+  return d;
+};
+const seenOf = (ont, d0) => ont.list("DocumentIntake", (d) => d.state !== "withdrawn" && d.attachmentId !== d0.attachmentId && d.receivedAt < d0.receivedAt)
+  .map((d) => ({ id: d.id, supplierId: d.fields.supplierId, number: d.fields.invoiceNo, total: d.fields.total, sourceId: d.attachmentId, receivedAt: d.receivedAt }));
+const notFile = (d) => { if (d.verdict !== "file") throw new Error(d.verdict === "person" ? `${d.id} goes to a person` : `${d.id} needs review`); };
 
 // A job follows the procedure version released when it starts; shared by start_execution and the sampling round.
 function openExecution(ont, wo, personId, proc, at) {
@@ -147,6 +169,49 @@ export const ACTIONS = {
       ont.upsert({ id: con.id, type: "Connector", lines: cur.lines.map((x) => (x.op !== p.op ? x : { ...x, signedOff: Object.fromEntries(Object.entries(x.signedOff || {}).filter(([r, m]) => !(r === p.role && same(m, mark)))) })) });
     };
     return { objects: [con.id], revert };
+  }),
+  // The document digester (agents design §8): digest into graded cells, file, post the match (money: propose at most), review
+  digest_document: def("draft", "act", ["attachmentId", "source"], (ont, p, ctx) => {
+    const c = ctx.connectors, att = c && c.attachment(p.attachmentId);
+    if (!att) throw new Error(`attachment not found: ${p.attachmentId}`);
+    const who = digestParties(ont, ctx), at = p.receivedAt || ctx.now(), tol = Number(p.tolerancePct) || 2;
+    if (ont.list("DocumentIntake", (d) => d.attachmentId === att.id && d.builderId === who.builder && d.state !== "withdrawn").length) throw new Error(`${att.id} is already digested`);
+    const r = digestDoc(att, { erp: c.erp, moves: c.m365.files.moves(), seen: seenOf(ont, { attachmentId: att.id, receivedAt: at }), at, tolerancePct: tol, cells: Array.isArray(p.cells) ? p.cells : null });
+    const d = create(ont, { id: nextId("DIN"), type: "DocumentIntake", attachmentId: att.id, name: att.name, messageId: p.fromMessage || null, source: p.source, receivedAt: at, tolerancePct: tol, ...r,
+      builderId: who.builder, approverId: who.approver, audience: [...new Set([who.builder, who.approver].filter(Boolean))], reviews: [], state: "digested", at: ctx.now() }, [["FROM", p.fromMessage]]);
+    return { objects: [d.id], revert: () => setProps(ont, d.id, { state: "withdrawn" }) };
+  }),
+  file_document: def("act", "act", ["attachmentId", "path"], (ont, p, ctx) => {
+    const d = intakeOf(ont, p);
+    notFile(d);
+    if (d.state === "filed") throw new Error(`${d.id} is already filed`);
+    const item = ctx.connectors.m365.files.copy(d.attachmentId, String(p.path), { by: actorId(ctx), at: ctx.now() });
+    const undo = setProps(ont, d.id, { state: "filed", filedItemId: item.id, filedPath: String(p.path) });
+    return { objects: [d.id], revert: () => { ctx.connectors.m365.files.remove(item.id); return undo(); } };
+  }),
+  post_invoice_match: { ...def("act", "propose", ["attachmentId", "poId"], (ont, p, ctx) => {
+    const d = intakeOf(ont, p);
+    notFile(d);
+    if (d.postedInvoiceId) throw new Error(`${d.id} is already posted as ${d.postedInvoiceId}`);
+    const inv = ctx.connectors.erp.postMatch({ invoice: { ...d.fields, sourceId: d.attachmentId, receivedAt: d.receivedAt }, poId: String(p.poId), by: actorId(ctx), at: ctx.now() });
+    const undo = setProps(ont, d.id, { postedInvoiceId: inv.id });
+    return { objects: [d.id], revert: () => { ctx.connectors.erp.unpost(inv.id); return undo(); } };
+  }), money: true },
+  review_intake_cells: def("act", "human", ["intakeId", "marks"], (ont, p, ctx) => {
+    const d = ont.get(p.intakeId);
+    if (d.state !== "digested") throw new Error(`${d.id} is ${d.state}`);
+    if (!Array.isArray(p.marks) || !p.marks.length) throw new Error("marks must be a non-empty list of {key, verdict, value?}");
+    for (const m of p.marks) {
+      const c = d.cells.find((x) => x.key === (m && m.key));
+      if (!c) throw new Error(`no cell ${m && m.key} in ${d.id}`);
+      if (!["accept", "correct"].includes(m.verdict)) throw new Error("verdict must be accept or correct");
+      if (m.verdict === "correct" && m.value === undefined) throw new Error(`correcting ${c.key} needs a value`);
+      if (m.verdict === "accept" && c.grade === "AMBIGUOUS" && (c.value == null || /\?/.test(String(c.value)))) throw new Error(`${c.key} cannot be read: correct it with a value`);
+    }
+    const mark = { by: actorId(ctx), at: ctx.now() }, hit = new Map(p.marks.map((m) => [m.key, m]));
+    const cells = d.cells.map((c) => { const m = hit.get(c.key); return !m ? c : { ...c, ...(m.verdict === "correct" ? { value: m.value, reasoning: `${c.reasoning} — corrected by ${mark.by} from ${JSON.stringify(c.value)}` } : {}), reviewed: mark }; });
+    const k = ctx.connectors, r = digestDoc(k.attachment(d.attachmentId), { erp: k.erp, moves: k.m365.files.moves(), seen: seenOf(ont, d), at: d.receivedAt, tolerancePct: d.tolerancePct, cells });
+    return { objects: [d.id], revert: setProps(ont, d.id, { cells: r.cells, fields: r.fields, match: r.match, verdict: r.verdict, destination: r.destination, reviews: [...(d.reviews || []), { ...mark, cells: hit.size }] }) };
   }),
   create_work_order: def("act", "act", ["assetId", "title"], (ont, p, ctx) => {
     const wo = create(ont, { id: nextId("WO-N"), type: "WorkOrder", assetId: p.assetId, title: p.title, kind: p.kind || "CM", priority: p.priority || "P3", state: "requested", requested: ctx.now(), source: p.source || null }, [["TARGETS", p.assetId]]);
@@ -319,7 +384,7 @@ export const ACTIONS = {
   }),
   raise_issue: def("act", "act", ["title"], (ont, p, ctx) => {
     const assetId = p.assetId || (p.partId && ont.get(p.partId).assetId) || null;
-    const iss = create(ont, { id: nextId("ISS"), type: "Issue", title: String(p.title), state: "open", raisedBy: actorId(ctx), assetId, partId: p.partId || null, workOrderId: p.workOrderId || null, projectId: p.projectId || null, procedureId: p.procedureId || null, step: p.step ?? null, evidence: Array.isArray(p.evidence) ? p.evidence.map(String) : [], assigneeId: null, at: ctx.now() }, [["ON", assetId], ["ABOUT", p.partId], ["FOR", p.workOrderId], ["IN", p.projectId]]);
+    const iss = create(ont, { id: nextId("ISS"), type: "Issue", title: String(p.title), state: "open", raisedBy: actorId(ctx), assetId, partId: p.partId || null, workOrderId: p.workOrderId || null, projectId: p.projectId || null, procedureId: p.procedureId || null, step: p.step ?? null, evidence: Array.isArray(p.evidence) ? p.evidence.map(String) : [], assigneeId: p.assigneeId || null, audience: Array.isArray(p.audience) && p.audience.length ? p.audience.map(String) : null, at: ctx.now() }, [["ON", assetId], ["ABOUT", p.partId], ["FOR", p.workOrderId], ["IN", p.projectId]]);
     return { objects: [iss.id], revert: () => setProps(ont, iss.id, { state: "dropped" }) };
   }),
   update_issue: def("act", "act", ["issueId", "patch"], (ont, p, ctx) => {
@@ -485,7 +550,7 @@ export const ACTIONS = {
   }, "engineer")
 };
 
-export function createActionService({ ont, audit, clock = wallClock, tel = null }) {
+export function createActionService({ ont, audit, clock = wallClock, tel = null, connectors = null }) {
   const now = clock;
   const reverts = new Map();
   const log = (entry) => audit && audit.append(entry);
@@ -529,7 +594,7 @@ export function createActionService({ ont, audit, clock = wallClock, tel = null 
   }
 
   function apply(action, params, actor, extra = {}) {
-    const res = ACTIONS[action].apply(ont, params, { actor, now });
+    const res = ACTIONS[action].apply(ont, params, { actor, now, connectors });
     const dec = ont.upsert({ zoneId: zoneFor(params), audience: audienceFor(params),
       id: nextId("DEC"), type: "Decision", action, params, actorId: actor.id, actorKind: actor.kind, onBehalfOf: actor.onBehalfOf || null, autonomy: extra.autonomy || null,
       approvedBy: extra.approvedBy || null, proposalId: extra.proposalId || null, runId: extra.runId || null,
@@ -560,11 +625,16 @@ export function createActionService({ ont, audit, clock = wallClock, tel = null 
       const spec = specFor(ont, actor.id), tool = spec && spec.tools.find((t) => t.action === action);
       if (spec && ["paused", "retired"].includes(spec.state)) return refuse(action, actor, `${actor.id} is ${spec.state}`);
       if (tool && !tool.enabled) return refuse(action, actor, "tool turned off");
+      // IT's catalogue binds what a studio agent does through a connector, by its builder's role (agents design §7)
+      const line = spec && spec.builderId ? catalogueLine(ont, action) : null;
+      const cat = line && catalogueAllows(ont, { kind: line.kind, op: line.op, role: (ont.get(spec.builderId) || {}).role });
+      if (cat && !cat.ok) return refuse(action, actor, cat.reason);
       if (spec && spec.mode === "shadow") {
         const sha = ont.upsert({ id: shadowId(), type: "ShadowAction", agent: actor.id, specVersion: spec.version, runId: runId || null, action, params, at: now(), status: "pending", minClearance: actor.clearance });
         log({ actor: actor.id, actorKind: actor.kind, action, outcome: "shadowed", ref: sha.id });
         return { status: "shadowed", shadow: sha };
       }
+      if (cat && cat.locked) return refuse(action, actor, `needs IT sign-off: ${line.kind} ${line.op}`);
       // the telemetry an alert names in its own evidence is cited too
       const cited = [...[].concat(evidence || []), ...[].concat(params.evidence || []).filter((x) => typeof x === "string" && x.startsWith("SEN-"))];
       const chk = checkWrite({ ont, tel, actor, action, params, evidence: cited, spec, now: now() });
@@ -573,6 +643,7 @@ export function createActionService({ ont, audit, clock = wallClock, tel = null 
       const hits = chk.hits;
       if (chk.refuse) return { ...refuse(action, actor, chk.refuse), hits };
       if (chk.level && lv(eff) > lv(chk.level)) eff = chk.level;
+      if (cat && lv(eff) > lv(cat.maxLevel)) eff = cat.maxLevel;
       const stamp = { constraintsChecked: chk.checked, evidenceAges: chk.ages };
       if (lv(eff) >= lv(a.needs)) return { ...apply(action, params, actor, { autonomy: eff, runId, ...stamp }), hits };
       if (lv(eff) >= lv("propose")) {

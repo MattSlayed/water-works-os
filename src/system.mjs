@@ -19,7 +19,7 @@ export function createSystem({ seed = 7 } = {}) {
   const audit = createAudit();
   const connectors = createConnectors({ seed, nowIso: tel.now });
   trackers.syncTo(ont, tel.cursor(), audit);
-  const actions = createActionService({ ont, audit, clock: tel.now, tel });
+  const actions = createActionService({ ont, audit, clock: tel.now, tel, connectors });
   const runtime = createRuntime({ ont, tel, actions, audit, connectors });
   const copilot = createCopilot({ ont, tel, actions, runtime });
   const channels = createChannels({ ont, tel, actions, runtime, copilot, audit });

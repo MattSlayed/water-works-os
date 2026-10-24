@@ -7,7 +7,8 @@ let client = null;
 
 export const llmEnabled = () => !!(process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_AUTH_TOKEN || process.env.WWOS_LLM === "1");
 
-export async function askClaude({ system, context, question }) {
+// content, when given, is the user turn as content blocks (an image and its instructions, say) instead of context + question.
+export async function askClaude({ system, context, question, content }) {
   if (!llmEnabled()) return null;
   let Anthropic;
   try {
@@ -24,7 +25,7 @@ export async function askClaude({ system, context, question }) {
       fallbacks: "default",
       output_config: { effort: "medium" },
       system,
-      messages: [{ role: "user", content: `Context from the works ontology (JSON):\n${JSON.stringify(context)}\n\nQuestion: ${question}` }]
+      messages: [{ role: "user", content: content || `Context from the works ontology (JSON):\n${JSON.stringify(context)}\n\nQuestion: ${question}` }]
     });
     if (response.stop_reason === "refusal") return null;
     const text = response.content.filter((b) => b.type === "text").map((b) => b.text).join("\n").trim();

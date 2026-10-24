@@ -109,3 +109,39 @@ export function digestVerdict({ cells, match }) {
   if (cells.some((c) => c.grade === "AMBIGUOUS" && !c.reviewed) || match.issues.length) return "review";
   return "file";
 }
+
+// The fields a set of cells stands for: an unsure cell nobody has reviewed counts as unknown.
+const numOrNull = (v) => (v == null || v === "" || !Number.isFinite(Number(v)) ? null : Number(v));
+export function fieldsFromCells(cells, erp) {
+  const f = Object.fromEntries(cells.map((c) => [c.key, c.grade === "AMBIGUOUS" && !c.reviewed ? null : ["total", "vat"].includes(c.key) ? numOrNull(c.value) : c.value]));
+  const sup = f.supplier && erp.suppliers().find((s) => s.name === f.supplier);
+  return { ...f, supplierId: sup ? sup.id : null };
+}
+
+// One document end to end: cells (read here, or given, e.g. by Claude or a reviewer), match, verdict and destination.
+// moves is the filing log; only filings before the document count, so a replay never learns from its own answer.
+export function digestDoc(att, { erp, moves = [], seen = [], at = null, tolerancePct = 2, cells = null }) {
+  const ex = cells ? { cells, fields: fieldsFromCells(cells, erp) } : extractFields(att, { erp, at, tolerancePct });
+  const match = matchInvoice(ex.fields, { erp, tolerancePct, seen, at, sourceId: att && att.id });
+  return { ...ex, match, verdict: digestVerdict({ cells: ex.cells, match }), destination: destinationFor(ex.fields, moves.filter((m) => !at || m.at < at)) };
+}
+
+// Claude reads an image that has no text layer, against a closed field schema (agents design §8). A field is
+// EXTRACTED only at high confidence. Returns null when Claude is off, the attachment has no image, or the answer
+// does not fit the schema; the digester then grades every field unsure. Not tested against the network.
+export async function visionFields(att) {
+  const { llmEnabled, askClaude } = await import("./llm.mjs");
+  if (!llmEnabled() || !att || !att.contentBase64 || !/^image\//.test(att.contentType || "")) return null;
+  const text = await askClaude({
+    system: `Read this supplier invoice. Answer only JSON: {"fields":[{"key":one of ${JSON.stringify(FIELDS)},"value":string|number|array|object|null,"confidence":0..1}]}. lines is [{desc,qty,price}]; bank is {account,branch}. Use null for anything you cannot read; never guess.`,
+    content: [{ type: "image", source: { type: "base64", media_type: att.contentType, data: att.contentBase64 } }, { type: "text", text: "Extract the invoice fields." }]
+  });
+  let out;
+  try { out = JSON.parse(String(text || "").replace(/^```(json)?|```$/g, "")); } catch { return null; }
+  if (!out || !Array.isArray(out.fields)) return null;
+  return FIELDS.map((key) => {
+    const f = out.fields.find((x) => x && x.key === key), conf = f ? Number(f.confidence) || 0 : 0;
+    const grade = f && f.value != null && conf >= 0.9 ? "EXTRACTED" : f && f.value != null && conf >= 0.6 ? "INFERRED" : "AMBIGUOUS";
+    return cell(key, f ? f.value : null, grade, null, f && f.value != null ? `read by Claude from the image (confidence ${conf.toFixed(2)})` : "Claude could not read it");
+  });
+}

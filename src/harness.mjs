@@ -172,7 +172,10 @@ const EFFECTS = {
   change_asset_state: "Changes the asset's state as shown.",
   raise_deviation: "Raises a deviation for an engineer to decide.",
   rank_alert: "Sets the alert's consequence and priority.",
-  reserve_parts: "Reserves the parts shown from stock."
+  reserve_parts: "Reserves the parts shown from stock.",
+  digest_document: "Reads the document into graded fields and matches it to its PO and goods receipt; nothing leaves the works.",
+  file_document: "Copies the document into the folder shown in the files connector.",
+  post_invoice_match: "Posts the invoice against the PO shown in the ERP, which queues it for payment."
 };
 export const expectedEffect = (action) => EFFECTS[action] || `Applies ${words(action)} with the parameters shown.`;
 

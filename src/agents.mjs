@@ -616,9 +616,9 @@ export function createRuntime({ ont, tel, actions, audit, connectors = null }) {
     const source = (id, sourceAt) => { if (run.sources.length < 500) run.sources.push({ id, sourceAt: sourceAt || null }); };
     const read = (o) => { if (o && !seen.has(o.id)) { seen.add(o.id); if (run.read.length < 500) run.read.push(o.id); source(o.id, o.type === "Sensor" ? (tel.latest(o.id) || {}).at : objectTime(o)); } return o; };
     const call = (tool, args, result) => { run.calls.push({ tool, args, result }); return result; };
-    const now = tel.now();
-    return {
-      spec, now, today: now.slice(0, 10), mission: opts.mission || null, scope: opts.scope || {},
+    const now = tel.now(), statement = specFor(ont, spec.name) || {};
+    const ctxApi = {
+      spec, statement, params: statement.params || {}, now, today: now.slice(0, 10), mission: opts.mission || null, scope: opts.scope || {},
       get: (id) => read(view.get(id)),
       list: (type, pred) => view.list(type, pred).map(read),
       search: (q, k) => view.search(q, k).map(read),
@@ -644,8 +644,7 @@ export function createRuntime({ ont, tel, actions, audit, connectors = null }) {
       },
       // a connector, only if the decision statement's evidence contract lists it and IT lets the person behind the run read it
       connector: (kind) => {
-        const hs = specFor(ont, spec.name) || {};
-        if (!(hs.reads || []).some((x) => x.source === `connector:${kind}`)) throw new Error(`connector ${kind} is not in its evidence contract`);
+        if (!(statement.reads || []).some((x) => x.source === `connector:${kind}`)) throw new Error(`connector ${kind} is not in its evidence contract`);
         const ok = catalogueAllows(ont, { kind, op: "read", role: (ont.get(opts.actingUser.id) || {}).role || opts.actingUser.role });
         if (!ok.ok) throw new Error(ok.reason);
         const [app, store] = kind.split("."), c = connectors && (store ? connectors[app][store] : connectors[app]);
@@ -653,9 +652,18 @@ export function createRuntime({ ont, tel, actions, audit, connectors = null }) {
         source(`connector:${kind}`, now);
         return Object.fromEntries(READS[kind].map((f) => [f, (...a) => c[f](...a)]));
       },
+      // a document on a message in the run's view, or in a folder its evidence contract lets it read
+      attachment: (id) => {
+        const onChat = view.list("Message", (m) => (m.media || []).includes(id)).length;
+        if (!onChat) ctxApi.connector("m365.files");
+        const a = connectors && connectors.attachment(id);
+        if (a) source(id, null);
+        return a;
+      },
       think: (t) => run.reasoning.push(t),
       output: (o) => run.outputs.push(o)
     };
+    return ctxApi;
   }
 
   function run(name, opts0 = {}, depth = 0) {
