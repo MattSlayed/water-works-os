@@ -9,7 +9,7 @@ import { dropPackEvidence } from "./agents.mjs";
 import { runEvals } from "./evals.mjs";
 import { rank } from "./ontology.mjs";
 import { llmEnabled } from "./llm.mjs";
-import { dueStudioAgents } from "./studio.mjs";
+import { dueStudioAgents, screen, planFromText, composeWithClaude, validateStatement, statementFromSentences, replay } from "./studio.mjs";
 import { currentProcedure, performanceFor, projectStatus, graphFrom, upstreamOf, downstreamOf, processPaths, travelWindow } from "./functions.mjs";
 import { currentPlantModel } from "./plant.mjs";
 import { siteBounds, toLocal, toLonLat } from "./layout.mjs";
@@ -290,6 +290,43 @@ export function createServer(sys) {
       return { spec, sentences: statementSentences(spec, ont), shadow: shadowRecord(ont, spec.name), promotion: { criteria: spec.promotion, gap: promotionGap(ont, spec), next: MODES[i + 1] || null, previous: MODES[i - 1] || null } };
     }],
     // root cause for the viewer: the agent runs as the person asking, so the report holds only what they may see
+    // The Agent Studio (agents design §6): plan from words, read back, replay; creating goes through the action route.
+    ["POST", /^\/api\/studio\/plan$/, async (v, m, url, req) => {
+      const b = await body(req), builder = ont.get(v.id), text = String(b.text || "").slice(0, 2000);
+      const sc = screen(text, b.answers || {}), claude = llmEnabled() ? "on" : "off";
+      const keyword = planFromText(text, { builder, ont });
+      const spec = (claude === "on" && sc.verdict !== "person" && (await composeWithClaude(text, { builder, ont }))) || keyword.spec || null;
+      const plan = spec ? { template: spec.template, spec } : { template: null, reason: keyword.reason };
+      return { screen: sc, plan, sentences: spec ? statementSentences(spec, ont) : [], problems: spec ? validateStatement(spec, { ont }).problems : [], claude };
+    }],
+    ["POST", /^\/api\/studio\/sentences$/, async (v, m, url, req) => {
+      const b = await body(req);
+      if (!b.spec || b.spec.builderId !== v.id) throw new HttpError(403, "only the builder edits their statement");
+      const r = statementFromSentences(Array.isArray(b.sentences) ? b.sentences : [], b.spec, ont);
+      return { spec: r.spec, sentences: statementSentences(r.spec, ont), problems: r.problems };
+    }],
+    ["POST", /^\/api\/studio\/replay$/, async (v, m, url, req) => {
+      const b = await body(req);
+      if (!b.spec || b.spec.builderId !== v.id) throw new HttpError(403, "a replay runs as its builder, so only the builder starts it");
+      const check = validateStatement(b.spec, { ont });
+      if (!check.ok) throw new HttpError(400, check.problems.join("; "));
+      try { return replay(sys, b.spec); } catch (e) { throw new HttpError(403, e.message); }
+    }],
+    // IT's catalogue: IT administrators edit it (through the action route); the works manager reads it
+    ["GET", /^\/api\/catalogue$/, (v) => {
+      const me = ont.get(v.id);
+      if (!me.itAdmin && me.role !== "works_manager") throw new HttpError(403, "the catalogue is for IT administrators and the works manager");
+      return { connectors: ont.list("Connector"), canEdit: !!me.itAdmin, roles: [...new Set(ont.list("Person").map((p) => p.role))].sort() };
+    }],
+    ["GET", /^\/api\/suggestions$/, (v) => ont.view(v).list("Suggestion", (x) => x.personId === v.id && x.state === "open")],
+    // a document beside its graded cells: the text layer is the page the reviewer sees
+    ["GET", /^\/api\/intakes$/, (v) => ont.view(v).list("DocumentIntake", (d) => d.state !== "withdrawn").map((d) => ({ id: d.id, name: d.name, verdict: d.verdict, state: d.state, receivedAt: d.receivedAt, source: d.source, supplier: d.fields.supplier, total: d.fields.total, issues: d.match.issues.map((i) => i.kind) }))],
+    ["GET", /^\/api\/intakes\/([^/]+)$/, (v, m) => {
+      const d = ont.view(v).get(decodeURIComponent(m[1]));
+      if (!d || d.type !== "DocumentIntake") throw new HttpError(404, "not found");
+      const att = sys.connectors.attachment(d.attachmentId) || {};
+      return { ...d, preview: { name: att.name || d.name, contentType: att.contentType || null, quality: att.quality || null, textLayer: att.textLayer || null } };
+    }],
     ["POST", /^\/api\/rca$/, async (v, m, url, req) => {
       const b = await body(req);
       if (!b.targetId || !ont.view(v).get(b.targetId)) throw new HttpError(404, "not found");
