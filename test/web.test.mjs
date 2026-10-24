@@ -119,3 +119,9 @@ test("harness and root cause: agent cards with switches and promotion; the repor
   const app = await (await fetch(base + "/app.js")).text();
   for (const s of ["async rca(", "Find root cause", "data-tool-toggle", "data-agent-state", "Promote", "Demote", "data-spec"]) assert.ok(app.includes(s), s);
 });
+
+test("the studio, the IT catalogue and document review are on the console", async () => {
+  const app = await (await fetch(base + "/app.js")).text(), html = await (await fetch(base + "/")).text();
+  for (const x of ["async studio(", "async catalogue(", "async intakes(", "Rule, agent or person", "Start in shadow", "Suggested for you", "needs IT approval", "Claude is off", "data-sentence"]) assert.ok(app.includes(x), x);
+  for (const x of ['href="#/studio"', 'href="#/intakes"', 'href="#/catalogue"']) assert.ok(html.includes(x), x);
+});

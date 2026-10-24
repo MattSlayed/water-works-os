@@ -223,3 +223,10 @@ main:focus { outline: none; }
 @keyframes rpulse { 50% { stroke-opacity: 0.3; } }
 @media (max-width: 720px) { .rmap { min-height: 360px; } .rcards { grid-template-columns: 1fr; } }
 
+
+/* Documents (plan 3b): the text layer drawn as a page; unreadable figures marked */
+.docpage { background: #f8fafc; color: #1e293b; font: 12px/1.6 var(--mono); padding: 18px 20px; border-radius: var(--r); white-space: pre-wrap; max-height: 70vh; overflow: auto; box-shadow: 0 1px 0 var(--line); }
+.docpage mark { background: rgba(251, 191, 36, 0.55); color: inherit; padding: 0 2px; }
+#suggested li { padding: 8px 0; border-top: 1px solid var(--line); }
+#suggested input { background: var(--bg2); border: 1px solid var(--line); border-radius: var(--r); padding: 4px 8px; min-width: 180px; }
+#studio ol input { background: var(--bg2); border: 1px solid var(--line); border-radius: var(--r); padding: 4px 8px; }

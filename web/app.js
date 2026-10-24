@@ -810,6 +810,164 @@ const views = {
     });
   },
 
+  // ---------- Agent Studio (agents design §6): describe, screen, read back, replay, start in shadow ----------
+  async studio() {
+    const [sugs, docs] = await Promise.all([api("/api/suggestions"), api("/api/intakes").catch(() => [])]);
+    const ev = (id) => (/^DRV-/.test(id) ? `<span class="mono">${esc(id)}</span>` : link(id));
+    view.innerHTML = `<h2>07 / agents people build</h2><h1>Agent Studio</h1>
+      <p class="sub">Describe something you do by hand. The studio says whether it is a rule, an agent or a person's job, builds a statement only from what IT lets your role use, replays it on your last 14 days, and starts it in shadow, where it changes nothing until someone else promotes it.</p>
+      ${state.llm ? "" : `<p class="meta" id="claude-off">Claude is off: the keyword planner builds a document digester, a watch, a weekly report, a chaser or a supplier tidy-up.</p>`}
+      <section class="panel" id="suggested"><h2>Suggested for you</h2><p class="meta">Only you see these. Each comes from your own work in the last 30 days; nothing you view or search is recorded.</p>
+        <ul class="list">${sugs.map((s) => `<li data-sug="${esc(s.id)}"><b>${esc(s.title)}</b><div class="meta">${esc(s.basis)} About ${esc(s.savedMinPerWeek)} min a week.</div>
+          <details><summary class="meta">Evidence (${s.evidence.length})</summary><p class="meta">${s.evidence.slice(0, 40).map(ev).join(" · ")}</p></details>
+          <div class="btns"><button class="btn primary" data-accept-sug="${esc(s.id)}">${s.statement ? "Accept: open in the studio" : "Accept"}</button><input aria-label="Reason (optional)" placeholder="Reason (optional)" data-dismiss-reason="${esc(s.id)}"><button class="btn" data-dismiss-sug="${esc(s.id)}">Dismiss</button></div></li>`).join("") || `<li class="empty">Nothing to suggest yet.</li>`}</ul></section>
+      <section class="panel" id="studio" style="margin-top:14px">
+        <h2>1 · Describe it</h2>
+        <label class="field">What do you do by hand?<textarea id="st-text" rows="3" placeholder="When a supplier invoice comes into the accounts inbox, read it, check it against the PO and file it in the right supplier folder."></textarea></label>
+        <div class="btns"><label class="meta">Example document <select id="st-doc"><option value="">none</option>${docs.map((d) => `<option value="${esc(d.id)}">${esc(d.name)} · ${esc(d.verdict)}</option>`).join("")}</select></label><button class="btn primary" id="st-plan">Plan it</button></div>
+        <div id="st-screen"></div><div id="st-read"></div><div id="st-replay"></div><div id="st-start"></div>
+      </section>`;
+    let cur = null, replayed = null;
+    const studio = $("#studio");
+    const locked = (s) => /once IT signs it off/.test(s);
+    const showRead = () => {
+      if (!cur || !cur.spec) return ($("#st-read").innerHTML = "");
+      $("#st-read").innerHTML = `<h2>3 · Read back</h2><p class="meta">Edit a sentence in place and apply it: a schedule, a level, the approver, the escalation or what happens on silence. The checks decide.</p>
+        <ol class="list">${cur.sentences.map((s, i) => `<li><input class="mono" style="width:100%" data-sentence="${i}" value="${esc(s)}" aria-label="Sentence ${i + 1}">${locked(s) ? ` ${pill("needs IT approval", "medium")}` : ""}</li>`).join("")}</ol>
+        ${cur.problems.length ? `<ul class="list">${cur.problems.map((p) => `<li style="color:var(--amber)">${esc(p)}</li>`).join("")}</ul>` : ""}
+        <div class="btns"><button class="btn" id="st-apply">Apply edits</button></div>`;
+      const ex = $("#st-doc").value && docs.find((d) => d.id === $("#st-doc").value);
+      $("#st-replay").innerHTML = `<h2>4 · Replay</h2>${ex ? `<p class="meta">Your example ${esc(ex.name)}: ${esc(ex.verdict)}${ex.issues.length ? ` (${esc(ex.issues.join(", "))})` : ""}.</p>` : ""}
+        ${cur.spec.template === "digester" ? `<div class="btns"><button class="btn" id="st-replay-go" ${cur.problems.length ? "disabled" : ""}>Replay my last 14 days</button></div><div id="st-replay-out"></div>` : `<p class="meta">This kind of agent builds its record in shadow.</p>`}`;
+      $("#st-start").innerHTML = `<h2>5 · Start in shadow</h2><p class="meta">In shadow it records what it would do and changes nothing. ${cur.spec.approver ? "Its approver promotes it once its record and IT's sign-off allow." : ""}</p>
+        <div class="btns"><button class="btn primary" id="st-go" ${cur.problems.length ? "disabled" : ""}>Start in shadow</button></div>`;
+    };
+    const showPlan = (r) => {
+      const v = r.screen.verdict;
+      $("#st-screen").innerHTML = `<h2>2 · Rule, agent or person</h2><p>${pill(v, v === "person" ? "high" : v === "agent" ? "agent" : "low")} ${esc(r.screen.reason)}</p>
+        ${r.screen.questions.length ? `<p class="meta">${esc(r.screen.questions[0].text)}</p><div class="btns"><button class="btn" data-judgement="yes">It takes judgement</button><button class="btn" data-judgement="no">Same check every time</button></div>` : ""}
+        ${r.plan.template ? `<p class="meta">Template: ${esc(r.plan.template)} · ${esc(r.plan.spec.name)}</p>` : `<p class="meta">${esc(r.plan.reason)}</p>`}`;
+      cur = r.plan.spec ? { spec: r.plan.spec, sentences: r.sentences, problems: r.problems } : null;
+      replayed = null;
+      showRead();
+    };
+    const plan = async (answers) => {
+      const text = $("#st-text").value.trim();
+      if (!text) return toast("Describe what you do first.");
+      try { showPlan(await api("/api/studio/plan", { method: "POST", body: { text, answers } })); } catch (e) { toast(e.message); }
+    };
+    $("#st-plan").addEventListener("click", () => plan());
+    studio.addEventListener("click", async (e) => {
+      const b = e.target.closest("button");
+      if (!b) return;
+      if (b.dataset.judgement) return plan({ judgement: b.dataset.judgement });
+      if (b.id === "st-apply") {
+        try {
+          const r = await api("/api/studio/sentences", { method: "POST", body: { spec: cur.spec, sentences: [...studio.querySelectorAll("[data-sentence]")].map((i) => i.value) } });
+          // a refused edit leaves the statement as it was, and says why
+          cur = { spec: r.spec, sentences: r.sentences, problems: r.problems.length ? cur.problems : [] };
+          showRead();
+          if (r.problems.length) $("#st-read").insertAdjacentHTML("beforeend", `<ul class="list">${r.problems.map((p) => `<li style="color:var(--amber)">Not changed: ${esc(p)}</li>`).join("")}</ul>`);
+          toast(r.problems.length ? `Not changed: ${r.problems[0]}` : "Statement updated.");
+        } catch (err) { toast(err.message); }
+      }
+      if (b.id === "st-replay-go") {
+        b.disabled = true;
+        try {
+          replayed = await api("/api/studio/replay", { method: "POST", body: { spec: cur.spec } });
+          $("#st-replay-out").innerHTML = `<p><b>${replayed.agreed} of ${replayed.cases}</b> agree with what you did · ${replayed.unsure} unsure · ${replayed.caught} caught (duplicates and bank changes) · ${replayed.differed} differ</p>
+            <table class="cells"><thead><tr><th>Document</th><th>Outcome</th><th>It would</th><th>You did</th><th>Why</th></tr></thead><tbody>${replayed.examples.map((x) => `<tr class="${x.outcome === "unsure" ? "amb" : ""}"><td class="mono">${esc(x.name)}</td><td>${pill(x.outcome, x.outcome === "agreed" ? "done" : x.outcome === "caught" ? "agent" : "medium")}</td><td class="meta">${esc(x.path || x.verdict)}</td><td class="meta">${esc(x.personPath || "not filed")}</td><td class="meta">${esc(x.reason || "")}</td></tr>`).join("")}</tbody></table>`;
+        } catch (err) { toast(err.message); } finally { b.disabled = false; }
+      }
+      if (b.id === "st-go") {
+        b.disabled = true;
+        try { await api("/api/actions/create_studio_agent", { method: "POST", body: { params: { spec: cur.spec } } }); toast(`${cur.spec.name} started in shadow.`); location.hash = "#/agents"; } catch (err) { toast(err.message); b.disabled = false; }
+      }
+    });
+    $("#suggested").addEventListener("click", async (e) => {
+      const b = e.target.closest("[data-accept-sug],[data-dismiss-sug]");
+      if (!b) return;
+      const id = b.dataset.acceptSug || b.dataset.dismissSug, s = sugs.find((x) => x.id === id);
+      try {
+        if (b.dataset.dismissSug) {
+          const reason = $("#suggested").querySelector(`[data-dismiss-reason="${CSS.escape(id)}"]`).value.trim();
+          await api("/api/actions/dismiss_suggestion", { method: "POST", body: { params: { suggestionId: id, ...(reason ? { reason } : {}) } } });
+          toast("Dismissed. It will not come back for 30 days.");
+          return views.studio();
+        }
+        await api("/api/actions/accept_suggestion", { method: "POST", body: { params: { suggestionId: id } } });
+        $("#suggested").querySelector(`[data-sug="${CSS.escape(id)}"]`).remove();
+        if (!s.statement) return toast("Noted.");
+        const r = await api("/api/studio/sentences", { method: "POST", body: { spec: s.statement, sentences: [] } });
+        $("#st-text").value = s.title;
+        showPlan({ screen: { verdict: "agent", reason: "From your suggestion.", questions: [] }, plan: { template: r.spec.template, spec: r.spec }, sentences: r.sentences, problems: r.problems });
+        studio.scrollIntoView({ behavior: "smooth" });
+      } catch (err) { toast(err.message); }
+    });
+  },
+
+  // ---------- IT's connector catalogue (agents design §7) ----------
+  async catalogue() {
+    const cat = await api("/api/catalogue"), lvls = ["read", "draft", "notify", "propose", "act"];
+    view.innerHTML = `<h2>08 / what agents may touch</h2><h1>IT catalogue</h1>
+      <p class="sub">${cat.canEdit ? "You are an IT administrator: you set which roles may use each connector, the most an agent may do with it, and sign lines off for a role." : "Read only: IT administrators change the catalogue."} A studio agent never does more than its builder's role allows here.</p>
+      ${cat.connectors.map((c) => `<section class="panel" style="margin-bottom:12px"><h2>${esc(c.kind)}</h2><table><thead><tr><th>Operation</th><th>Action</th><th>Roles</th><th>Most an agent may do</th><th>IT sign-off</th></tr></thead><tbody>
+        ${c.lines.map((l) => `<tr><td class="mono">${esc(l.op)}</td><td class="mono">${esc(l.action || "—")}</td>
+          <td>${cat.canEdit ? `<input class="mono" data-roles="${esc(c.kind)}|${esc(l.op)}" value="${esc(l.roles.join(", "))}" aria-label="Roles for ${esc(c.kind)} ${esc(l.op)}">` : esc(l.roles.join(", "))}</td>
+          <td>${cat.canEdit ? `<select data-max="${esc(c.kind)}|${esc(l.op)}">${lvls.map((x) => `<option ${x === l.maxLevel ? "selected" : ""}>${x}</option>`).join("")}</select>` : esc(l.maxLevel)}</td>
+          <td>${l.itSignOff ? l.roles.filter((r) => r !== "*").map((r) => (l.signedOff || {})[r] ? `<div class="meta">${esc(r)}: signed off by ${esc(l.signedOff[r].by)} ${time(l.signedOff[r].at)}</div>` : cat.canEdit ? `<button class="btn" data-signoff="${esc(c.kind)}|${esc(l.op)}|${esc(r)}">Sign off for ${esc(r)}</button>` : `<div class="meta">${esc(r)}: ${pill("needs IT approval", "medium")}</div>`).join("") : `<span class="meta">not needed</span>`}</td></tr>`).join("")}
+      </tbody></table>${cat.canEdit ? `<div class="btns"><button class="btn" data-save-con="${esc(c.kind)}">Save ${esc(c.kind)}</button></div>` : ""}</section>`).join("")}`;
+    view.querySelectorAll("[data-signoff]").forEach((b) => b.addEventListener("click", async () => {
+      const [kind, op, role] = b.dataset.signoff.split("|");
+      try { await api("/api/actions/sign_off_catalogue_line", { method: "POST", body: { params: { kind, op, role } } }); toast(`${kind} ${op} signed off for ${role}.`); views.catalogue(); } catch (e) { toast(e.message); }
+    }));
+    view.querySelectorAll("[data-save-con]").forEach((b) => b.addEventListener("click", async () => {
+      const kind = b.dataset.saveCon, con = cat.connectors.find((c) => c.kind === kind);
+      try {
+        for (const l of con.lines) {
+          const roles = view.querySelector(`[data-roles="${CSS.escape(`${kind}|${l.op}`)}"]`).value.split(",").map((x) => x.trim()).filter(Boolean);
+          const maxLevel = view.querySelector(`[data-max="${CSS.escape(`${kind}|${l.op}`)}"]`).value;
+          if (roles.join() !== l.roles.join() || maxLevel !== l.maxLevel) await api("/api/actions/set_catalogue_line", { method: "POST", body: { params: { kind, op: l.op, patch: { roles, maxLevel } } } });
+        }
+        toast(`${kind} saved.`);
+        views.catalogue();
+      } catch (e) { toast(e.message); }
+    }));
+  },
+
+  // ---------- Documents: the page beside its graded cells (agents design §8) ----------
+  async intakes(id) {
+    if (!id) {
+      const ds = await api("/api/intakes");
+      view.innerHTML = `<h2>09 / documents the digester read</h2><h1>Documents</h1><p class="sub">Only the agent's builder and its approver see these. Unsure fields are reviewed beside the document.</p>
+        <section class="panel"><table><thead><tr><th>Document</th><th>Supplier</th><th>Total</th><th>Verdict</th><th>Issues</th><th>Received</th></tr></thead><tbody>${ds.map((d) => `<tr><td><a href="#/intakes/${encodeURIComponent(d.id)}"><b>${esc(d.name)}</b></a></td><td>${esc(d.supplier || "unreadable")}</td><td class="val">${d.total == null ? "?" : num(d.total)}</td><td>${pill(d.verdict, d.verdict === "file" ? "done" : d.verdict === "person" ? "high" : "medium")} <span class="meta">${esc(d.state)}</span></td><td class="meta">${esc(d.issues.join(", "))}</td><td class="meta">${time(d.receivedAt)}</td></tr>`).join("") || `<tr><td colspan="6" class="empty">No documents yet.</td></tr>`}</tbody></table></section>`;
+      return;
+    }
+    const d = await api(`/api/intakes/${encodeURIComponent(id)}`), open = d.state === "digested";
+    const order = { AMBIGUOUS: 0, INFERRED: 1, EXTRACTED: 2 };
+    const val = (v) => (v == null ? "" : typeof v === "string" ? v : JSON.stringify(v));
+    const page = d.preview.textLayer ? esc(d.preview.textLayer).replace(/\?+(\.\?+)?/g, (m) => `<mark>${m}</mark>`) : `<span class="meta">No text layer: this image could not be read${state.llm ? "" : " while Claude is off"}.</span>`;
+    view.innerHTML = `<div id="intake"><div class="row"><div><h2>09 / ${esc(d.id)} · ${esc(d.state)}</h2><h1>${esc(d.preview.name)}</h1></div><div class="btns"><a class="btn" href="#/intakes">All documents</a></div></div>
+      <p class="sub">${pill(d.verdict, d.verdict === "file" ? "done" : d.verdict === "person" ? "high" : "medium")} ${d.match.issues.map((i) => esc(i.detail)).join(" · ") || "Matches its PO and goods receipt."} ${d.verdict === "file" ? `Files to <span class="mono">${esc(d.destination.path)}</span>.` : ""}</p>
+      <div class="grid console"><section class="panel"><h2>The document · ${esc(d.preview.quality || "")}</h2><pre class="docpage">${page}</pre></section>
+      <section class="panel"><h2>Fields</h2><table class="cells"><thead><tr><th>Field</th><th>Grade</th><th>Value</th><th>Reasoning</th><th></th></tr></thead><tbody>
+        ${[...d.cells].sort((a, b) => order[a.grade] - order[b.grade]).map((c) => `<tr class="${c.grade === "AMBIGUOUS" ? "amb" : c.grade === "INFERRED" ? "inf" : ""}"><td class="mono">${esc(c.key)}</td><td>${pill(c.grade, c.grade === "AMBIGUOUS" ? "medium" : c.grade === "INFERRED" ? "agent" : "low")}</td><td class="mono cv">${esc(val(c.value)).slice(0, 120)}</td><td class="why meta">${esc(c.reasoning)}</td>
+          <td>${c.reviewed ? `<span class="meta">${esc(c.reviewed.by)} ${time(c.reviewed.at)}</span>` : open && c.grade !== "EXTRACTED" ? `<div class="btns"><button class="btn" data-ok="${esc(c.key)}">Accept</button><button class="btn" data-fix="${esc(c.key)}">Correct</button></div>` : ""}</td></tr>`).join("")}
+      </tbody></table></section></div></div>`;
+    const review = async (mark) => { try { await api("/api/actions/review_intake_cells", { method: "POST", body: { params: { intakeId: id, marks: [mark] } } }); views.intakes(id); } catch (e) { toast(e.message); } };
+    $("#intake").addEventListener("click", (e) => {
+      const b = e.target.closest("button");
+      if (!b) return;
+      if (b.dataset.ok) return review({ key: b.dataset.ok, verdict: "accept" });
+      if (b.dataset.save) { const raw = b.closest("td").querySelector("input").value; let v = raw; try { v = JSON.parse(raw); } catch {} return review({ key: b.dataset.save, verdict: "correct", value: v }); }
+      if (b.dataset.fix) {
+        const c = d.cells.find((x) => x.key === b.dataset.fix), td = b.closest("tr").querySelector(".cv");
+        td.innerHTML = `<input aria-label="Corrected value for ${esc(c.key)}" value="${esc(val(c.value))}"><button class="btn primary" style="margin-top:4px" data-save="${esc(c.key)}">Save</button>`;
+        td.querySelector("input").focus();
+      }
+    });
+  },
+
   async audit() {
     const a = await api("/api/audit");
     view.innerHTML = `<h2>10 / every action, chained</h2><h1>Audit log</h1><p class="sub">Hash chain ${a.verified ? pill("verified", "done") : pill("broken", "gap")}</p>
@@ -869,6 +1027,7 @@ async function loadMe() {
   const chip = $("#llm-chip");
   chip.textContent = c.llm ? "Claude on" : "deterministic agents";
   chip.classList.toggle("on", c.llm);
+  state.llm = !!c.llm;
   $("#prop-count").textContent = c.proposals.length || "";
 }
 let es, pending;
