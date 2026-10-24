@@ -32,9 +32,11 @@ function symptomOf(ctx, targetId, at) {
   const t = ctx.get(targetId);
   if (!t) return null;
   const alert = t.type === "Alert" ? t : null;
-  const asset = alert ? ctx.get(alert.assetId) : t.type === "Asset" ? t : t.type === "Sensor" ? ctx.get(t.assetId) : null;
+  const asset = alert ? ctx.get(alert.assetId) : t.type === "Asset" ? t : t.type === "Sensor" ? ctx.get(t.assetId) : t.type === "Position" ? ctx.list("Asset", (a) => a.positionId === t.id)[0] : null;
   if (!asset) return null;
-  const when = at || (alert && alert.at) || ctx.now, filter = asset.assetClass === FILTER;
+  // an asset with an active alert is read at the alert's moment, so the report does not drift with the plant clock
+  const active = alert || ctx.list("Alert", (a) => a.assetId === asset.id && a.state === "active").sort((a, b) => a.at.localeCompare(b.at))[0];
+  const when = at || (active && active.at) || ctx.now, filter = asset.assetClass === FILTER;
   const ids = t.type === "Sensor" ? [t.id] : filter ? [`SEN-${asset.positionTag}-headloss`] : [...((alert && alert.evidence) || []).filter((x) => /^SEN-/.test(x)), ...ctx.sensorsFor(asset.id).map((s) => s.id)];
   for (const id of new Set(ids)) {
     const on = onsetAt(ctx, id, when, filter);

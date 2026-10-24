@@ -6,7 +6,7 @@ An ontology-driven operating system for a **synthetic** water treatment works (R
 ## Run it
 
 ```bash
-npm test          # 266 tests: generator, ontology, telemetry, functions, actions, agents + evals, copilot, chat, drawings, parsers, plant model, process graph, region, trackers, scenes, Geo Watch, live mode, API, web
+npm test          # 315 tests: generator, ontology, telemetry, functions, actions, agents + evals, copilot, chat, drawings, parsers, plant model, process graph, region, trackers, scenes, Geo Watch, live mode, agent harness, root cause, API, web
 npm start         # http://localhost:8830  (plant clock advances 1 minute every 2 seconds)
 ```
 
@@ -55,6 +55,8 @@ Phase 2, Workforce Intelligence (design: `docs/superpowers/specs/2026-10-23-work
 | Seven projects with footprints, budget and spend, what they take out of service; treatment capacity as the bottleneck stage | `src/region.mjs`, `src/regionview.mjs` | Region design §4.4 |
 | Synthetic Sentinel-2 and Sentinel-1 scenes: a year of statistics in the Planetary Computer shape, 90-day baselines, banded grids (index, not calibrated), the day-10 storm plume reaching the intake as a contributing cause of F07 | `src/scenes.mjs`, `src/telemetry.mjs` | Region design §5.1–5.3 |
 | Geo Watch (agent 19): suggested detections, alert, coagulant-dose and sampling-round proposals, the round by chat, a Sample, human confirm or reject | `src/agents.mjs`, `src/actions.mjs` | Region design §5.4 |
+| Agent harness: a decision statement per agent read back in plain sentences; shadow, assisted and bounded modes; shadow actions matched to what people did; four-eyes promotion one step at a time, automatic demotion; evidence freshness ("evidence stale"); inherited hard constraints (no control writes, chlorine and money at propose, the permit holder's own); named approvers with a backup after escalation, timeouts that drop or hold and never apply; approval cards; off switches per agent and per tool; relative revert that keeps a later human edit | `src/harness.mjs`, `src/actions.mjs`, `src/agents.mjs` | Agents design §4 |
+| Root Cause (agent 20): symptom onset, upstream candidates on the released model with travel windows, the raw water and the plume, the breadth test, ranked local and contributing causes with evidence and "show me", rejected hypotheses with their timing, "Insufficient evidence" instead of a guess; an outcome check after a fix | `src/rca.mjs`, `src/agents.mjs` | Agents design §5 |
 | Optional live mode (`GEO_LIVE=1`): Sentinel-2 index statistics from Microsoft Planetary Computer over `data/geo/live-aoi.geojson`; tests use captured fixtures | `src/geolive.mjs` | Region design §5.5 |
 | Region view: Since you left, Today's supply risks, scene timeline, layers and filters, clustering, projects and operations tab with the four-part project panel, operation focus, Enter plant; offline basemap fallback; phone layout; server-side pruning | `web/region.js`, `web/app.js`, `src/server.mjs` | Region design §6–7 |
 
@@ -87,6 +89,12 @@ Phase 3, project 2 — the Region map and satellite layer (design: `docs/superpo
   Back returns to the same map.
 - **J21, technician (P-028):** nothing from the PS-2 MCC room (Z15) reaches the map, the panel, focus or the stream.
 - **J22, offline:** with no tiles the map draws every layer on a plain background and says "basemap offline".
+- **J23, the harness (P-002):** Agents → Decision statements → Process Watch reads back what it may do, who answers
+  (anyone with the action's clearance) and that it never writes to the control system. Turn `request_setpoint_change`
+  off: its open backwash request is withdrawn. Turn it back on. P-002 owns the default agents, so Promote is refused.
+- **J24, root cause (P-001):** the F07 alert's record → **Find root cause**. F07 (local) ranks first, the storm plume
+  contributes (suggested, weight 0.5; 0.7 once confirmed), raw water rose about 2.7 h before F07, inside the travel
+  window, and DP-2 is rejected as too late. **Show me** on the plume opens the Region on it.
 - Live mode: `GEO_LIVE=1 npm start` fetches real Sentinel-2 statistics for the example area (a rough outline of
   Rietvlei Dam) and shows them as their own line; they are never mixed into the synthetic works.
 

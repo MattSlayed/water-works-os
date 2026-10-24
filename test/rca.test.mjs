@@ -96,3 +96,18 @@ test("root cause: agent 20 is in the catalogue and passes its evals", async () =
   assert.equal(r.total, 3);
   assert.equal(r.passed, 3, JSON.stringify(r.cases));
 });
+
+test("root cause from the plant selection: a structure's position resolves to its asset", () => {
+  const s = createSystem();
+  const r = rca(s, { targetId: "POS-F07" });
+  assert.deepEqual([r.verdict, r.causes[0].id, r.causes[0].kind], ["explained", tag(s, "F07").id, "local"]);
+});
+
+test("root cause from the plant selection hours later still reads the alert's moment, not the clock", () => {
+  const s = createSystem();
+  const alert = f07Alert(s);
+  s.tel.tick(300);
+  const r = rca(s, { targetId: "POS-F07" }), byAlert = rca(s, { alertId: alert.id });
+  assert.equal(r.symptom.onsetAt, byAlert.symptom.onsetAt);
+  assert.ok(r.causes.some((c) => c.kind === "contributing"), JSON.stringify(r.rejected));
+});
