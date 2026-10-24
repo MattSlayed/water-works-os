@@ -6,7 +6,7 @@ An ontology-driven operating system for a **synthetic** water treatment works (R
 ## Run it
 
 ```bash
-npm test          # 327 tests: generator, ontology, telemetry, functions, actions, agents + evals, copilot, chat, drawings, parsers, plant model, process graph, region, trackers, scenes, Geo Watch, live mode, agent harness, root cause, API, web
+npm test          # 392 tests: generator, ontology, telemetry, functions, actions, agents + evals, copilot, chat, drawings, parsers, plant model, process graph, region, trackers, scenes, Geo Watch, live mode, agent harness, root cause, connectors, digester, studio, recommendations, API, web
 npm start         # http://localhost:8830  (plant clock advances 1 minute every 2 seconds)
 ```
 
@@ -32,7 +32,7 @@ Phase 2, Workforce Intelligence (design: `docs/superpowers/specs/2026-10-23-work
 
 | Area | Where | PRD |
 |---|---|---|
-| Synthetic works: 12 zones, 10 process stages, 21 hero/plant assets with part breakdowns, 42 people, competencies, shifts, WOs, permits, SOPs, OEM fault trees, lab samples | `src/generate.mjs` | AC-01, Appendix B |
+| Synthetic works: 12 zones, 10 process stages, 21 hero/plant assets with part breakdowns, 45 people (with an accounts clerk, a finance officer and an IT administrator), competencies, shifts, WOs, permits, SOPs, OEM fault trees, lab samples | `src/generate.mjs` | AC-01, Appendix B |
 | Ontology store with provenance, links, search, events and server-side pruning by clearance and zone | `src/ontology.mjs` | FR-ONT, FR-GOV-001 |
 | 14-day, 1-minute telemetry replay with fault scenarios (HLP-B bearing, F07 breakthrough, DP-2 prime loss) | `src/telemetry.mjs` | FR-INT-001/002 |
 | Function tools: failure risk, anomaly, breakthrough risk, storage hours, consequence, competence check | `src/functions.mjs` | §6.4, FR-ANL |
@@ -57,6 +57,12 @@ Phase 2, Workforce Intelligence (design: `docs/superpowers/specs/2026-10-23-work
 | Geo Watch (agent 19): suggested detections, alert, coagulant-dose and sampling-round proposals, the round by chat, a Sample, human confirm or reject | `src/agents.mjs`, `src/actions.mjs` | Region design §5.4 |
 | Agent harness: a decision statement per agent read back in plain sentences; shadow, assisted and bounded modes; shadow actions matched to what people did; four-eyes promotion one step at a time, automatic demotion; evidence freshness ("evidence stale"); inherited hard constraints (no control writes, chlorine and money at propose, the permit holder's own); named approvers with a backup after escalation, timeouts that drop or hold and never apply; approval cards; off switches per agent and per tool; relative revert that keeps a later human edit | `src/harness.mjs`, `src/actions.mjs`, `src/agents.mjs` | Agents design §4 |
 | Root Cause (agent 20): symptom onset, upstream candidates on the released model with travel windows, the raw water and the plume, the breadth test, ranked local and contributing causes with evidence and "show me", rejected hypotheses with their timing, "Insufficient evidence" instead of a guess; an outcome check after a fix | `src/rca.mjs`, `src/agents.mjs` | Agents design §5 |
+| Synthetic connectors in the real APIs' shapes (Microsoft Graph mail and driveItems, Teams, Gmail, Drive, Sheets, an ERP): 30 days of accounts mail with five planted traps (a duplicate, a smudged photo, no PO number, a total 6% over its PO, changed bank details), 40 POs, goods receipts and the clerk's filing log; nothing touches the network | `src/connectors/` | Agents design §7 |
+| IT's connector catalogue: per connector and operation, the roles that may use it, the most an agent may do, and a per-role IT sign-off; studio agents run as their builder, whoever starts them, and read only the connectors their statement lists | `src/generate.mjs`, `src/actions.mjs`, `src/agents.mjs` | Agents design §7 |
+| Document digester: fields graded read clearly / worked out / unsure from the text layer (Claude reads images when it is on), three-way match within a tolerance, duplicates and bank changes, the filing folder learnt from past filings; file only what is clean, post only as a proposal, bank changes to a person, unsure fields to review beside the document | `src/digest.mjs`, `src/templates.mjs`, `src/actions.mjs` | Agents design §8 |
+| Agent Studio: rule / agent / person screen, a keyword planner for five templates (digester, watch, weekly report, chaser, supplier tidy-up) or Claude when on, statement checks against the catalogue, read-back sentences that edit the statement both ways, a 14-day replay matched to what the person did, start in shadow, IT sign-off before promotion, the named approver promotes | `src/studio.mjs`, `src/templates.mjs`, `src/harness.mjs` | Agents design §6 |
+| Recommender (agent 21): six signals from each person's own work (filings by hand, the same check every morning, slow approvals, repeated overrides, long steps, a pile of one kind of issue); private, with evidence and a basis, dismissed for 30 days | `src/recommend.mjs`, `src/agents.mjs` | Agents design §9 |
+| Studio, Suggested for you, IT catalogue and Documents screens | `web/app.js` | Agents design §10 |
 | Optional live mode (`GEO_LIVE=1`): Sentinel-2 index statistics from Microsoft Planetary Computer over `data/geo/live-aoi.geojson`; tests use captured fixtures | `src/geolive.mjs` | Region design §5.5 |
 | Region view: Since you left, Today's supply risks, scene timeline, layers and filters, clustering, projects and operations tab with the four-part project panel, operation focus, Enter plant; offline basemap fallback; phone layout; server-side pruning | `web/region.js`, `web/app.js`, `src/server.mjs` | Region design §6–7 |
 
@@ -95,6 +101,15 @@ Phase 3, project 2 — the Region map and satellite layer (design: `docs/superpo
 - **J24, root cause (P-001):** the F07 alert's record → **Find root cause**. F07 (local) ranks first, the storm plume
   contributes (suggested, weight 0.5; 0.7 once confirmed), raw water rose about 2.7 h before F07, inside the travel
   window, and DP-2 is rejected as too late. **Show me** on the plume opens the Region on it.
+- **J25, the clerk builds an agent (P-043):** Agent Studio → "When a supplier invoice comes into the accounts inbox,
+  read it, check it against the PO and file it in the right supplier folder." → an agent. The read-back says filing
+  needs IT approval, Thandi Mokoena answers for posting, and Precious Sithole after 4 hours. Replay: 23 of 25 agree,
+  1 unsure, 1 caught. **Start in shadow.**
+- **J26, IT and finance (P-045, then P-044):** IT catalogue → **Sign off for accounts_clerk** on m365.files write.
+  As P-044, Agents → the clerk's digester → **Promote to assisted**. The clerk cannot promote it herself.
+- **J27, a suggestion (P-028):** Agent Studio → Suggested for you shows a watch on HLP-B bearing temperature with its
+  readings as evidence. Dismiss it with "I like to look myself"; a day later it has not come back.
+- **J28, Claude off:** with no API key, J25 works on the text-layer documents and the studio says "Claude is off".
 - Live mode: `GEO_LIVE=1 npm start` fetches real Sentinel-2 statistics for the example area (a rough outline of
   Rietvlei Dam) and shows them as their own line; they are never mixed into the synthetic works.
 
@@ -108,8 +123,9 @@ Design prototypes for the same screens: https://claude.ai/artifact/LwS7u1g2MyCjY
 
 ## Not in this build
 
-- Real connectors (OPC UA/MQTT gateway, ERP/CMMS, LIMS, HR, GIS, RTLS, WhatsApp Business API, SharePoint/Drive). The
-  store, telemetry and chat are in-memory stand-ins behind the same interfaces. The chat stub trusts the
+- Real connectors (OPC UA/MQTT gateway, ERP/CMMS, LIMS, HR, GIS, RTLS, WhatsApp Business API, Microsoft 365, Google
+  Workspace). The store, telemetry, chat and the synthetic Microsoft 365, Google and ERP stores are in-memory stand-ins
+  behind the same interfaces; documents carry a text layer rather than real PDFs. The chat stub trusts the
   `x-channel-sender` header; a real webhook must verify the provider's signature.
 - Voice-note transcription and photo storage: media are references (`photo:…`) only.
 - AI conversion of arbitrary SOP PDFs into steps: the four synthetic SOPs are converted by hand.
