@@ -41,23 +41,40 @@ const whoAnswers = (spec, action, ont) => {
   return p ? `${p.name} (${p.id})` : String(a.id || a);
 };
 
-// The decision statement read back in plain sentences (agents design §4.1).
+// The decision statement read back in plain sentences (agents design §4.1, §6.1 step 3). The trigger, each tool's
+// level, the approver, the escalation and the timeout sentences can be edited and parsed back (studio.mjs).
+export const MODE_TEXT = { shadow: "It is in shadow: it records what it would do and changes nothing.", assisted: "It is in assisted mode. It asks before every change.", bounded: "It is bounded: it acts on its own within the limits below." };
+const nameOf = (ont, id) => (ont.get(id) || {}).name || id;
+export const durationText = (min) => (min % 60 ? `${min} minutes` : `${min / 60} hour${min === 60 ? "" : "s"}`);
+const STUDIO_EVERY = [[/^weekdays at (\d\d:\d\d)$/, "Every weekday at $1"], [/^daily at (\d\d:\d\d)$/, "Every day at $1"], [/^fridays at (\d\d:\d\d)$/, "Every Friday at $1"], [/^every (\d+) min$/, "Every $1 min"]];
+const sourceText = (spec) => {
+  const s = (spec.params || {}).source;
+  if (!s) return "it runs";
+  if (s.kind === "m365.mail") return `it reads new mail in the ${s.mailbox.split("@")[0].replace(/^./, (c) => c.toUpperCase())} inbox`;
+  return s.kind === "chat" ? "it reads new photos on the works chat" : `it reads new files in the ${s.path} folder`;
+};
 export function statementSentences(spec, ont) {
   const t = spec.trigger || {};
   const every = String(t.every || "");
+  const studio = STUDIO_EVERY.find(([re]) => re.test(every));
   const out = [
     `It exists to: ${spec.purpose}.`,
-    t.kind === "schedule" ? `It runs ${/^\d+\s*(min|h)$/.test(every) ? `every ${every}` : every}.` : t.kind === "event" ? `It runs when this happens: ${t.on}.` : "It runs only when a person starts it."
+    t.kind === "schedule" && studio ? `${every.replace(studio[0], studio[1])} ${sourceText(spec)}.`
+      : t.kind === "schedule" ? `It runs ${/^\d+\s*(min|h)$/.test(every) ? `every ${every}` : every}.` : t.kind === "event" ? `It runs when this happens: ${t.on}.` : "It runs only when a person starts it.",
+    MODE_TEXT[spec.mode] || MODE_TEXT.bounded
   ];
+  const named = typeof spec.approver === "string";
   if (!spec.tools.length) out.push("It takes no actions.");
-  for (const { action, level, enabled } of spec.tools) {
-    const w = words(action);
+  for (const { action, level, enabled, locked } of spec.tools) {
+    const w = words(action), it = locked ? ", once IT signs it off" : "";
     if (!enabled) out.push(`Its ${w} tool is turned off.`);
-    else if (level === "act") out.push(`It may ${w} without asking.`);
-    else if (level === "propose") out.push(`It asks before it will ${w}; ${whoAnswers(spec, action, ont)} may answer.`);
+    else if (level === "act") out.push(spec.mode === "bounded" || !spec.mode ? `It may ${w} without asking${it}.` : `It may ${w} on its own once promoted${it}.`);
+    else if (level === "propose") out.push(named ? `It asks ${nameOf(ont, spec.approver)} before it will ${w}.` : `It asks before it will ${w}; ${whoAnswers(spec, action, ont)} may answer.`);
     else out.push(`It may only ${level} for ${w}.`);
   }
-  out.push(spec.onTimeout === "drop" ? "If nobody answers, the proposal is dropped." : "If nobody answers, nothing happens.");
+  const nobody = spec.onTimeout === "drop" ? "the proposal is dropped" : "it does nothing";
+  if (named && spec.backup && spec.escalateAfterMin) out.push(`If ${nameOf(ont, spec.approver)} does not answer in ${durationText(spec.escalateAfterMin)} it asks ${nameOf(ont, spec.backup)}; if nobody answers ${nobody}.`);
+  else out.push(spec.onTimeout === "drop" ? "If nobody answers, the proposal is dropped." : "If nobody answers, nothing happens.");
   out.push(...HARD_CONSTRAINTS.filter((c) => spec.constraints.includes(c.id)).map((c) => c.text));
   return out;
 }

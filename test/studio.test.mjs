@@ -99,3 +99,56 @@ test("the watch, weekly-report and tidy-up templates act only through their tool
   const d = start("Find duplicate suppliers in the ERP", "P-044");
   assert.deepEqual(d.outputs.map((o) => [o.action, o.status]), [["draft_document", "done"]], JSON.stringify(d.refusals || d.error));
 });
+
+// ---- Task 6: read-back that round-trips ----
+const ROUND = ["trigger", "tools", "approver", "backup", "escalateAfterMin", "onTimeout"];
+const pick = (o) => Object.fromEntries(ROUND.map((k) => [k, o[k] ?? null]));
+
+test("read-back round-trips for the J25 digester and for default agents", async () => {
+  const { statementSentences, specFor } = await import("../src/harness.mjs");
+  const { statementFromSentences } = await import("../src/studio.mjs");
+  const s = createSystem(), j25 = plan(s, J25, "P-043").spec;
+  for (const spec of [j25, specFor(s.ont, "Process Watch"), specFor(s.ont, "Scheduler"), specFor(s.ont, "Chat Intake")]) {
+    const back = statementFromSentences(statementSentences(spec, s.ont), spec, s.ont);
+    assert.deepEqual(back.problems, [], spec.name);
+    assert.deepEqual(pick(back.spec), pick(spec), spec.name);
+  }
+  const text = statementSentences(j25, s.ont);
+  for (const line of ["Every weekday at 07:00 it reads new mail in the Accounts inbox.", "It asks Thandi Mokoena before it will post invoice match.",
+    "If Thandi Mokoena does not answer in 4 hours it asks Precious Sithole; if nobody answers it does nothing.", "It is in shadow: it records what it would do and changes nothing."]) assert.ok(text.includes(line), `${line}\n${text.join("\n")}`);
+  assert.ok(text.some((l) => /file document.*once IT signs it off/.test(l)), text.join("\n"));
+});
+
+test("editing a sentence changes the statement: escalation after 2 hours", async () => {
+  const { statementSentences } = await import("../src/harness.mjs");
+  const { statementFromSentences } = await import("../src/studio.mjs");
+  const s = createSystem(), j25 = plan(s, J25, "P-043").spec;
+  const edited = statementSentences(j25, s.ont).map((l) => l.replace("does not answer in 4 hours", "does not answer in 2 hours"));
+  const r = statementFromSentences(edited, j25, s.ont);
+  assert.deepEqual(r.problems, []);
+  assert.equal(r.spec.escalateAfterMin, 120);
+  const named = statementFromSentences(statementSentences(j25, s.ont).map((l) => l.replace("It asks Thandi Mokoena before", "It asks Precious Sithole before")), j25, s.ont);
+  assert.equal(named.spec.approver, "P-001");
+});
+
+test("Review Focus 3: a sentence edited into something forbidden is refused and the statement stays as it was", async () => {
+  const { statementSentences } = await import("../src/harness.mjs");
+  const { statementFromSentences } = await import("../src/studio.mjs");
+  const s = createSystem(), j25 = plan(s, J25, "P-043").spec;
+  const edited = statementSentences(j25, s.ont).map((l) => (/post invoice match/.test(l) ? "It may post invoice match without asking." : l));
+  const r = statementFromSentences(edited, j25, s.ont);
+  assert.match(r.problems.join("; "), /above propose/);
+  assert.equal(r.spec.tools.find((t) => t.action === "post_invoice_match").level, "propose");
+  const timeout = statementFromSentences(statementSentences(j25, s.ont).map((l) => l.replace("it does nothing", "it goes ahead")), j25, s.ont);
+  assert.ok(timeout.problems.length);
+  assert.equal(timeout.spec.onTimeout, "hold");
+});
+
+test("a shadow statement says it changes nothing and never 'without asking'", async () => {
+  const { statementSentences, specFor } = await import("../src/harness.mjs");
+  const s = createSystem(), j25 = plan(s, J25, "P-043").spec, text = statementSentences(j25, s.ont).join(" ");
+  assert.match(text, /it records what it would do and changes nothing/);
+  assert.doesNotMatch(text, /without asking/);
+  assert.match(statementSentences({ ...j25, mode: "bounded" }, s.ont).join(" "), /may digest document without asking/);
+  assert.match(statementSentences({ ...specFor(s.ont, "Scheduler"), mode: "assisted" }, s.ont).join(" "), /It asks before every change/);
+});

@@ -3,7 +3,7 @@
 // it in shadow. Without Claude a keyword planner covers the five templates; with Claude, Claude drafts and the same
 // checks decide. Nothing here grants more than the builder already has.
 import { ACTIONS, LEVELS, catalogueAllows, catalogueLine } from "./actions.mjs";
-import { HARD_CONSTRAINTS, specId } from "./harness.mjs";
+import { HARD_CONSTRAINTS, specId, statementSentences } from "./harness.mjs";
 import { TEMPLATES } from "./templates.mjs";
 import { llmEnabled, askClaude } from "./llm.mjs";
 
@@ -155,4 +155,54 @@ export async function composeWithClaude(text, { builder, ont }) {
   if (!out || !TEMPLATES[out.template] || typeof out.params !== "object") return fallback.spec || null;
   const spec = draftSpec(out.template, { params: out.params, trigger: out.trigger && typeof out.trigger.every === "string" ? out.trigger : null, builder, ont });
   return validateStatement(spec, { ont }).ok ? spec : fallback.spec || null;
+}
+
+// Read-back the other way (agents design §6.1 step 3): the editable sentences parsed back into the statement. An edit
+// that does not read, or that the checks refuse, leaves the statement as it was and says why.
+const EVERY_BACK = { weekday: "weekdays", day: "daily", Friday: "fridays" };
+export function statementFromSentences(sentences, spec, ont) {
+  const original = statementSentences(spec, ont), next = structuredClone(spec), problems = [];
+  const byWords = new Map(spec.tools.map((t) => [t.action.replace(/_/g, " "), t.action]));
+  const who = (name) => {
+    const ps = ont.list("Person", (p) => p.name === name.trim());
+    if (ps.length === 1) return ps[0].id;
+    problems.push(ps.length ? `two people are called ${name}` : `nobody here is called ${name}`);
+    return null;
+  };
+  const tool = (w, patch) => {
+    const action = byWords.get(w.trim());
+    if (!action) return problems.push(`it has no "${w}" tool`);
+    next.tools = next.tools.map((t) => (t.action === action ? { ...t, ...patch } : t));
+  };
+  // every sentence is parsed, the unchanged ones first, so an edit wins over a sentence that still says the old value
+  const all = (sentences || []).map((x) => String(x).trim());
+  for (const s of [...all.filter((x) => original.includes(x)), ...all.filter((x) => !original.includes(x))]) {
+    let m;
+    if ((m = s.match(/^Every (weekday|day|Friday) at (\d{1,2}):(\d{2}) (it .+)\.$/)) || (m = s.match(/^Every (\d+) min (it .+)\.$/))) {
+      next.trigger = { kind: "schedule", every: m.length === 5 ? `${EVERY_BACK[m[1]]} at ${m[2].padStart(2, "0")}:${m[3]}` : `every ${m[1]} min` };
+      const src = original[1].replace(/^Every .+? (?=it )/, "").replace(/\.$/, "");
+      if (m[m.length - 1] !== src) problems.push("what it reads cannot be changed in a sentence: describe the agent again");
+    } else if ((m = s.match(/^It runs every (\d+\s*(?:min|h))\.$/))) next.trigger = { kind: "schedule", every: m[1] };
+    else if ((m = s.match(/^It runs when this happens: (.+)\.$/))) next.trigger = { kind: "event", on: m[1] };
+    else if (s === "It runs only when a person starts it.") next.trigger = { kind: "manual" };
+    else if ((m = s.match(/^It runs (.+)\.$/))) next.trigger = { kind: "schedule", every: m[1] };
+    else if ((m = s.match(/^It may only (read|draft|notify) for (.+)\.$/))) tool(m[2], { level: m[1], enabled: true });
+    else if ((m = s.match(/^It may (.+?) (?:without asking|on its own once promoted)(?:, once IT signs it off)?\.$/))) tool(m[1], { level: "act", enabled: true });
+    else if ((m = s.match(/^It asks before it will (.+?); .+ may answer\.$/))) tool(m[1], { level: "propose", enabled: true });
+    else if ((m = s.match(/^It asks (.+?) before it will (.+)\.$/))) { const id = who(m[1]); if (id) next.approver = id; tool(m[2], { level: "propose", enabled: true }); }
+    else if ((m = s.match(/^Its (.+) tool is turned off\.$/))) tool(m[1], { enabled: false });
+    else if ((m = s.match(/^If (.+?) does not answer in (\d+(?:\.\d+)?) (hours?|minutes?) it asks (.+?); if nobody answers (it does nothing|the proposal is dropped)\.$/))) {
+      const a = who(m[1]), b = who(m[4]);
+      if (a) next.approver = a;
+      if (b) next.backup = b;
+      next.escalateAfterMin = Math.round(Number(m[2]) * (/^hour/.test(m[3]) ? 60 : 1));
+      next.onTimeout = m[5] === "the proposal is dropped" ? "drop" : "hold";
+    } else if ((m = s.match(/^If nobody answers, (nothing happens|the proposal is dropped)\.$/))) next.onTimeout = m[1] === "nothing happens" ? "hold" : "drop";
+    else if (!original.includes(s)) problems.push(`this sentence cannot be changed here: "${s}"`);
+  }
+  if (!problems.length) {
+    if (next.template) problems.push(...validateStatement(next, { ont }).problems);
+    else for (const t of next.tools) if (ACTIONS[t.action] && lv(t.level) > lv(ACTIONS[t.action].ceiling)) problems.push(`${t.action} ${t.level} is above ${ACTIONS[t.action].ceiling}, the most an agent may do`);
+  }
+  return problems.length ? { spec, problems: [...new Set(problems)] } : { spec: next, problems: [] };
 }
