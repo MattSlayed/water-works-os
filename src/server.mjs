@@ -8,6 +8,7 @@ import { createSystem } from "./system.mjs";
 import { dropPackEvidence } from "./agents.mjs";
 import { catalogueAllows } from "./actions.mjs";
 import { jobBrief, correctionsFor } from "./brief.mjs";
+import { WORKS_MAILBOX } from "./connectors/engineering.mjs";
 import { runEvals } from "./evals.mjs";
 import { rank } from "./ontology.mjs";
 import { llmEnabled } from "./llm.mjs";
@@ -134,18 +135,28 @@ export function createServer(sys) {
     if (["m365.mail", "m365.files", "google.sheets"].includes(src.kind)) return catalogueAllows(ont, { kind: src.kind, op: "read", role: (ont.get(v.id) || {}).role }).ok;
     return !!ont.view(v).get(src.id);
   };
+  // a candidate stores a citation only; its line is read from the source when someone allowed to read it asks
+  const sourceText = (src) => {
+    const c = sys.connectors;
+    if (!src || !c) return null;
+    if (src.kind === "m365.mail") { const m = c.m365.mail.list(WORKS_MAILBOX).find((x) => x.id === src.id); return m ? String((m.body || {}).content || "").split(/\n/)[src.lineNo || 0] || null : null; }
+    if (src.kind === "m365.files") { const a = c.attachment(src.id); return a && a.textLayer ? a.textLayer.split("\n")[src.lineNo || 0] || null : null; }
+    if (src.kind === "google.sheets") { const [range, row] = String(src.id).split("#"); const r = (c.google.sheets.values(range).values || [])[Number(row) - 1]; return r ? r.join(" · ") : null; }
+    if (src.kind === "chat") { const m = ont.get(src.id); return m ? m.text : null; }
+    return null;
+  };
   const cite = (v, c) => ({ id: c.id, sourceId: c.source.id, title: c.source.title, kind: c.source.kind, at: c.source.at, authorId: c.source.authorId, authority: c.authority, grade: c.grade, verdict: c.verdict, reason: c.reason,
-    lo: c.lo, hi: c.hi, target: c.target, unit: c.unit, text: readsSource(v, c.source) ? c.source.text : null });
+    lo: c.lo, hi: c.hi, target: c.target, unit: c.unit, text: readsSource(v, c.source) ? sourceText(c.source) : null });
   const withInherited = (cors, projectId) => cors.map((c) => ({ ...c, inheritedFrom: c.fromId && c.fromId !== projectId && (ont.get(c.fromId) || {}).type === "Project" ? c.fromId : null }));
   function specsPayload(v, assetId) {
     const view = ont.view(v), asset = view.get(assetId);
     if (!asset) throw new HttpError(404, "not found");
     const specs = view.list("Spec", (x) => x.assetId === assetId).map((sp) => {
-      const p = ont.list("Proposal", (x) => x.action === "update_spec" && x.state === "open" && x.params.specId === sp.id)[0];
+      const p = ont.list("Proposal", (x) => x.action === "update_spec" && x.state === "open" && x.params.specId === sp.id).sort((a, b) => String(b.created).localeCompare(String(a.created)))[0];
       const c = p && ont.get(p.params.candidateId);
       return { ...sp, pending: p ? { proposalId: p.id, lo: p.params.lo, hi: p.params.hi, target: p.params.target, why: p.params.why, flag: p.params.flag || null,
-          sourceTitle: c ? c.source.title : null, at: c ? c.source.at : null, text: c && readsSource(v, c.source) ? c.source.text : null } : null,
-        sources: ont.list("SpecCandidate", (x) => x.specId === sp.id && ["supports", "winner"].includes(x.verdict) && !(sp.sourceRefs || []).some((r) => r.id === x.source.id)).map((x) => cite(v, x)) };
+          sourceTitle: c ? c.source.title : null, at: c ? c.source.at : null, text: c && readsSource(v, c.source) ? sourceText(c.source) : null } : null,
+        sources: ont.list("SpecCandidate", (x) => x.specId === sp.id && x.verdict === "supports" && !(sp.sourceRefs || []).some((r) => r.id === x.source.id)).map((x) => cite(v, x)) };
     });
     const open = view.list("WorkOrder", (w) => w.assetId === assetId && !["closed", "cancelled"].includes(w.state)).sort((a, b) => String(b.planned).localeCompare(String(a.planned)))[0];
     return { asset: { id: asset.id, positionTag: asset.positionTag, template: asset.template || null }, specs, corrections: withInherited(correctionsFor(view, asset), null), candidates: view.list("SpecCandidate", (x) => x.subject === assetId).map((x) => cite(v, x)), workOrderId: open ? open.id : null };

@@ -24,7 +24,7 @@ const item = (text, refs) => ({ text, refs: refs.filter(Boolean) });
 // The brief for one work order, from the viewer's own view: { lines, full, specVersions, correctionIds }, or null when
 // the viewer cannot see the job. lines is the chat version (at most 8 lines); full holds every section with its refs.
 // Source text never enters it: only titles, dates and names.
-export function jobBrief(view, workOrderId) {
+export function jobBrief(view, workOrderId, { execution = null } = {}) {
   const wo = view.get(workOrderId);
   if (!wo || wo.type !== "WorkOrder") return null;
   const asset = view.get(wo.assetId);
@@ -38,6 +38,9 @@ export function jobBrief(view, workOrderId) {
   for (const sp of specs) {
     const src = (sp.sourceRefs || [])[0] || {};
     const p = view.list("Proposal", (x) => x.action === "update_spec" && x.state === "open" && x.params.specId === sp.id)[0];
+    // during a job, the band it is held to (design §6: a change confirmed mid-job does not move the job)
+    const pin = execution && (execution.specPins || []).find((x) => x.specId === sp.id);
+    if (pin && pin.version !== sp.version) { target.push(item(`Target: ${lowerFirst(sp.measure)} ${pin.lo}–${pin.hi} ${sp.unit} (this job is held to v${pin.version}; v${sp.version} was confirmed after it started).`, [sp.id])); continue; }
     let text = `Target: ${lowerFirst(sp.measure)} ${sp.lo}–${sp.hi} ${sp.unit} (${src.title || "no source"}, confirmed by ${nameOf(sp.confirmedBy)}).`;
     if (sp.condition) text += ` Until ${sp.condition}.`;
     if (p) text += ` A newer value, ${p.params.target ?? `${p.params.lo}–${p.params.hi}`} ${sp.unit}, waits for the site manager.`;

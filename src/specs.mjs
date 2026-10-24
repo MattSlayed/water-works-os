@@ -88,7 +88,7 @@ export function rank(candidates, { corrections = [], rejected = [] } = {}) {
     const block = corrections.find((cor) => cor.wrongValue != null && covers(cor, c) && cor.wrongSourceRef && cor.wrongSourceRef.id === c.source.id && cor.wrongValue === valueOf(c));
     if (c.grade === "AMBIGUOUS") passedOver.push({ candidateId: c.id, reason: "unsure" });
     else if (block) passedOver.push({ candidateId: c.id, reason: `blocked by ${block.id}` });
-    else if (rejected.some((x) => x.sourceId === c.source.id && x.lo === c.lo && x.hi === c.hi)) passedOver.push({ candidateId: c.id, reason: "rejected before" });
+    else if (rejected.some((x) => x.sourceId === c.source.id && (x.value != null ? x.value === valueOf(c) : x.lo === c.lo && x.hi === c.hi))) passedOver.push({ candidateId: c.id, reason: "rejected before" });
     else live.push(c);
   }
   const M = live.filter((c) => c.authority === "manager").sort(newest)[0];

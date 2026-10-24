@@ -605,12 +605,12 @@ export function generateWorks(seed = 7) {
     const a = byId(part.assetId), proc = objects.find((o) => o.type === "Procedure" && o.template === a.template && o.state === "released");
     const st = proc && proc.steps.find((x) => x.requires && x.requires.reading && x.requires.reading.partName === part.name);
     const key = slug(part.band.measure);
-    add({ id: `SPC-${a.positionTag}-${key}`, type: "Spec", assetId: a.id, partName: part.name, step: st ? st.step : null, key, measure: part.band.measure, unit: part.band.unit,
+    add({ id: `SPC-${a.positionTag}-${key}`, type: "Spec", assetId: a.id, partName: part.name, step: st ? st.step : null, stepText: st ? st.text : null, key, measure: part.band.measure, unit: part.band.unit,
       lo: part.band.lo, hi: part.band.hi, target: null, condition: null, version: 1, state: "confirmed", sourceRefs: [sop(a.template)], ...fromSop, history: [] }, "SYNTH-DOCS");
   }
   // the coagulant pumps' delivery: the owner's spec revision B (source b) confirmed in March over the SOP's range
   for (const tag of ["DP-1", "DP-2"]) {
-    add({ id: `SPC-${tag}-delivery`, type: "Spec", assetId: astOf(tag).id, partName: "Dosing head", step: 2, key: "delivery", measure: "Delivery at 60% stroke", unit: "L/h",
+    add({ id: `SPC-${tag}-delivery`, type: "Spec", assetId: astOf(tag).id, partName: "Dosing head", step: 2, stepText: "Check suction line for air and the calibration column draw-down", key: "delivery", measure: "Delivery at 60% stroke", unit: "L/h",
       lo: 114, hi: 126, target: 120, condition: null, version: 2, state: "confirmed",
       sourceRefs: [{ kind: "m365.files", id: "ATT-ENG-01", title: "owner spec rev B", at: "2026-03-02", authorId: null }], confirmedBy: "P-001", confirmedAt: "2026-03-05T09:00:00Z", reason: "Owner specification revision B",
       history: [{ version: 1, lo: 100, hi: 140, target: null, sourceRefs: [sop("dosing_pump")], ...fromSop }] }, "SYNTH-DOCS");

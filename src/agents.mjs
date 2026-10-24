@@ -38,7 +38,7 @@ export const AGENT_SPECS = [
   v({ name: "Tag Matcher", purpose: "Match historian tags to positions and report unmatched keys", trigger: { kind: "event", on: "Connector import" }, tools: ["draft_document"], autonomy: { draft_document: "act" } }),
   v({ name: "Recommender", purpose: "Suggest agents from how each person works, shown only to that person, with the evidence", trigger: { kind: "schedule", every: "each plant day" }, tools: ["record_suggestion"], autonomy: { record_suggestion: "act" } }),
   v({ name: "Spec Triage", purpose: "Read mail, files, sheets, drawings and chat for asset specs; propose one answer for the site manager to confirm", trigger: { kind: "schedule", every: "each plant day" },
-    tools: ["record_spec_candidates", "update_spec"], autonomy: { record_spec_candidates: "act", update_spec: "propose" }, approver: "P-001",
+    tools: ["record_spec_candidates", "update_spec", "withdraw_spec_change"], autonomy: { record_spec_candidates: "act", update_spec: "propose", withdraw_spec_change: "act" }, approver: "P-001",
     reads: [{ source: "connector:m365.mail" }, { source: "connector:m365.files" }, { source: "connector:google.sheets" }] })
 ];
 
@@ -100,13 +100,13 @@ function specSourceLines(ctx, people) {
   const nameOf = (id) => (people.find((p) => p.id === id) || {}).name || id;
   for (const m of ctx.connector("m365.mail").list(WORKS_MAILBOX)) {
     const from = m.from.emailAddress.address, author = people.find((p) => `${p.name.toLowerCase().split(/\s+/).join(".")}@riverbend.example` === from.toLowerCase());
-    for (const line of String((m.body || {}).content || "").split(/\n/)) out.push({ line, source: { kind: "m365.mail", id: m.id, at: m.receivedDateTime, authorId: author ? author.id : null, title: m.subject, from } });
+    String((m.body || {}).content || "").split(/\n/).forEach((line, lineNo) => out.push({ line, source: { kind: "m365.mail", id: m.id, lineNo, at: m.receivedDateTime, authorId: author ? author.id : null, title: m.subject, from } }));
   }
   for (const f of ctx.connector("m365.files").list("Engineering")) {
     const a = f.attachmentId && ctx.attachment(f.attachmentId);
     if (!a || !a.textLayer) continue;
     const path = f.parentReference.path.replace("/drive/root:/", ""), dated = (a.textLayer.match(/^Date: (\S+)/m) || [])[1];
-    for (const line of a.textLayer.split("\n")) out.push({ line, source: { kind: "m365.files", id: a.id, at: dated || f.createdDateTime, authorId: null, title: f.name, path, text: a.textLayer } });
+    a.textLayer.split("\n").forEach((line, lineNo) => out.push({ line, source: { kind: "m365.files", id: a.id, lineNo, at: dated || f.createdDateTime, authorId: null, title: f.name, path, text: a.textLayer } }));
   }
   const rows = ctx.connector("google.sheets").values(DOSE_SHEET).values || [];
   const head = rows[0] || [], col = head.findIndex((h) => /delivery/i.test(h)), when = head.findIndex((h) => /updated/i.test(h));
@@ -135,7 +135,7 @@ const LOGIC = {
         const a = assets.find((x) => x.id === h.assetId), sp = specs.find((x) => x.assetId === h.assetId && x.key === v.key);
         if (!sp) continue;
         cands.push({ id: `SCD-${src.source.id.replace(/[^\w-]+/g, "_")}-${a.positionTag}`, subject: a.id, specId: sp.id, key: v.key, lo: v.lo, hi: v.hi, target: v.target, unit: v.unit, condition: v.condition,
-          source: { kind: src.source.kind, id: src.source.id, line: src.line, at: src.source.at, authorId: src.source.authorId, title: src.source.title, text: src.cell !== undefined ? `${src.line}: ${src.cell}` : src.line },
+          source: { kind: src.source.kind, id: src.source.id, lineNo: src.source.lineNo ?? null, at: src.source.at, authorId: src.source.authorId, title: src.source.title },
           authority, grade: h.tie ? "AMBIGUOUS" : v.grade, matchedBy: h.matchedBy, verdict: null, reason: null });
       }
     }
@@ -144,21 +144,31 @@ const LOGIC = {
       const mine = cands.filter((c) => c.specId === sp.id);
       if (!mine.length) continue;
       const asset = assets.find((a) => a.id === sp.assetId);
-      const rejected = ctx.list("Proposal", (p) => p.action === "update_spec" && p.state === "rejected" && p.params.specId === sp.id).map((p) => ({ sourceId: p.params.sourceId, lo: p.params.lo, hi: p.params.hi }));
+      // what the site manager rejected, or edited to something else, is not proposed again from the same source
+      const rejected = ctx.list("Proposal", (p) => p.action === "update_spec" && ["rejected", "edited"].includes(p.state) && p.params.specId === sp.id)
+        .map((p) => ({ sourceId: p.params.sourceId, value: p.params.sourceValue ?? null, lo: p.params.lo, hi: p.params.hi }));
       const { winner, passedOver } = rank(mine, { corrections: correctionsFor(ctx, asset), rejected });
       for (const po of passedOver) Object.assign(mine.find((c) => c.id === po.candidateId), { verdict: "passed over", reason: po.reason });
       if (!winner) continue;
       const sensor = ctx.sensorsFor(sp.assetId).find((x) => x.unit === sp.unit && Array.isArray(x.range));
       const d = decide(winner, sp, { ratedRange: sensor ? sensor.range : null });
       if (d.kind === "agrees") { winner.verdict = "supports"; ctx.think(`${sp.id}: ${winner.source.title} agrees with v${sp.version}.`); continue; }
+      // the confirmed spec is the site manager's own word as of its confirmation: an older source does not reopen it
+      if (String(winner.source.at) <= String(sp.confirmedAt)) { winner.verdict = "passed over"; winner.reason = "older than the confirmed spec"; ctx.think(`${sp.id}: ${winner.source.title} is older than v${sp.version}.`); continue; }
       winner.verdict = "winner";
       proposals.push({ sp, winner, d, passedOver });
     }
     if (cands.length) ctx.act("record_spec_candidates", { candidates: cands });
+    // a spec change the sources no longer support is withdrawn, so the brief and the queue never show a stale value
+    for (const sp of specs) {
+      const want = proposals.find((x) => x.sp.id === sp.id);
+      for (const p of ctx.list("Proposal", (x) => x.action === "update_spec" && x.state === "open" && x.params.specId === sp.id))
+        if (!want || p.params.lo !== want.d.lo || p.params.hi !== want.d.hi || p.params.fromVersion !== sp.version) ctx.act("withdraw_spec_change", { proposalId: p.id, reason: want ? "a newer source supersedes it" : "the sources no longer support it" });
+    }
     for (const { sp, winner, d, passedOver } of proposals) {
       if (ctx.list("Proposal", (p) => p.action === "update_spec" && p.state === "open" && p.params.specId === sp.id && p.params.lo === d.lo && p.params.hi === d.hi).length) { ctx.think(`${sp.id}: already waiting for the site manager.`); continue; }
       const why = winner.authority === "manager" ? `The site manager's newest instruction: ${winner.source.title} (${String(winner.source.at).slice(0, 10)}).` : `The highest authority, newest: ${winner.source.title} (${String(winner.source.at).slice(0, 10)}).`;
-      ctx.act("update_spec", { specId: sp.id, assetId: sp.assetId, lo: d.lo, hi: d.hi, target: d.target, unit: sp.unit, condition: winner.condition, candidateId: winner.id, sourceId: winner.source.id, why, flag: d.flag,
+      ctx.act("update_spec", { specId: sp.id, assetId: sp.assetId, lo: d.lo, hi: d.hi, target: d.target, unit: sp.unit, condition: winner.condition, candidateId: winner.id, sourceId: winner.source.id, sourceValue: winner.target ?? winner.lo, fromVersion: sp.version, why, flag: d.flag,
         passedOver: passedOver.map((po) => { const c = mine(po.candidateId); return { candidateId: po.candidateId, title: c.source.title, value: c.target ?? c.lo, reason: po.reason }; }) });
     }
     function mine(id) { return cands.find((c) => c.id === id); }
@@ -231,7 +241,7 @@ const LOGIC = {
       }
       case "brief": {
         if (!ex) { say('No job is running. Reply "start" first.'); return outcome("asked"); }
-        const b = jobBrief(ctx, ex.workOrderId);
+        const b = jobBrief(ctx, ex.workOrderId, { execution: ex });
         say(b ? Object.values(b.full).flat().map((x) => x.text).join("\n") : "No brief for this job.");
         return outcome("asked");
       }

@@ -71,7 +71,7 @@ test("reject memory: a rejected value is not proposed again; a different value f
 test("record_correction is the site manager's alone and blocks the sheet's 110 on DP-2", () => {
   const s = createSystem(), dp2 = dp(s, "DP-2").id;
   const params = { line: "Dose calc sheet row DP-2 still says 110 L/h (the 2025 figure).", scope: { assetId: dp2 }, wrongSourceRef: { kind: "google.sheets", id: "Coagulant dose calc!A1:F20#3" }, wrongValue: 110 };
-  assert.match(s.actions.invoke({ action: "record_correction", params, actor: as(s, "P-008") }).reason, /only the site manager/);
+  assert.match(s.actions.invoke({ action: "record_correction", params, actor: as(s, "P-008") }).reason, /only the site manager|needs manager clearance/);
   const r = s.actions.invoke({ action: "record_correction", params, actor: as(s, "P-001") });
   assert.equal(r.status, "done");
   const cor = s.ont.get(r.decision.objects[0]);

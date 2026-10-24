@@ -248,8 +248,13 @@ export const ACTIONS = {
   }),
   // Suggestions (agents design §9): made only for the person whose work they read; only that person answers them.
   // ---- Spec triage and corrections (job brief design §4–§5): only the site manager confirms a spec or records a correction ----
-  record_spec_candidates: def("draft", "act", ["candidates"], (ont, p) => {
+  record_spec_candidates: def("draft", "act", ["candidates"], (ont, p, ctx) => {
+    if (ctx.actor.kind !== "agent" || ctx.actor.id !== "Spec Triage") throw new Error("only Spec Triage records spec candidates");
     if (!Array.isArray(p.candidates)) throw new Error("candidates must be a list");
+    for (const c of p.candidates) {
+      const prev = ont.get(c.id);
+      if (!/^SCD-/.test(String(c.id)) || (prev && prev.type !== "SpecCandidate")) throw new Error(`${c.id} is not a spec candidate`);
+    }
     const made = [];
     for (const c of p.candidates) {
       const prev = ont.get(c.id);
@@ -264,6 +269,7 @@ export const ACTIONS = {
     if (!person || person.role !== "works_manager") throw new Error("only the site manager confirms a spec");
     const sp = ont.get(p.specId);
     if (!sp || sp.type !== "Spec") throw new Error(`no spec ${p.specId}`);
+    if (p.fromVersion != null && Number(p.fromVersion) !== sp.version) throw new Error(`${sp.id} has changed since this was proposed (it is now v${sp.version}); triage will look again`);
     const lo = Number(p.lo), hi = Number(p.hi);
     if (!Number.isFinite(lo) || !Number.isFinite(hi) || lo > hi) throw new Error("the band needs a low and a high, low first");
     const cand = p.candidateId ? ont.get(p.candidateId) : null;
@@ -272,8 +278,25 @@ export const ACTIONS = {
     ont.upsert({ id: sp.id, type: "Spec", version: sp.version + 1, lo, hi, target: p.target == null ? null : Number(p.target), condition: p.condition || null, sourceRefs: [ref],
       confirmedBy: who, confirmedAt: ctx.now(), reason: p.why ? String(p.why) : "Confirmed by the site manager", history: [...(sp.history || []), prev] });
     const undoCand = cand ? setProps(ont, cand.id, { status: "approved" }) : null;
-    return { objects: [sp.id], revert: () => { ont.upsert({ id: sp.id, type: "Spec", ...prev, history: sp.history || [] }); if (undoCand) undoCand(); } };
+    const mine = sp.version + 1;
+    // reversing writes a new version with the previous band, so history and version numbers only ever grow; only the
+    // latest confirmation can be reversed
+    const revert = () => {
+      const cur = ont.get(sp.id);
+      if (cur.version !== mine) throw new Error(`reverse the later confirmations of ${sp.id} first (it is at v${cur.version})`);
+      const snap = { version: cur.version, lo: cur.lo, hi: cur.hi, target: cur.target, condition: cur.condition, sourceRefs: cur.sourceRefs, confirmedBy: cur.confirmedBy, confirmedAt: cur.confirmedAt, reason: cur.reason };
+      ont.upsert({ id: sp.id, type: "Spec", version: cur.version + 1, lo: prev.lo, hi: prev.hi, target: prev.target, condition: prev.condition, sourceRefs: prev.sourceRefs,
+        confirmedBy: prev.confirmedBy, confirmedAt: ctx.now(), reason: `Reversed: back to v${prev.version}'s band`, history: [...(cur.history || []), snap] });
+      if (undoCand) undoCand();
+    };
+    return { objects: [sp.id], revert };
   }, "manager"),
+  withdraw_spec_change: def("draft", "act", ["proposalId"], (ont, p, ctx) => {
+    if (ctx.actor.kind !== "agent" || ctx.actor.id !== "Spec Triage") throw new Error("only Spec Triage withdraws its spec changes");
+    const prp = ont.get(p.proposalId);
+    if (!prp || prp.type !== "Proposal" || prp.action !== "update_spec" || prp.state !== "open") throw new Error(`${p.proposalId} is not an open spec change`);
+    return { objects: [prp.id], revert: setProps(ont, prp.id, { state: "withdrawn", withdrawnReason: p.reason ? String(p.reason) : null }) };
+  }),
   record_correction: def("act", "human", ["line", "scope"], (ont, p, ctx) => {
     const person = ont.get(actorId(ctx));
     if (!person || person.role !== "works_manager") throw new Error("only the site manager records a correction");
@@ -285,7 +308,7 @@ export const ACTIONS = {
       wrongValue: p.wrongValue == null ? null : Number(p.wrongValue), rightValue: p.rightValue == null ? null : p.rightValue, scope: { [keys[0]]: sc[keys[0]] }, fromId: p.fromId || null, by: person.id, at: ctx.now() },
       [["FROM", p.fromId]]);
     return { objects: [c.id], revert: () => ont.remove(c.id) };
-  }),
+  }, "manager"),
   record_suggestion: def("draft", "act", ["personId", "signal", "key", "title"], (ont, p, ctx) => {
     if (actorId(ctx) !== p.personId) throw new Error("a suggestion is only made for the person whose work it reads");
     const audience = Array.isArray(p.audience) && p.audience.includes(p.personId) ? p.audience.map(String) : [p.personId];
@@ -430,8 +453,9 @@ export const ACTIONS = {
     if (!proc) throw new Error(`no released procedure for ${wo.id}`);
     const { ex, revert } = openExecution(ont, wo, p.personId, proc, ctx.now());
     // the job is held to the specs confirmed when it starts; a later change never moves it (job brief design §6)
-    const specPins = ont.list("Spec", (x) => x.assetId === wo.assetId && x.step != null && proc.steps.some((st) => st.step === x.step))
-      .map((x) => ({ specId: x.id, version: x.version, step: x.step, partName: x.partName, measure: x.measure, unit: x.unit, lo: x.lo, hi: x.hi }));
+    const stepOf = (x) => (x.stepText ? proc.steps.find((st) => st.text === x.stepText) : proc.steps.find((st) => st.step === x.step));
+    const specPins = ont.list("Spec", (x) => x.assetId === wo.assetId && x.step != null && stepOf(x))
+      .map((x) => ({ specId: x.id, version: x.version, step: stepOf(x).step, partName: x.partName, measure: x.measure, unit: x.unit, lo: x.lo, hi: x.hi }));
     ont.upsert({ id: ex.id, type: "Execution", specPins });
     // what the person was told before step 1, so root cause can later ask (design §4.6)
     const person = ont.get(p.personId), sm = ont.list("Person", (x) => x.role === "works_manager")[0];

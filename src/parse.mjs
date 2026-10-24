@@ -19,7 +19,7 @@ export function parseMessage({ text } = {}, { group = false, awaiting = null, ex
   if (awaiting && /^(yes|y|ok|okay|sure|submit)[.!]?$/i.test(t)) return hit("yes", 0.9);
   if (awaiting && awaiting.kind === "note" && !COMMAND.test(t)) return /^(no|nope|nothing|n\/a)\b[^?]{0,40}$/i.test(t) ? hit("no", 0.9) : hit("note", 0.9, { text: t });
   if (awaiting && /^(no|n|nope)[.!]?$/i.test(t)) return hit("no", 0.9);
-  if (/^brief\b/i.test(t)) return hit("brief", 0.9);
+  if (!group && /^brief\b/i.test(t)) return hit("brief", 0.9);
   if (/^start\b/i.test(t)) return hit("start", 0.9, { workOrderId: (t.match(/\bWO-[\w-]+/i) || [null])[0] });
   const done = t.match(new RegExp(String.raw`^(?:step\s*(\d+)\s*)?done\b\s*(?:(-?${NUM})\s*${UNIT}?)?`, "i"));
   if (done) return hit("done", 0.9, { step: done[1] ? Number(done[1]) : null, ...reading(done[2], done[3]) });
