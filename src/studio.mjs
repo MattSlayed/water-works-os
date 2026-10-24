@@ -3,7 +3,8 @@
 // it in shadow. Without Claude a keyword planner covers the five templates; with Claude, Claude drafts and the same
 // checks decide. Nothing here grants more than the builder already has.
 import { ACTIONS, LEVELS, catalogueAllows, catalogueLine } from "./actions.mjs";
-import { HARD_CONSTRAINTS, specId, statementSentences } from "./harness.mjs";
+import { HARD_CONSTRAINTS, specId, statementSentences, shadowId } from "./harness.mjs";
+import { digestDoc, isInvoiceDoc } from "./digest.mjs";
 import { TEMPLATES } from "./templates.mjs";
 import { llmEnabled, askClaude } from "./llm.mjs";
 
@@ -205,4 +206,63 @@ export function statementFromSentences(sentences, spec, ont) {
     else for (const t of next.tools) if (ACTIONS[t.action] && lv(t.level) > lv(ACTIONS[t.action].ceiling)) problems.push(`${t.action} ${t.level} is above ${ACTIONS[t.action].ceiling}, the most an agent may do`);
   }
   return problems.length ? { spec, problems: [...new Set(problems)] } : { spec: next, problems: [] };
+}
+
+// The runtime's view of a studio statement: the inverse of the harness's specFromManifest.
+export function manifestFromSpec(spec) {
+  return { name: spec.name, version: spec.version, owner: spec.builderId || spec.owner, purpose: spec.purpose, trigger: spec.trigger,
+    tools: spec.tools.map((t) => t.action), autonomy: Object.fromEntries(spec.tools.map((t) => [t.action, t.level])) };
+}
+
+// Live studio agents whose schedule came round between the last plant tick and now (plant-clock times).
+const DAYS = { weekdays: [1, 2, 3, 4, 5], daily: [0, 1, 2, 3, 4, 5, 6], fridays: [5] };
+export function dueStudioAgents(ont, nowIso, lastIso) {
+  const now = Date.parse(nowIso), last = Date.parse(lastIso);
+  const due = (every) => {
+    let m;
+    if ((m = every.match(/^every (\d+) min$/))) { const n = Number(m[1]) * 60000; return Math.floor(now / n) > Math.floor(last / n); }
+    if (!(m = every.match(/^(weekdays|daily|fridays) at (\d\d):(\d\d)$/))) return false;
+    const at = (Number(m[2]) * 60 + Number(m[3])) * 60000;
+    for (let d = last - (last % 86400000); d <= now; d += 86400000) if (d + at > last && d + at <= now && DAYS[m[1]].includes(new Date(d).getUTCDay())) return true;
+    return false;
+  };
+  return ont.list("AgentSpec", (s) => s.builderId && s.template && s.state === "live" && s.trigger && s.trigger.kind === "schedule" && due(String(s.trigger.every))).map((s) => s.name);
+}
+
+// Replay (agents design §6.1 step 4): the digester run over the last days of its source as its builder, in shadow,
+// each case matched to what the person did. A replay replaces the agent's earlier replay; it writes ShadowActions only.
+export function replay(sys, spec, { days = 14 } = {}) {
+  const { ont, connectors: c, tel } = sys, now = tel.now(), since = new Date(Date.parse(now) - days * 86400000).toISOString();
+  const out = { cases: 0, agreed: 0, differed: 0, missed: 0, unsure: 0, caught: 0, stale: 0, constraintHits: 0, examples: [] };
+  if (spec.template !== "digester") return { ...out, note: "Replay covers the document digester; the other templates build their record in shadow." };
+  const builder = ont.get(spec.builderId), tol = Number(spec.params.tolerancePct) || 2, src = spec.params.source;
+  for (const r of spec.reads || []) {
+    if (!String(r.source).startsWith("connector:")) continue;
+    const ok = catalogueAllows(ont, { kind: r.source.slice("connector:".length), op: "read", role: builder.role });
+    if (!ok.ok) throw new Error(ok.reason);
+  }
+  for (const x of ont.list("ShadowAction", (x) => x.agent === spec.name && x.replay)) ont.remove(x.id);
+  const view = ont.view(builder), moves = c.m365.files.moves();
+  const docs = src.kind === "m365.mail" ? c.m365.mail.list(src.mailbox, { since }).flatMap((m) => m.attachments.map((att) => ({ att, at: m.receivedDateTime })))
+    : src.kind === "chat" ? view.list("Message", (m) => m.channelId === src.channelId && m.at >= since).flatMap((m) => (m.media || []).map((id) => ({ att: c.attachment(id), at: m.at })))
+    : moves.filter((x) => x.path.startsWith(src.path) && x.at >= since).map((x) => ({ att: c.attachment(x.sourceId), at: x.at }));
+  const seen = [], examples = [];
+  for (const doc of docs.filter((d) => d.att && isInvoiceDoc(d.att))) {
+    const r = digestDoc(doc.att, { erp: c.erp, moves, seen, at: doc.at, tolerancePct: tol });
+    seen.push({ supplierId: r.fields.supplierId, number: r.fields.invoiceNo, total: r.fields.total, sourceId: doc.att.id, receivedAt: doc.at });
+    const filed = moves.find((m) => m.sourceId === doc.att.id && ont.get(m.by) && ont.get(m.by).type === "Person");
+    const unsure = r.cells.some((x) => x.grade === "AMBIGUOUS" && !x.reviewed);
+    const caught = !unsure && r.match.issues.some((i) => ["duplicate", "bank-change"].includes(i.kind));
+    const agreed = !unsure && !caught && r.verdict === "file" && !!filed && filed.path === r.destination.path;
+    const outcome = unsure ? "unsure" : caught ? "caught" : agreed ? "agreed" : "differed";
+    out.cases++;
+    out[outcome]++;
+    ont.upsert({ id: shadowId(), type: "ShadowAction", agent: spec.name, specVersion: spec.version, runId: null, action: r.verdict === "file" ? "file_document" : "digest_document",
+      params: { attachmentId: doc.att.id, ...(r.verdict === "file" ? { path: r.destination.path } : {}) }, at: doc.at, status: agreed ? "agreed" : "differed", reason: agreed ? null : outcome,
+      matchedTo: filed ? filed.itemId : null, matchedAt: now, replay: true, minClearance: builder.clearance, audience: [builder.id, spec.approver].filter((x) => typeof x === "string") });
+    examples.push({ attachmentId: doc.att.id, name: doc.att.name, at: doc.at, verdict: r.verdict, outcome, path: r.verdict === "file" ? r.destination.path : null, personPath: filed ? filed.path : null,
+      reason: r.match.issues.map((i) => i.detail).concat(r.cells.filter((x) => x.grade === "AMBIGUOUS").map((x) => `${x.key}: ${x.reasoning}`)).join("; ") || null });
+  }
+  out.examples = [...examples.filter((e) => e.outcome !== "agreed"), ...examples.filter((e) => e.outcome === "agreed")].slice(0, 10);
+  return out;
 }

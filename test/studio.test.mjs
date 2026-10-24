@@ -152,3 +152,89 @@ test("a shadow statement says it changes nothing and never 'without asking'", as
   assert.match(statementSentences({ ...j25, mode: "bounded" }, s.ont).join(" "), /may digest document without asking/);
   assert.match(statementSentences({ ...specFor(s.ont, "Scheduler"), mode: "assisted" }, s.ont).join(" "), /It asks before every change/);
 });
+
+// ---- Task 7: create in shadow, replay, IT gate, promotion ----
+const asP = (s, id) => ({ kind: "person", id, clearance: s.ont.get(id).clearance });
+const doAct = (s, by, action, params) => s.actions.invoke({ action, params, actor: asP(s, by) });
+async function j25Agent(s) {
+  const { replay } = await import("../src/studio.mjs");
+  const spec = plan(s, J25, "P-043").spec;
+  const r = doAct(s, "P-043", "create_studio_agent", { spec });
+  assert.equal(r.status, "done", r.reason);
+  return { spec, replay: replay(s, spec) };
+}
+
+test("J25: the clerk starts the digester in shadow; replay over 14 days agrees on 23 of 25", async () => {
+  const { specFor, shadowRecord } = await import("../src/harness.mjs");
+  const s = createSystem(), { spec, replay } = await j25Agent(s);
+  assert.equal(specFor(s.ont, spec.name).mode, "shadow");
+  assert.ok(s.runtime.specs().some((x) => x.name === spec.name));
+  assert.deepEqual({ cases: replay.cases, agreed: replay.agreed, unsure: replay.unsure, caught: replay.caught }, { cases: 25, agreed: 23, unsure: 1, caught: 1 });
+  assert.ok(replay.examples.length > 0 && replay.examples.length <= 10);
+  assert.equal(shadowRecord(s.ont, spec.name).agreePct, 92);
+  // a second replay replaces the first rather than doubling the record
+  const { replay: again } = await import("../src/studio.mjs");
+  again(s, spec);
+  assert.equal(shadowRecord(s.ont, spec.name).cases, 25);
+});
+
+test("J26: no promotion until IT signs off; then the finance officer promotes, never the builder", async () => {
+  const s = createSystem(), { spec } = await j25Agent(s);
+  assert.match(doAct(s, "P-044", "promote_agent", { agent: spec.name, to: "assisted" }).reason, /needs IT sign-off: m365.files write/);
+  assert.equal(doAct(s, "P-045", "sign_off_catalogue_line", { kind: "m365.files", op: "write", role: "accounts_clerk" }).status, "done");
+  assert.match(doAct(s, "P-043", "promote_agent", { agent: spec.name, to: "assisted" }).reason, /own agent/);
+  assert.equal(doAct(s, "P-028", "promote_agent", { agent: spec.name, to: "assisted" }).status, "refused");
+  assert.match(doAct(s, "P-008", "promote_agent", { agent: spec.name, to: "assisted" }).reason, /approver/);
+  assert.equal(doAct(s, "P-044", "promote_agent", { agent: spec.name, to: "assisted" }).status, "done");
+});
+
+test("Review Focus 1: the manager running the clerk's agent gets the clerk's reach and no more", async () => {
+  const s = createSystem(), { spec } = await j25Agent(s);
+  doAct(s, "P-045", "sign_off_catalogue_line", { kind: "m365.files", op: "write", role: "accounts_clerk" });
+  doAct(s, "P-044", "promote_agent", { agent: spec.name, to: "assisted" });
+  const run = s.runtime.run(spec.name, { actingUser: asP(s, "P-001"), scope: { since: "2026-10-10T00:00:00Z" } });
+  assert.deepEqual([run.status, run.actingUserId, run.triggeredBy], ["completed", "P-043", "P-001"], run.error);
+  const intakes = s.ont.list("DocumentIntake");
+  assert.ok(intakes.length > 0);
+  assert.ok(intakes.every((d) => JSON.stringify(d.audience) === JSON.stringify(["P-043", "P-044"])));
+  assert.ok(run.sources.some((x) => x.id === "connector:erp"));
+  doAct(s, "P-045", "set_catalogue_line", { kind: "erp", op: "read", patch: { roles: ["finance_officer", "planner", "works_manager"] } });
+  const after = s.runtime.run(spec.name, { actingUser: asP(s, "P-001") });
+  assert.match(after.error, /not allowed/);
+});
+
+test("create_studio_agent: only for yourself, only a valid statement, always in shadow; reversing it retires the agent", async () => {
+  const { specFor } = await import("../src/harness.mjs");
+  const s = createSystem(), spec = plan(s, J25, "P-043").spec;
+  assert.match(doAct(s, "P-044", "create_studio_agent", { spec }).reason, /your own/);
+  const bad = { ...spec, onTimeout: "apply" };
+  assert.match(doAct(s, "P-043", "create_studio_agent", { spec: bad }).reason, /never apply/);
+  const r = doAct(s, "P-043", "create_studio_agent", { spec: { ...spec, mode: "bounded" } });
+  assert.equal(specFor(s.ont, spec.name).mode, "shadow");
+  assert.equal(s.actions.reverse(r.decision.id, asP(s, "P-043")).status, "done");
+  assert.equal(specFor(s.ont, spec.name).state, "retired");
+});
+
+test("dueStudioAgents: the clerk's digester is due at 07:00 on a Monday, not on a Saturday", async () => {
+  const { dueStudioAgents } = await import("../src/studio.mjs");
+  const s = createSystem(), { spec } = await j25Agent(s);
+  assert.deepEqual(dueStudioAgents(s.ont, "2026-10-19T07:00:00Z", "2026-10-19T06:59:00Z"), [spec.name]);
+  assert.deepEqual(dueStudioAgents(s.ont, "2026-10-19T07:15:00Z", "2026-10-19T07:00:00Z"), []);
+  assert.deepEqual(dueStudioAgents(s.ont, "2026-10-17T07:00:00Z", "2026-10-17T06:59:00Z"), []);
+});
+
+test("manifestFromSpec is the runtime's view of a studio statement", async () => {
+  const { manifestFromSpec } = await import("../src/studio.mjs");
+  const s = createSystem(), spec = plan(s, J25, "P-043").spec, m = manifestFromSpec(spec);
+  assert.deepEqual([m.name, m.owner, m.tools, m.autonomy.post_invoice_match], [spec.name, "P-043", ["digest_document", "file_document", "post_invoice_match", "raise_issue"], "propose"]);
+});
+
+test("the plant tick runs a studio agent when its schedule comes round, as its builder", async () => {
+  const { createServer } = await import("../src/server.mjs");
+  const s = createSystem(), srv = createServer(s), { spec } = await j25Agent(s);
+  srv.tick(59);
+  assert.equal(s.runtime.runs().filter((r) => r.agent === spec.name).length, 0);
+  srv.tick(2); // Wednesday 07:00 on the plant clock
+  const runs = s.runtime.runs().filter((r) => r.agent === spec.name);
+  assert.deepEqual(runs.map((r) => [r.status, r.actingUserId, r.triggeredBy]), [["completed", "P-043", "SYSTEM"]]);
+});

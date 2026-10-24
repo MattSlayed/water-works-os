@@ -9,6 +9,7 @@ import { dropPackEvidence } from "./agents.mjs";
 import { runEvals } from "./evals.mjs";
 import { rank } from "./ontology.mjs";
 import { llmEnabled } from "./llm.mjs";
+import { dueStudioAgents } from "./studio.mjs";
 import { currentProcedure, performanceFor, projectStatus, graphFrom, upstreamOf, downstreamOf, processPaths, travelWindow } from "./functions.mjs";
 import { currentPlantModel } from "./plant.mjs";
 import { siteBounds, toLocal, toLonLat } from "./layout.mjs";
@@ -427,11 +428,12 @@ export function createServer(sys) {
   // a scene is processed 3 h after acquisition; Geo Watch runs when one becomes due (Region design §5.4)
   const dueScenes = () => ont.list("Scene", (s) => s.inWindow && Date.parse(s.acquiredAt) + 3 * 3600000 <= Date.parse(tel.now())).length;
   function tick(minutes) {
-    const before = dueScenes();
+    const before = dueScenes(), last = tel.now();
     tel.tick(minutes);
     sys.trackers.syncTo(ont, tel.cursor(), audit); // pings and geofence events reach viewers as pruned ontology updates
     applyTimeouts(ont, tel.now()); // unanswered proposals are dropped or held, never applied (agents design §4.5)
     matchShadow(ont, tel.now()); // shadow actions against what people did (agents design §4.2)
+    for (const name of dueStudioAgents(ont, tel.now(), last)) runtime.run(name, { actingUser: SYSTEM_USER, trigger: { kind: "schedule" } }); // as their builders
     if (dueScenes() > before) runtime.run("Geo Watch", { actingUser: SYSTEM_USER, trigger: { kind: "event", on: "Scene ingested" } });
     if (tel.now().slice(0, 13) !== hour) { hour = tel.now().slice(0, 13); runtime.run("Project Watch", { actingUser: SYSTEM_USER, trigger: { kind: "schedule" } }); }
     if (tel.now().slice(0, 10) !== day) { day = tel.now().slice(0, 10); runtime.run("Procedure Steward", { actingUser: SYSTEM_USER, trigger: { kind: "schedule" } }); }

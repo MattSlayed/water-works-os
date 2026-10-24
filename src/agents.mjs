@@ -7,6 +7,8 @@ import * as F from "./functions.mjs";
 import { baseline } from "./scenes.mjs";
 import { specFor, demoteIfNeeded, objectTime } from "./harness.mjs";
 import { rootCause, rcaSummary } from "./rca.mjs";
+import { TEMPLATES } from "./templates.mjs";
+import { manifestFromSpec } from "./studio.mjs";
 
 const v = (s) => ({ version: "1.0.0", owner: "P-002", ...s }); // P-002, a reliability engineer, owns the default agents (agents design §4.1)
 export const AGENT_SPECS = [
@@ -666,7 +668,14 @@ export function createRuntime({ ont, tel, actions, audit, connectors = null }) {
     return ctxApi;
   }
 
+  // A studio agent is its statement plus its template's logic, read afresh on every run (agents design §6).
+  const studio = (name) => {
+    const hs = specFor(ont, name);
+    if (hs && hs.template && TEMPLATES[hs.template]) { specs.set(name, manifestFromSpec(hs)); logic.set(name, TEMPLATES[hs.template].run); }
+  };
+
   function run(name, opts0 = {}, depth = 0) {
+    studio(name);
     const spec = specs.get(name);
     if (!spec) throw new Error(`unknown agent ${name}`);
     if (!opts0.actingUser) throw new Error("actingUser required");
@@ -705,7 +714,7 @@ export function createRuntime({ ont, tel, actions, audit, connectors = null }) {
   }
 
   return {
-    specs: () => [...specs.values()],
+    specs: () => { for (const s of ont.list("AgentSpec", (x) => x.template)) studio(s.name); return [...specs.values()]; },
     spec: (name) => specs.get(name) || null,
     register(spec, fn) { specs.set(spec.name, spec); logic.set(spec.name, fn); },
     setAutonomy(name, action, level) {

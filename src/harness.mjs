@@ -1,6 +1,6 @@
 // The harness around every agent (agents design §4): the decision statement each agent is held to, its modes,
 // evidence freshness, the hard constraints it inherits, and the rules for promoting and demoting it.
-import { ACTIONS } from "./actions.mjs";
+import { ACTIONS, catalogueAllows, catalogueLine } from "./actions.mjs";
 import { rank } from "./ontology.mjs";
 
 export const HARD_CONSTRAINTS = [
@@ -90,7 +90,8 @@ const DAY_MS = 24 * 3600000;
 export function matchShadow(ont, nowIso) {
   const now = Date.parse(nowIso);
   const decisions = ont.list("Decision", (d) => d.actorKind === "person");
-  for (const sha of ont.list("ShadowAction", (x) => x.status === "pending")) {
+  // a connector case (a document an agent would file) is matched to the filing log by replay, not to Decisions
+  for (const sha of ont.list("ShadowAction", (x) => x.status === "pending" && !x.params.attachmentId)) {
     const key = KEYS.find((k) => sha.params[k] != null);
     const from = Date.parse(sha.at), to = from + DAY_MS;
     const near = key ? decisions.filter((d) => d.params && d.params[key] === sha.params[key] && Date.parse(d.at) >= from && Date.parse(d.at) <= to) : [];
@@ -118,6 +119,12 @@ const staleRuns = (ont, name) => ont.list("AgentRun", (r) => r.agent === name).s
 
 // The first promotion criterion the agent's shadow record misses, or null.
 export function promotionGap(ont, spec) {
+  // a studio agent stays in shadow while any of its tools waits for IT's sign-off (agents design §7)
+  const builder = spec.builderId && ont.get(spec.builderId);
+  for (const t of builder ? spec.tools : []) {
+    const line = catalogueLine(ont, t.action), cat = line && catalogueAllows(ont, { kind: line.kind, op: line.op, role: builder.role });
+    if (cat && cat.locked) return `needs IT sign-off: ${line.kind} ${line.op}`;
+  }
   const c = spec.promotion, r = shadowRecord(ont, spec.name), stale = staleRuns(ont, spec.name);
   if (r.cases < c.minCases) return `minCases: ${r.cases} of ${c.minCases} cases seen`;
   if (r.agreePct < c.minAgreePct) return `minAgreePct: ${r.agreePct}% agreement, needs ${c.minAgreePct}%`;

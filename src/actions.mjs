@@ -3,8 +3,9 @@
 import { rank } from "./ontology.mjs";
 import { currentProcedure, stepLock, bandCheck, partNamesIn, stepRequires } from "./functions.mjs";
 import { packageHash, currentPlantModel, writePlant } from "./plant.mjs";
-import { specFor, promotionGap, MODES, checkWrite, approvalTerms, expectedEffect, shadowId } from "./harness.mjs";
+import { specFor, specId, promotionGap, MODES, checkWrite, approvalTerms, expectedEffect, shadowId } from "./harness.mjs";
 import { digestDoc } from "./digest.mjs";
+import { validateStatement } from "./studio.mjs";
 
 export const LEVELS = ["read", "draft", "notify", "propose", "act"];
 const lv = (l) => LEVELS.indexOf(l);
@@ -107,16 +108,32 @@ const samplerOf = (ont) => ont.list("Person", (x) => x.role === "lab_analyst").s
 
 export const ACTIONS = {
   // The harness's switches (agents design §4.2, §4.6): people only, engineers and above.
+  // Promotion is the second pair of eyes: an engineer, or the agent's named approver (a supervisor or above), never its builder.
   promote_agent: def("act", "human", ["agent", "to"], (ont, p, ctx) => {
     const spec = agentSpec(ont, p.agent);
-    if (actorId(ctx) === spec.owner) throw new Error("the builder cannot promote their own agent");
+    if (actorId(ctx) === spec.owner || actorId(ctx) === spec.builderId) throw new Error("the builder cannot promote their own agent");
+    if (!atLeast(ctx, "engineer") && !(spec.approver === actorId(ctx) && atLeast(ctx, "supervisor"))) throw new Error("promoting needs engineer clearance or the agent's approver");
     const next = MODES[MODES.indexOf(spec.mode) + 1];
     if (!next) throw new Error(`${spec.name} is already ${spec.mode}`);
     if (p.to !== next) throw new Error(`promotion is one step at a time: ${spec.name} is ${spec.mode}, so the next step is ${next}`);
     const gap = promotionGap(ont, spec);
     if (gap) throw new Error(`not yet: ${gap}`);
     return { objects: [spec.id], revert: setProps(ont, spec.id, { mode: p.to }) };
-  }, "engineer"),
+  }),
+  // A person starts an agent for their own work (agents design §6.1 step 5): checked, and always in shadow.
+  create_studio_agent: def("act", "human", ["spec"], (ont, p, ctx) => {
+    const s = p.spec && typeof p.spec === "object" ? p.spec : {};
+    if (s.builderId !== actorId(ctx)) throw new Error("a studio agent is built for your own work: its builder must be you");
+    if (!s.name || s.id !== specId(s.name)) throw new Error("the statement needs a name and its id");
+    const v = validateStatement(s, { ont });
+    if (!v.ok) throw new Error(v.problems.join("; "));
+    if (ont.get(s.id) && ont.get(s.id).state !== "retired") throw new Error(`${s.name} already exists`);
+    if (!s.trigger || !["schedule", "manual"].includes(s.trigger.kind)) throw new Error("a studio agent runs on a schedule or when its builder starts it");
+    const keep = ["id", "name", "version", "purpose", "template", "params", "trigger", "reads", "tools", "approver", "backup", "escalateAfterMin", "onTimeout", "exclusions", "builderId", "constraints"];
+    ont.upsert({ ...Object.fromEntries(keep.filter((k) => k in s).map((k) => [k, structuredClone(s[k])])), type: "AgentSpec", owner: s.builderId, mode: "shadow", state: "live",
+      promotion: { minCases: 20, minAgreePct: 90, maxBreaches: 0, maxStalePct: 5 }, breaches: 0, killedAt: null, killedBy: null, createdAt: ctx.now() });
+    return { objects: [s.id], revert: () => setProps(ont, s.id, { state: "retired", killedAt: ctx.now(), killedBy: actorId(ctx) }) };
+  }),
   // stepping down needs no second pair of eyes: it only narrows what the agent may do
   demote_agent: def("act", "human", ["agent", "to"], (ont, p, ctx) => {
     const spec = agentSpec(ont, p.agent);
