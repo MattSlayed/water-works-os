@@ -19,9 +19,9 @@ export const specId = (name) => `AGS-${slug(name)}`;
 export function specFromManifest(m) {
   return {
     id: specId(m.name), type: "AgentSpec", name: m.name, version: m.version, owner: m.owner, purpose: m.purpose, trigger: m.trigger,
-    reads: [{ source: "telemetry", freshnessMin: 30 }, { source: "objects", freshnessMin: null }],
+    reads: [{ source: "telemetry", freshnessMin: 30 }, { source: "objects", freshnessMin: null }, ...(m.reads || []).map((r) => ({ freshnessMin: null, ...r }))],
     tools: m.tools.map((action) => ({ action, level: m.autonomy[action], enabled: true })),
-    constraints: [...HARD_IDS], approver: { clearanceOf: "action" }, backup: null, escalateAfterMin: null, onTimeout: "hold",
+    constraints: [...HARD_IDS], approver: m.approver || { clearanceOf: "action" }, backup: null, escalateAfterMin: null, onTimeout: "hold",
     exclusions: [], mode: "bounded", promotion: { minCases: 20, minAgreePct: 90, maxBreaches: 0, maxStalePct: 5 },
     state: "live", killedAt: null, killedBy: null
   };

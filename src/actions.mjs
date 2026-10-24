@@ -246,6 +246,45 @@ export const ACTIONS = {
     return { objects: [d.id], revert: setProps(ont, d.id, { cells: r.cells, fields: r.fields, match: r.match, verdict: r.verdict, destination: r.destination, reviews: [...(d.reviews || []), { ...mark, cells: hit.size }] }) };
   }),
   // Suggestions (agents design §9): made only for the person whose work they read; only that person answers them.
+  // ---- Spec triage and corrections (job brief design §4–§5): only the site manager confirms a spec or records a correction ----
+  record_spec_candidates: def("draft", "act", ["candidates"], (ont, p) => {
+    if (!Array.isArray(p.candidates)) throw new Error("candidates must be a list");
+    const made = [];
+    for (const c of p.candidates) {
+      const prev = ont.get(c.id);
+      // a re-read keeps what a person decided about the candidate
+      ont.upsert({ ...c, type: "SpecCandidate", minClearance: "engineer", status: prev && prev.status !== "suggested" ? prev.status : "suggested" });
+      if (!prev) made.push(c.id);
+    }
+    return { objects: p.candidates.map((c) => c.id), revert: () => made.forEach((id) => ont.remove(id)) };
+  }),
+  update_spec: def("act", "propose", ["specId", "lo", "hi"], (ont, p, ctx) => {
+    const who = ctx.approvedBy || actorId(ctx), person = ont.get(who);
+    if (!person || person.role !== "works_manager") throw new Error("only the site manager confirms a spec");
+    const sp = ont.get(p.specId);
+    if (!sp || sp.type !== "Spec") throw new Error(`no spec ${p.specId}`);
+    const lo = Number(p.lo), hi = Number(p.hi);
+    if (!Number.isFinite(lo) || !Number.isFinite(hi) || lo > hi) throw new Error("the band needs a low and a high, low first");
+    const cand = p.candidateId ? ont.get(p.candidateId) : null;
+    const prev = { version: sp.version, lo: sp.lo, hi: sp.hi, target: sp.target, condition: sp.condition, sourceRefs: sp.sourceRefs, confirmedBy: sp.confirmedBy, confirmedAt: sp.confirmedAt, reason: sp.reason };
+    const ref = cand ? { kind: cand.source.kind, id: cand.source.id, title: cand.source.title, at: cand.source.at, authorId: cand.source.authorId || null } : { kind: "Person", id: who, title: "the site manager's own value", at: ctx.now(), authorId: who };
+    ont.upsert({ id: sp.id, type: "Spec", version: sp.version + 1, lo, hi, target: p.target == null ? null : Number(p.target), condition: p.condition || null, sourceRefs: [ref],
+      confirmedBy: who, confirmedAt: ctx.now(), reason: p.why ? String(p.why) : "Confirmed by the site manager", history: [...(sp.history || []), prev] });
+    const undoCand = cand ? setProps(ont, cand.id, { status: "approved" }) : null;
+    return { objects: [sp.id], revert: () => { ont.upsert({ id: sp.id, type: "Spec", ...prev, history: sp.history || [] }); if (undoCand) undoCand(); } };
+  }, "manager"),
+  record_correction: def("act", "human", ["line", "scope"], (ont, p, ctx) => {
+    const person = ont.get(actorId(ctx));
+    if (!person || person.role !== "works_manager") throw new Error("only the site manager records a correction");
+    const sc = p.scope || {}, keys = ["assetId", "template", "orgId"].filter((k) => sc[k]);
+    if (keys.length !== 1) throw new Error("a correction needs one scope: an asset, a make and model, or an organisation");
+    const line = String(p.line).trim();
+    if (!line || line.length > 100) throw new Error("the line must be 1 to 100 characters");
+    const c = create(ont, { id: nextId("COR"), type: "Correction", line, text: p.text ? String(p.text) : line, wrongSourceRef: p.wrongSourceRef || null,
+      wrongValue: p.wrongValue == null ? null : Number(p.wrongValue), rightValue: p.rightValue == null ? null : p.rightValue, scope: { [keys[0]]: sc[keys[0]] }, fromId: p.fromId || null, by: person.id, at: ctx.now() },
+      [["FROM", p.fromId]]);
+    return { objects: [c.id], revert: () => ont.remove(c.id) };
+  }),
   record_suggestion: def("draft", "act", ["personId", "signal", "key", "title"], (ont, p, ctx) => {
     if (actorId(ctx) !== p.personId) throw new Error("a suggestion is only made for the person whose work it reads");
     const audience = Array.isArray(p.audience) && p.audience.includes(p.personId) ? p.audience.map(String) : [p.personId];
@@ -646,7 +685,7 @@ export function createActionService({ ont, audit, clock = wallClock, tel = null,
   }
 
   function apply(action, params, actor, extra = {}) {
-    const res = ACTIONS[action].apply(ont, params, { actor, now, connectors });
+    const res = ACTIONS[action].apply(ont, params, { actor, now, connectors, approvedBy: extra.approvedBy || null });
     const dec = ont.upsert({ zoneId: zoneFor(params), audience: audienceFor(params),
       id: nextId("DEC"), type: "Decision", action, params, actorId: actor.id, actorKind: actor.kind, onBehalfOf: actor.onBehalfOf || null, autonomy: extra.autonomy || null,
       approvedBy: extra.approvedBy || null, proposalId: extra.proposalId || null, runId: extra.runId || null,

@@ -10,6 +10,9 @@ import { rootCause, rcaSummary } from "./rca.mjs";
 import { TEMPLATES } from "./templates.mjs";
 import { manifestFromSpec } from "./studio.mjs";
 import { signalsFor } from "./recommend.mjs";
+import { matchAssets, readValue, authorityOf, rank, decide } from "./specs.mjs";
+import { correctionsFor } from "./brief.mjs";
+import { WORKS_MAILBOX, DOSE_SHEET } from "./connectors/engineering.mjs";
 
 const v = (s) => ({ version: "1.0.0", owner: "P-002", ...s }); // P-002, a reliability engineer, owns the default agents (agents design §4.1)
 export const AGENT_SPECS = [
@@ -33,7 +36,10 @@ export const AGENT_SPECS = [
   v({ name: "Geo Watch", purpose: "Watch the dam and catchment in each new scene; raise and triage index anomalies and extent changes; ask for a raw-water sample", trigger: { kind: "event", on: "Scene ingested" }, tools: ["record_detection", "raise_alert", "propose_dose_change", "start_sampling_round", "notify"], autonomy: { record_detection: "act", raise_alert: "act", propose_dose_change: "propose", start_sampling_round: "propose", notify: "act" } }),
   v({ name: "Root Cause", purpose: "Explain an alert: rank the local and upstream causes from the process graph, the region and history, with their evidence and the hypotheses rejected", trigger: { kind: "event", on: "Alert ranked high" }, tools: ["draft_document"], autonomy: { draft_document: "act" } }),
   v({ name: "Tag Matcher", purpose: "Match historian tags to positions and report unmatched keys", trigger: { kind: "event", on: "Connector import" }, tools: ["draft_document"], autonomy: { draft_document: "act" } }),
-  v({ name: "Recommender", purpose: "Suggest agents from how each person works, shown only to that person, with the evidence", trigger: { kind: "schedule", every: "each plant day" }, tools: ["record_suggestion"], autonomy: { record_suggestion: "act" } })
+  v({ name: "Recommender", purpose: "Suggest agents from how each person works, shown only to that person, with the evidence", trigger: { kind: "schedule", every: "each plant day" }, tools: ["record_suggestion"], autonomy: { record_suggestion: "act" } }),
+  v({ name: "Spec Triage", purpose: "Read mail, files, sheets, drawings and chat for asset specs; propose one answer for the site manager to confirm", trigger: { kind: "schedule", every: "each plant day" },
+    tools: ["record_spec_candidates", "update_spec"], autonomy: { record_spec_candidates: "act", update_spec: "propose" }, approver: "P-001",
+    reads: [{ source: "connector:m365.mail" }, { source: "connector:m365.files" }, { source: "connector:google.sheets" }] })
 ];
 
 const HAZARD_COMPETENCE = { chlorine: "gas-safety:chlorine" };
@@ -88,7 +94,75 @@ const projectAnswer = (ctx, projects) => {
   return { text: projects.map((p) => statusText(p, ctx.fn("projectStatus", p, claims, issues, ctx.now))).join("\n"), cites: [...projects.map((p) => p.id), ...claims.filter((c) => projects.some((p) => p.id === c.projectId)).map((c) => c.id)] };
 };
 
+// Spec Triage's sources, one line each: the works mailbox, the Engineering folders, the dose sheet and the works chat.
+function specSourceLines(ctx, people) {
+  const out = [];
+  const nameOf = (id) => (people.find((p) => p.id === id) || {}).name || id;
+  for (const m of ctx.connector("m365.mail").list(WORKS_MAILBOX)) {
+    const from = m.from.emailAddress.address, author = people.find((p) => `${p.name.toLowerCase().split(/\s+/).join(".")}@riverbend.example` === from.toLowerCase());
+    for (const line of String((m.body || {}).content || "").split(/\n/)) out.push({ line, source: { kind: "m365.mail", id: m.id, at: m.receivedDateTime, authorId: author ? author.id : null, title: m.subject, from } });
+  }
+  for (const f of ctx.connector("m365.files").list("Engineering")) {
+    const a = f.attachmentId && ctx.attachment(f.attachmentId);
+    if (!a || !a.textLayer) continue;
+    const path = f.parentReference.path.replace("/drive/root:/", ""), dated = (a.textLayer.match(/^Date: (\S+)/m) || [])[1];
+    for (const line of a.textLayer.split("\n")) out.push({ line, source: { kind: "m365.files", id: a.id, at: dated || f.createdDateTime, authorId: null, title: f.name, path, text: a.textLayer } });
+  }
+  const rows = ctx.connector("google.sheets").values(DOSE_SHEET).values || [];
+  const head = rows[0] || [], col = head.findIndex((h) => /delivery/i.test(h)), when = head.findIndex((h) => /updated/i.test(h));
+  if (col >= 0) rows.slice(1).forEach((row, i) => out.push({ line: row[0], cell: row[col], unit: (head[col].match(/\b(L\/h|mL\/min)\b/) || [])[1] || null,
+    source: { kind: "google.sheets", id: `${DOSE_SHEET}#${i + 2}`, at: row[when] || null, authorId: null, title: `${DOSE_SHEET.split("!")[0]}, row ${row[0]}` } }));
+  for (const m of ctx.list("Message", (x) => x.direction === "in" && x.text)) out.push({ line: m.text, source: { kind: "chat", id: m.id, at: m.at, authorId: m.from, title: `chat from ${nameOf(m.from)}`, from: m.from } });
+  return out;
+}
+
 const LOGIC = {
+  // Job brief design §5: read every source, tie each line to an asset, rank the candidates for each spec, and propose
+  // one answer when they differ from what is confirmed. It never writes a Spec; the site manager confirms.
+  "Spec Triage": (ctx) => {
+    const people = ctx.list("Person").map((p) => ({ id: p.id, name: p.name, role: p.role }));
+    const specs = ctx.list("Spec", (x) => !ctx.scope.assetId || x.assetId === ctx.scope.assetId);
+    const withSpec = new Set(specs.map((x) => x.assetId));
+    const assets = ctx.list("Asset", (a) => a.positionTag).map((a) => ({ id: a.id, positionTag: a.positionTag, kks: (ctx.get(a.positionId) || {}).kks || null, name: a.name, template: a.template }));
+    const cands = [];
+    for (const src of specSourceLines(ctx, people)) {
+      const hits = matchAssets(src.line, assets).filter((h) => withSpec.has(h.assetId));
+      if (!hits.length) continue;
+      const v = src.cell !== undefined ? readValue(src.cell, { measure: "delivery", unit: src.unit }) : readValue(src.line);
+      if (!v) continue;
+      const authority = authorityOf(src.source, people);
+      for (const h of hits) {
+        const a = assets.find((x) => x.id === h.assetId), sp = specs.find((x) => x.assetId === h.assetId && x.key === v.key);
+        if (!sp) continue;
+        cands.push({ id: `SCD-${src.source.id.replace(/[^\w-]+/g, "_")}-${a.positionTag}`, subject: a.id, specId: sp.id, key: v.key, lo: v.lo, hi: v.hi, target: v.target, unit: v.unit, condition: v.condition,
+          source: { kind: src.source.kind, id: src.source.id, line: src.line, at: src.source.at, authorId: src.source.authorId, title: src.source.title, text: src.cell !== undefined ? `${src.line}: ${src.cell}` : src.line },
+          authority, grade: h.tie ? "AMBIGUOUS" : v.grade, matchedBy: h.matchedBy, verdict: null, reason: null });
+      }
+    }
+    const proposals = [];
+    for (const sp of specs) {
+      const mine = cands.filter((c) => c.specId === sp.id);
+      if (!mine.length) continue;
+      const asset = assets.find((a) => a.id === sp.assetId);
+      const rejected = ctx.list("Proposal", (p) => p.action === "update_spec" && p.state === "rejected" && p.params.specId === sp.id).map((p) => ({ sourceId: p.params.sourceId, lo: p.params.lo, hi: p.params.hi }));
+      const { winner, passedOver } = rank(mine, { corrections: correctionsFor(ctx, asset), rejected });
+      for (const po of passedOver) Object.assign(mine.find((c) => c.id === po.candidateId), { verdict: "passed over", reason: po.reason });
+      if (!winner) continue;
+      const sensor = ctx.sensorsFor(sp.assetId).find((x) => x.unit === sp.unit && Array.isArray(x.range));
+      const d = decide(winner, sp, { ratedRange: sensor ? sensor.range : null });
+      if (d.kind === "agrees") { winner.verdict = "supports"; ctx.think(`${sp.id}: ${winner.source.title} agrees with v${sp.version}.`); continue; }
+      winner.verdict = "winner";
+      proposals.push({ sp, winner, d, passedOver });
+    }
+    if (cands.length) ctx.act("record_spec_candidates", { candidates: cands });
+    for (const { sp, winner, d, passedOver } of proposals) {
+      if (ctx.list("Proposal", (p) => p.action === "update_spec" && p.state === "open" && p.params.specId === sp.id && p.params.lo === d.lo && p.params.hi === d.hi).length) { ctx.think(`${sp.id}: already waiting for the site manager.`); continue; }
+      const why = winner.authority === "manager" ? `The site manager's newest instruction: ${winner.source.title} (${String(winner.source.at).slice(0, 10)}).` : `The highest authority, newest: ${winner.source.title} (${String(winner.source.at).slice(0, 10)}).`;
+      ctx.act("update_spec", { specId: sp.id, assetId: sp.assetId, lo: d.lo, hi: d.hi, target: d.target, unit: sp.unit, condition: winner.condition, candidateId: winner.id, sourceId: winner.source.id, why, flag: d.flag,
+        passedOver: passedOver.map((po) => { const c = mine(po.candidateId); return { candidateId: po.candidateId, title: c.source.title, value: c.target ?? c.lo, reason: po.reason }; }) });
+    }
+    function mine(id) { return cands.find((c) => c.id === id); }
+  },
   // One person's suggestions: never one already open or accepted, nor one they dismissed in the last 30 days.
   Recommender: (ctx) => {
     const month = Date.parse(ctx.now) - 30 * 86400000;

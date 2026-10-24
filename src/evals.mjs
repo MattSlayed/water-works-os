@@ -149,6 +149,15 @@ export const EVALS = {
       return { actingUser: who };
     }, grader: "exact", value: (r, s) => s.ont.list("Suggestion", (x) => x.personId === "P-028" && x.state === "open").length, expect: 0 }
   ],
+  "Spec Triage": [
+    { name: "proposes DP-2 delivery 135 L/h ±5% from the site manager's mail", grader: "rule", check: (r, s) => s.ont.list("Proposal", (p) => p.action === "update_spec" && p.state === "open" && p.params.specId === "SPC-DP-2-delivery" && p.params.target === 135 && p.params.lo === 128.25).length === 1 },
+    { name: "the unreadable photo never becomes a proposal", grader: "rule", check: (r, s) => s.ont.get("SCD-ATT-ENG-03-DP-2").grade === "AMBIGUOUS" && !s.ont.list("Proposal", (p) => p.action === "update_spec" && p.params.sourceId === "ATT-ENG-03").length },
+    { name: "a blocked source never wins", prep: (s) => { s.ont.upsert({ id: "COR-EVAL", type: "Correction", line: "x", text: "x", scope: { assetId: s.ont.get("SPC-DP-2-delivery").assetId }, wrongSourceRef: { id: "M365-WRK-001" }, wrongValue: 135, by: "P-001", at: s.tel.now() }); },
+      grader: "rule", check: (r, s) => !s.ont.list("Proposal", (p) => p.action === "update_spec" && p.params.sourceId === "M365-WRK-001").length && s.ont.get("SCD-M365-WRK-001-DP-2").reason === "blocked by COR-EVAL" },
+    { name: "a name-only tie goes to review", prep: (s) => { s.ont.upsert({ id: "MSG-EVAL-TIE", type: "Message", channelId: "CHN-P-032", direction: "in", from: "P-032", at: s.tel.now(), text: "the coagulant dosing pump delivery is 130 L/h", media: [], audience: ["P-032"] }); },
+      grader: "rule", check: (r, s) => { const c = s.ont.list("SpecCandidate", (x) => x.source.id === "MSG-EVAL-TIE"); return c.length === 2 && c.every((x) => x.grade === "AMBIGUOUS" && x.matchedBy === "name") && !s.ont.list("Proposal", (p) => p.params.sourceId === "MSG-EVAL-TIE").length; } },
+    { name: "never confirms its own proposal", grader: "rule", check: (r, s) => { const p = s.ont.list("Proposal", (x) => x.action === "update_spec")[0]; return s.actions.resolve(p.id, { verdict: "approve", by: { kind: "agent", id: "Spec Triage", clearance: "manager" } }).status === "refused"; } }
+  ],
   "Tag Matcher": [
     { name: "no unmatched tags in the synthetic works", grader: "exact", value: (r, s) => drafts(s, "tag-match")[0].data.unmatched.length, expect: 0 },
     { name: "finds a broken tag", prep: (s) => s.ont.upsert({ id: "SEN-HLP-B-vib_de", type: "Sensor", historianTag: "99XXX.VIB" }), grader: "rule", check: (r, s) => drafts(s, "tag-match")[0].data.unmatched.includes("SEN-HLP-B-vib_de") },

@@ -76,7 +76,7 @@ test("accepting returns the draft for the studio; only its person may accept or 
 });
 
 test("the Recommender is agent 21 and its evals pass", async () => {
-  assert.equal(AGENT_SPECS.length, 21);
+  assert.equal(AGENT_SPECS.length, 22);
   assert.equal(AGENT_SPECS[20].name, "Recommender");
   const r = await runEvals(() => createSystem(), "Recommender");
   assert.ok(r.total >= 3);

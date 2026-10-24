@@ -313,6 +313,12 @@ export function createServer(sys) {
       try { return replay(sys, b.spec); } catch (e) { throw new HttpError(403, e.message); }
     }],
     // IT's catalogue: IT administrators edit it (through the action route); the works manager reads it
+    ["POST", /^\/api\/assets\/([^/]+)\/recheck-specs$/, (v, m) => {
+      const id = decodeURIComponent(m[1]);
+      if (!ont.view(v).get(id)) throw new HttpError(404, "not found");
+      const r = triageSpecs({ assetId: id });
+      return { runId: r && r.id, proposals: ont.list("Proposal", (p) => p.action === "update_spec" && p.state === "open" && p.params.assetId === id).map((p) => p.id) };
+    }],
     ["GET", /^\/api\/catalogue$/, (v) => {
       const me = ont.get(v.id);
       if (!me.itAdmin && me.role !== "works_manager") throw new HttpError(403, "the catalogue is for IT administrators and the works manager");
@@ -465,8 +471,14 @@ export function createServer(sys) {
   // (it posts the weekly status from Friday 15:00), Procedure Steward each plant day (it notifies once a week).
   let since = 0, hour = tel.now().slice(0, 13), day = tel.now().slice(0, 10);
   // the Recommender, once each plant day, for each person as that person; its runs are theirs alone (agents design §9)
+  // Spec Triage runs as the site manager, the one person who confirms what it proposes (job brief design §5)
+  const triageSpecs = (scope) => {
+    const sm = ont.list("Person").find((p) => p.role === "works_manager");
+    return sm ? runtime.run("Spec Triage", { actingUser: { id: sm.id, kind: "person", clearance: sm.clearance, role: sm.role }, chain: false, scope, trigger: { kind: scope ? "manual" : "schedule" } }) : null;
+  };
   const recommendAll = () => { for (const p of ont.list("Person")) runtime.run("Recommender", { actingUser: { id: p.id, kind: "person", clearance: p.clearance, role: p.role }, chain: false, audience: [p.id], trigger: { kind: "schedule" } }); };
   recommendAll();
+  triageSpecs();
   // a scene is processed 3 h after acquisition; Geo Watch runs when one becomes due (Region design §5.4)
   const dueScenes = () => ont.list("Scene", (s) => s.inWindow && Date.parse(s.acquiredAt) + 3 * 3600000 <= Date.parse(tel.now())).length;
   function tick(minutes) {
@@ -478,7 +490,7 @@ export function createServer(sys) {
     for (const name of dueStudioAgents(ont, tel.now(), last)) runtime.run(name, { actingUser: SYSTEM_USER, trigger: { kind: "schedule" } }); // as their builders
     if (dueScenes() > before) runtime.run("Geo Watch", { actingUser: SYSTEM_USER, trigger: { kind: "event", on: "Scene ingested" } });
     if (tel.now().slice(0, 13) !== hour) { hour = tel.now().slice(0, 13); runtime.run("Project Watch", { actingUser: SYSTEM_USER, trigger: { kind: "schedule" } }); }
-    if (tel.now().slice(0, 10) !== day) { day = tel.now().slice(0, 10); runtime.run("Procedure Steward", { actingUser: SYSTEM_USER, trigger: { kind: "schedule" } }); recommendAll(); }
+    if (tel.now().slice(0, 10) !== day) { day = tel.now().slice(0, 10); runtime.run("Procedure Steward", { actingUser: SYSTEM_USER, trigger: { kind: "schedule" } }); recommendAll(); triageSpecs(); }
     since += minutes;
     if (since >= 15) {
       since = 0;

@@ -76,7 +76,8 @@ export function authorityOf(source, people = []) {
 }
 
 const valueOf = (c) => (c.target ?? c.lo);
-const newest = (a, b) => String(b.at).localeCompare(String(a.at));
+const atOf = (c) => String(c.at ?? (c.source || {}).at ?? "");
+const newest = (a, b) => atOf(b).localeCompare(atOf(a));
 const covers = (cor, c) => !cor.scope || !cor.scope.assetId || cor.scope.assetId === c.subject;
 
 // Rule 1: the site manager's newest instruction wins when it is newer than the best other candidate. Rule 2: otherwise
@@ -92,7 +93,7 @@ export function rank(candidates, { corrections = [], rejected = [] } = {}) {
   }
   const M = live.filter((c) => c.authority === "manager").sort(newest)[0];
   const T = live.filter((c) => c.authority !== "manager").sort((a, b) => AUTHORITY.indexOf(a.authority) - AUTHORITY.indexOf(b.authority) || newest(a, b))[0];
-  const winner = M && (!T || String(M.at) > String(T.at)) ? M : T || null;
+  const winner = M && (!T || atOf(M) > atOf(T)) ? M : T || null;
   for (const c of live) {
     if (c === winner) continue;
     const reason = c === T && winner === M ? "older than the site manager's instruction"

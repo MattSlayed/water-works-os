@@ -91,7 +91,7 @@ test("outcome check: back within tolerance, halfway, unchanged, or no data", () 
 });
 
 test("root cause: agent 20 is in the catalogue (21 with the Recommender) and passes its evals", async () => {
-  assert.equal(AGENT_SPECS.length, 21);
+  assert.equal(AGENT_SPECS.length, 22);
   const r = await runEvals(() => createSystem(), "Root Cause");
   assert.equal(r.total, 3);
   assert.equal(r.passed, 3, JSON.stringify(r.cases));
