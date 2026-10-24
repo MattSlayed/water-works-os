@@ -7,6 +7,7 @@ import { makeScenes } from "./scenes.mjs";
 import { REGION, REMOTE_ZONES, REMOTE_SITES, SITE_XY, PROJECTS, TRACKERS, zoneGeo, zoneAtLocal } from "./region.mjs";
 import { AGENT_SPECS } from "./agents.mjs";
 import { specFromManifest } from "./harness.mjs";
+import { connectorId } from "./actions.mjs";
 
 export const CLOCK = "2026-10-15T00:00:00Z";
 
@@ -549,5 +550,25 @@ export function generateWorks(seed = 7) {
 
   // one decision statement per agent (agents design §4.1)
   for (const m of AGENT_SPECS) add(specFromManifest(m), "SYNTH-HARNESS");
+
+  // ---- Accounts and IT (plan 3b): added after every seeded draw, so no earlier value moves ----
+  [["P-043", "Lerato Khumalo", "accounts_clerk", "operator", "P-044"], ["P-044", "Thandi Mokoena", "finance_officer", "supervisor", "P-001"],
+    ["P-045", "Ayanda Mthembu", "it_admin", "operator", "P-001", { itAdmin: true }]].forEach(([id, name, role, clearance, supervisorId, extra], i) => {
+    add({ id, type: "Person", name, role, clearance, trade: null, shift: "DAY", employer: "Riverbend Works", supervisorId, ...extra }, "SYNTH-HR");
+    add({ id: `CHN-${id}`, type: "Channel", kind: "whatsapp", address: `+27 60 000 ${1000 + people.length + i}`, personId: id, members: [id], audience: [id], noticePosted: true }, "CHANNEL-STUB");
+    link(`CHN-${id}`, "CHANNEL_OF", id);
+  });
+  // IT's connector catalogue (agents design §7): per connector and operation, the roles that may use it, the most an
+  // agent may do with it, and whether one IT administrator must sign it off per role first
+  const ALL = ["*"], line = (op, action, roles, maxLevel, itSignOff = false) => ({ op, action, roles, maxLevel, itSignOff, signedOff: {} });
+  const money = ["accounts_clerk", "finance_officer"];
+  for (const [kind, lines] of [
+    ["m365.mail", [line("read", null, [...money, "works_manager"], "read")]],
+    ["m365.files", [line("read", null, [...money, "works_manager"], "read"), line("write", "file_document", money, "act", true)]],
+    ["m365.teams", [line("send", "send_message", ALL, "notify")]],
+    ["google.mail", [line("read", null, ALL, "read")]], ["google.drive", [line("read", null, ALL, "read")]], ["google.sheets", [line("read", null, ALL, "read")]],
+    ["erp", [line("read", null, [...money, "planner", "works_manager"], "read"), line("post", "post_invoice_match", money, "propose")]],
+    ["cmms", [line("read", null, ALL, "read"), line("write", null, ALL, "act")]]
+  ]) add({ id: connectorId(kind), type: "Connector", kind, lines }, "CONFIG");
   return { objects, links, clock: CLOCK };
 }

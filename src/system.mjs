@@ -20,10 +20,14 @@ export function createSystem({ seed = 7 } = {}) {
   const connectors = createConnectors({ seed, nowIso: tel.now });
   trackers.syncTo(ont, tel.cursor(), audit);
   const actions = createActionService({ ont, audit, clock: tel.now, tel });
-  const runtime = createRuntime({ ont, tel, actions, audit });
+  const runtime = createRuntime({ ont, tel, actions, audit, connectors });
   const copilot = createCopilot({ ont, tel, actions, runtime });
   const channels = createChannels({ ont, tel, actions, runtime, copilot, audit });
   const plant = createPlantService({ ont, tel, actions, audit });
+  // the clerk photographed a paper invoice at the stores counter and sent it on the works chat (plan 3b Task 1)
+  const cp = connectors.chatPhoto;
+  ont.upsert({ id: "MSG-CHAT-PHOTO", type: "Message", channelId: cp.channelId, direction: "in", from: "P-043", at: cp.at, text: "Invoice from the stores counter, photo attached", media: [cp.attachmentId], audience: ont.get(cp.channelId).audience });
+  ont.link("MSG-CHAT-PHOTO", "IN", cp.channelId);
   // the RES-2 contractor's open issue, raised through the action service so it has its audit entry (Region design §4.4)
   actions.invoke({ action: "raise_issue", params: { title: "Liner seam test failed on panel 14: re-weld before the cure", projectId: "PRJ-RES2" }, actor: { kind: "person", id: "P-004", clearance: ont.get("P-004").clearance } });
   // scenes already processed when the shift starts have been through Geo Watch (Region design §5.4)

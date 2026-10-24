@@ -8,7 +8,7 @@ const sees = (sys, who, id) => !!sys.ont.view({ id: who, clearance: sys.ont.get(
 
 test("seed: channels, the CL-3 contract, chat history, past jobs, issues and field notes", () => {
   const { ont } = createSystem({ seed: 7 });
-  assert.equal(ont.list("Channel").length, 43);
+  assert.equal(ont.list("Channel").length, 46); // 45 people and the CL-3 group
   assert.equal(ont.list("Participant").length, 3);
   assert.ok(!JSON.stringify(ont.list("Participant")).includes("+27"));
   const grp = ont.get("CHN-GRP-CL3");

@@ -39,8 +39,8 @@ test("every link endpoint exists and every object has provenance", () => {
   for (const o of w.objects) assert.ok(o.prov && o.prov.source, `prov ${o.id}`);
 });
 
-test("42 people, hero assets have sensors, an intrusive procedure step exists", () => {
-  assert.equal(ofType("Person").length, 42);
+test("45 people, hero assets have sensors, an intrusive procedure step exists", () => {
+  assert.equal(ofType("Person").length, 45);
   for (const a of ofType("Asset").filter((x) => x.hero)) {
     const n = ofType("Sensor").filter((s) => s.assetId === a.id).length;
     assert.ok(n >= 3, `${a.id} sensors ${n}`);

@@ -53,6 +53,24 @@ const agentSpec = (ont, name) => { const s = specFor(ont, name); if (!s) throw n
 const withdrawFor = (ont, agent, action, ctx, reason) => ont.list("Proposal", (p) => p.actorId === agent && p.state === "open" && (!action || p.action === action))
   .map((p) => setProps(ont, p.id, { state: "withdrawn", withdrawnAt: ctx.now(), withdrawnReason: reason }));
 
+// IT's connector catalogue (agents design §7): may this role use this connector operation, at this level?
+// locked: the line needs an IT sign-off for the role and does not have one yet.
+export const connectorId = (kind) => `CON-${String(kind).replace(".", "-")}`;
+export function catalogueAllows(ont, { kind, op, role, level }) {
+  const con = ont.get(connectorId(kind)), line = con && con.lines.find((l) => l.op === op);
+  if (!line) return { ok: false, reason: `${kind} ${op} is not in the catalogue`, locked: false, maxLevel: null };
+  if (!line.roles.includes("*") && !line.roles.includes(role)) return { ok: false, reason: `${kind} ${op} is not allowed for ${role || "this role"}`, locked: false, maxLevel: line.maxLevel };
+  if (level && lv(level) > lv(line.maxLevel)) return { ok: false, reason: `${kind} ${op} for ${role}: ${level} is above ${line.maxLevel}`, locked: false, maxLevel: line.maxLevel };
+  return { ok: true, reason: null, locked: !!line.itSignOff && !(line.signedOff || {})[role], maxLevel: line.maxLevel };
+}
+const itOnly = (ont, ctx) => { if (!(ont.get(actorId(ctx)) || {}).itAdmin) throw new Error("IT administrators only"); };
+const lineOf = (ont, kind, op) => {
+  const con = ont.get(connectorId(kind));
+  if (!con) throw new Error(`no connector ${kind}`);
+  const i = con.lines.findIndex((l) => l.op === op);
+  return { con, i };
+};
+
 // A job follows the procedure version released when it starts; shared by start_execution and the sampling round.
 function openExecution(ont, wo, personId, proc, at) {
   // performance data: the person, their own supervisor and engineers (the manager sees everything)
@@ -101,6 +119,35 @@ export const ACTIONS = {
     if (!on) undo.push(...withdrawFor(ont, spec.name, p.action, ctx, `${p.action} turned off`));
     return { objects: [spec.id], revert: () => undo.reverse().forEach((f) => f()) };
   }, "engineer"),
+  // IT's catalogue: one IT administrator edits a line or signs it off for a role (agents design §7, §14 call 7)
+  set_catalogue_line: def("act", "human", ["kind", "op", "patch"], (ont, p, ctx) => {
+    itOnly(ont, ctx);
+    const keys = Object.keys(p.patch || {});
+    if (!keys.length || keys.some((k) => !["action", "roles", "maxLevel", "itSignOff"].includes(k))) throw new Error("patch may only change: action, roles, maxLevel, itSignOff");
+    if (p.patch.roles !== undefined && (!Array.isArray(p.patch.roles) || p.patch.roles.some((r) => typeof r !== "string"))) throw new Error("roles must be a list of roles");
+    if (p.patch.maxLevel !== undefined && !LEVELS.includes(p.patch.maxLevel)) throw new Error(`maxLevel must be one of ${LEVELS.join(", ")}`);
+    const { con, i } = lineOf(ont, p.kind, p.op);
+    const base = i >= 0 ? con.lines[i] : { op: p.op, action: null, roles: [], maxLevel: "read", itSignOff: false, signedOff: {} };
+    const lines = i >= 0 ? con.lines.map((l, j) => (j === i ? { ...base, ...p.patch } : l)) : [...con.lines, { ...base, ...p.patch }];
+    return { objects: [con.id], revert: setProps(ont, con.id, { lines }) };
+  }),
+  sign_off_catalogue_line: def("act", "human", ["kind", "op", "role"], (ont, p, ctx) => {
+    itOnly(ont, ctx);
+    const { con, i } = lineOf(ont, p.kind, p.op);
+    if (i < 0) throw new Error(`${p.kind} ${p.op} is not in the catalogue`);
+    const l = con.lines[i];
+    if (!l.itSignOff) throw new Error(`${p.kind} ${p.op} needs no sign-off`);
+    if (!l.roles.includes(p.role)) throw new Error(`${p.kind} ${p.op} is not allowed for ${p.role}`);
+    if ((l.signedOff || {})[p.role]) throw new Error(`${p.kind} ${p.op} is already signed off for ${p.role}`);
+    const mark = { by: actorId(ctx), at: ctx.now() };
+    ont.upsert({ id: con.id, type: "Connector", lines: con.lines.map((x, j) => (j === i ? { ...x, signedOff: { ...x.signedOff, [p.role]: mark } } : x)) });
+    // the revert removes only this role's sign-off, so a later edit to the line is kept
+    const revert = () => {
+      const cur = ont.get(con.id);
+      ont.upsert({ id: con.id, type: "Connector", lines: cur.lines.map((x) => (x.op !== p.op ? x : { ...x, signedOff: Object.fromEntries(Object.entries(x.signedOff || {}).filter(([r, m]) => !(r === p.role && same(m, mark)))) })) });
+    };
+    return { objects: [con.id], revert };
+  }),
   create_work_order: def("act", "act", ["assetId", "title"], (ont, p, ctx) => {
     const wo = create(ont, { id: nextId("WO-N"), type: "WorkOrder", assetId: p.assetId, title: p.title, kind: p.kind || "CM", priority: p.priority || "P3", state: "requested", requested: ctx.now(), source: p.source || null }, [["TARGETS", p.assetId]]);
     return { objects: [wo.id], revert: () => setProps(ont, wo.id, { state: "cancelled" }) };
@@ -160,7 +207,7 @@ export const ACTIONS = {
   }),
   record_reading: def("act", "act", ["targetId", "measure", "value"], (ont, p, ctx) => {
     const t = ont.get(p.targetId);
-    const r = create(ont, { id: nextId("RDG"), type: "Reading", targetId: p.targetId, assetId: t && (t.assetId || t.id), measure: p.measure, value: p.value, unit: p.unit || null, workOrderId: p.workOrderId || null, at: ctx.now(), source: "field" }, [["OF", p.targetId]]);
+    const r = create(ont, { id: nextId("RDG"), type: "Reading", targetId: p.targetId, assetId: t && (t.assetId || t.id), measure: p.measure, value: p.value, unit: p.unit || null, workOrderId: p.workOrderId || null, at: ctx.now(), source: "field", by: actorId(ctx) }, [["OF", p.targetId]]);
     return { objects: [r.id] };
   }),
   tag_part: def("act", "act", ["partId", "note"], (ont, p, ctx) => {

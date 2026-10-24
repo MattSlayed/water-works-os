@@ -2,7 +2,7 @@
 // only use the context tools: reads through the acting user's view, function tools, and typed actions under the dial.
 // shortcut: agent logic is deterministic code over the ontology; with ANTHROPIC_API_KEY the Copilot and Ask answers use
 // Claude (src/llm.mjs). Upgrade path: run each spec through the Claude Agent SDK with the same tool wrapper.
-import { LEVELS } from "./actions.mjs";
+import { LEVELS, catalogueAllows } from "./actions.mjs";
 import * as F from "./functions.mjs";
 import { baseline } from "./scenes.mjs";
 import { specFor, demoteIfNeeded, objectTime } from "./harness.mjs";
@@ -599,7 +599,11 @@ export function dropPackEvidence(ctx) {
   return items;
 }
 
-export function createRuntime({ ont, tel, actions, audit }) {
+// The read functions of each connector an agent may be given (never its writes: those go through typed actions).
+const READS = { "m365.mail": ["list"], "m365.files": ["list", "moves"], "m365.teams": ["messages"], "google.mail": ["list"], "google.drive": ["list"], "google.sheets": ["values"],
+  erp: ["suppliers", "purchaseOrders", "goodsReceipts", "invoices"] };
+
+export function createRuntime({ ont, tel, actions, audit, connectors = null }) {
   const specs = new Map(AGENT_SPECS.map((s) => [s.name, structuredClone(s)]));
   const logic = new Map(Object.entries(LOGIC));
   const runs = [];
@@ -638,22 +642,35 @@ export function createRuntime({ ont, tel, actions, audit }) {
         else run.outputs.push({ action, status: r.status, ref: (r.decision || r.proposal || r.shadow).id });
         return call(action, params, { status: r.status, ref: (r.decision || r.proposal || r.shadow || {}).id || null, objects: r.decision ? r.decision.objects : [], reason: r.reason });
       },
+      // a connector, only if the decision statement's evidence contract lists it and IT lets the person behind the run read it
+      connector: (kind) => {
+        const hs = specFor(ont, spec.name) || {};
+        if (!(hs.reads || []).some((x) => x.source === `connector:${kind}`)) throw new Error(`connector ${kind} is not in its evidence contract`);
+        const ok = catalogueAllows(ont, { kind, op: "read", role: (ont.get(opts.actingUser.id) || {}).role || opts.actingUser.role });
+        if (!ok.ok) throw new Error(ok.reason);
+        const [app, store] = kind.split("."), c = connectors && (store ? connectors[app][store] : connectors[app]);
+        if (!c || !READS[kind]) throw new Error(`no connector ${kind}`);
+        source(`connector:${kind}`, now);
+        return Object.fromEntries(READS[kind].map((f) => [f, (...a) => c[f](...a)]));
+      },
       think: (t) => run.reasoning.push(t),
       output: (o) => run.outputs.push(o)
     };
   }
 
-  function run(name, opts = {}, depth = 0) {
+  function run(name, opts0 = {}, depth = 0) {
     const spec = specs.get(name);
     if (!spec) throw new Error(`unknown agent ${name}`);
-    if (!opts.actingUser) throw new Error("actingUser required");
+    if (!opts0.actingUser) throw new Error("actingUser required");
+    // a studio agent runs as the person who built it, whoever starts it: it can never do more than its builder (agents design §6)
+    const hs = specFor(ont, name), builder = hs && hs.builderId && ont.get(hs.builderId);
+    const opts = builder ? { ...opts0, actingUser: { id: builder.id, kind: "person", clearance: builder.clearance, role: builder.role } } : opts0;
     const r = {
       id: `RUN-${String(++n).padStart(5, "0")}`, type: "AgentRun", agent: name, version: spec.version, trigger: opts.trigger || { kind: "manual" },
-      mission: opts.mission || null, scope: opts.scope || {}, actingUserId: opts.actingUser.id, startedAt: new Date().toISOString(), plantTime: tel.now(),
+      mission: opts.mission || null, scope: opts.scope || {}, actingUserId: opts.actingUser.id, triggeredBy: opts0.actingUser.id, startedAt: new Date().toISOString(), plantTime: tel.now(),
       read: [], sources: [], calls: [], reasoning: [], outputs: [], refusals: [], constraintHits: [], status: "running"
     };
     let next = [];
-    const hs = specFor(ont, name);
     if (hs && ["paused", "retired"].includes(hs.state)) { r.status = "skipped"; r.reasoning.push(`${name} is ${hs.state}.`); }
     else try {
       const chain = logic.get(name)(makeCtx(spec, r, opts));
