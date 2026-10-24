@@ -10,7 +10,7 @@ import { specFromManifest } from "./harness.mjs";
 
 export const CLOCK = "2026-10-15T00:00:00Z";
 
-function rng(seed) {
+export function rng(seed) {
   let a = seed >>> 0;
   return () => {
     a = (a + 0x6d2b79f5) >>> 0;
