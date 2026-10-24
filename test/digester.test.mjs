@@ -11,7 +11,14 @@ const SINCE = new Date(Date.parse("2026-10-14T06:00:00Z") - 14 * 86400000).toISO
 const TOOLS = { digest_document: "act", file_document: "act", post_invoice_match: "propose", raise_issue: "act" };
 
 // a bounded digester built by the clerk, as the studio will build one (Task 7 adds create_studio_agent)
-function digester(s, { name = "Clerk Digester", source = { kind: "m365.mail", mailbox: "accounts@riverbend.example" }, signOff = true } = {}) {
+// the window's mail as if it had just arrived: the clerk has not posted or filed it yet
+function fresh(s) {
+  const c = s.connectors;
+  for (const i of c.erp.invoices().filter((x) => x.receivedAt >= SINCE)) c.erp.unpost(i.id);
+  for (const m of c.m365.files.moves().filter((x) => x.at >= SINCE)) c.m365.files.remove(m.itemId);
+}
+function digester(s, { name = "Clerk Digester", source = { kind: "m365.mail", mailbox: "accounts@riverbend.example" }, signOff = true, unprocessed = true } = {}) {
+  if (unprocessed) fresh(s);
   if (signOff) assert.equal(act(s, "P-045", "sign_off_catalogue_line", { kind: "m365.files", op: "write", role: "accounts_clerk" }).status, "done");
   s.ont.upsert({ id: specId(name), type: "AgentSpec", name, version: "1.0.0", builderId: "P-043", owner: "P-043", template: "digester", params: { source, tolerancePct: 2 },
     reads: [{ source: "connector:m365.mail" }, { source: "connector:m365.files" }, { source: "connector:erp" }],
@@ -106,4 +113,15 @@ test("running twice does not digest the same document twice", () => {
   const n = s.ont.list("DocumentIntake").length;
   s.runtime.run(name, { actingUser: as(s, "P-043"), scope: { since: SINCE } });
   assert.equal(s.ont.list("DocumentIntake").length, n);
+});
+
+test("mail the clerk already posted is not filed or posted again: it goes to review", () => {
+  const s = createSystem(), name = digester(s, { unprocessed: false });
+  s.runtime.run(name, { actingUser: as(s, "P-043"), scope: { since: SINCE } });
+  assert.equal(s.ont.list("Decision", (d) => d.action === "file_document").length, 0);
+  assert.equal(s.ont.list("Proposal", (p) => p.action === "post_invoice_match").length, 0);
+  const ds = s.ont.list("DocumentIntake");
+  assert.equal(ds.length, 25);
+  assert.ok(ds.every((d) => d.verdict !== "file"));
+  assert.equal(ds.filter((d) => d.match.issues.some((i) => i.kind === "already-posted")).length, 25);
 });

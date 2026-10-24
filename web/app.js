@@ -561,7 +561,9 @@ const views = {
         ${canDial ? `<div class="btns">${s.tools.map((t) => `<label class="meta"><input type="checkbox" data-tool-toggle data-agent="${esc(s.name)}" data-action="${esc(t.action)}" ${t.enabled ? "checked" : ""}> ${esc(t.action)}</label>`).join("")}</div>
         <div class="btns"><label class="meta">Agent <select data-agent-state="${esc(s.name)}">${["live", "paused", "retired"].map((x) => `<option ${s.state === x ? "selected" : ""}>${x}</option>`).join("")}</select></label>
           ${r.promotion.next ? `<button class="btn" data-promote="${esc(s.name)}" data-to="${esc(r.promotion.next)}">Promote to ${esc(r.promotion.next)}</button>` : ""}
-          ${r.promotion.previous ? `<button class="btn" data-demote="${esc(s.name)}" data-to="${esc(r.promotion.previous)}">Demote to ${esc(r.promotion.previous)}</button>` : ""}</div>` : `<p class="meta">Engineer clearance is needed for the switches.</p>`}`;
+          ${r.promotion.previous ? `<button class="btn" data-demote="${esc(s.name)}" data-to="${esc(r.promotion.previous)}">Demote to ${esc(r.promotion.previous)}</button>` : ""}</div>`
+          : s.approver === state.me.id && r.promotion.next ? `<div class="btns"><button class="btn" data-promote="${esc(s.name)}" data-to="${esc(r.promotion.next)}">Promote to ${esc(r.promotion.next)}</button></div><p class="meta">You are this agent's approver.</p>`
+          : `<p class="meta">Engineer clearance is needed for the switches.</p>`}`;
     };
     const stmts = $("#stmts");
     const load = async (name) => { stmts.querySelector(`[data-specout="${CSS.escape(name)}"]`).innerHTML = card(await api(`/api/agents/${encodeURIComponent(name)}/spec`)); };

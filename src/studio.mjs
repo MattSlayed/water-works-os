@@ -47,7 +47,7 @@ function triggerFrom(text) {
   return null;
 }
 
-const SENSOR_WORDS = [[/temp/i, /temp/i], [/vibrat/i, /vib/i], [/current/i, /current/i], [/flow/i, /flow/i], [/pressure/i, /press/i], [/level/i, /level/i]];
+const SENSOR_WORDS = [[/temp/i, /temp/i], [/vibrat/i, /vib/i], [/current/i, /current/i], [/flow/i, /flow/i], [/pressure/i, /press/i], [/level/i, /level/i], [/head ?loss/i, /head ?loss/i], [/turbid/i, /turb/i]];
 function paramsFor(template, text, { builder, view }) {
   if (template === "digester") {
     const tol = text.match(/within (\d+(?:\.\d+)?)\s?%/i);
@@ -57,8 +57,9 @@ function paramsFor(template, text, { builder, view }) {
     return { source, tolerancePct: tol ? Number(tol[1]) : 2 };
   }
   if (template === "watch") {
-    const tag = (text.match(/\b([A-Z]{2,4}-[A-Z0-9]{1,3})\b/) || [])[1];
-    const asset = tag && view.list("Asset", (a) => a.positionTag === tag)[0];
+    // the first word that is an asset tag in the builder's view: HLP-B, F07, DP-2
+    const asset = (text.match(/\b[A-Z][A-Z0-9]{0,3}(?:-[A-Z0-9]{1,3})?\b/g) || []).map((w) => view.list("Asset", (a) => a.positionTag === w)[0]).find(Boolean);
+    const tag = asset && asset.positionTag;
     const kind = SENSOR_WORDS.find(([say]) => say.test(text));
     const sensor = asset && kind && view.list("Sensor", (s) => s.assetId === asset.id && kind[1].test(`${s.key} ${s.name}`))[0];
     if (!sensor) return { error: "Which reading? Name the asset tag and what to watch: temperature, vibration, current, flow, pressure or level." };
@@ -85,6 +86,12 @@ function approversFor(template, builder, ont) {
   return { approver, backup: mgr && ![approver, builder.id].includes(mgr.id) ? mgr.id : null };
 }
 
+// What a statement's template reads, given its source.
+const neededReads = (spec) => {
+  const t = TEMPLATES[spec.template], src = (spec.params || {}).source;
+  return t.reads.filter((r) => !(spec.template === "digester" && r === "connector:m365.mail" && src && src.kind !== "m365.mail"));
+};
+
 // The draft decision statement for a template (agents design §4.1): shadow, the builder's own reach, levels capped by the catalogue.
 export function draftSpec(template, { params, trigger, builder, ont }) {
   const t = TEMPLATES[template];
@@ -101,7 +108,7 @@ export function draftSpec(template, { params, trigger, builder, ont }) {
   return {
     id: specId(name), type: "AgentSpec", name, version: "1.0.0", owner: builder.id, builderId: builder.id, purpose: t.purpose, template, params, trigger: trigger || t.trigger,
     reads, tools, constraints: HARD_CONSTRAINTS.map((c) => c.id), approver, backup, escalateAfterMin: approver ? 240 : null, onTimeout: "hold", exclusions: [],
-    mode: "shadow", promotion: { minCases: 20, minAgreePct: 90, maxBreaches: 0, maxStalePct: 5 }, state: "live", killedAt: null, killedBy: null, createdAt: null
+    mode: "shadow", promotion: { ...(t.promotion || { minCases: 20, minAgreePct: 90, maxBreaches: 0, maxStalePct: 5 }) }, state: "live", killedAt: null, killedBy: null, createdAt: null
   };
 }
 
@@ -130,11 +137,18 @@ export function validateStatement(spec, { ont }) {
     const line = catalogueLine(ont, tool.action);
     if (line && builder && LEVELS.includes(tool.level)) { const c = catalogueAllows(ont, { kind: line.kind, op: line.op, role: builder.role, level: tool.level }); if (!c.ok) problems.push(c.reason); }
   }
-  for (const r of spec.reads || []) {
-    if (!String(r.source).startsWith("connector:") || !builder) continue;
-    const c = catalogueAllows(ont, { kind: r.source.slice("connector:".length), op: "read", role: builder.role });
+  // what the template needs to read is checked whatever the statement lists, and the statement must list it
+  const listed = (spec.reads || []).map((r) => String(r.source));
+  for (const src of new Set([...listed, ...(t ? neededReads(spec) : [])])) {
+    if (!src.startsWith("connector:") || !builder) continue;
+    const c = catalogueAllows(ont, { kind: src.slice("connector:".length), op: "read", role: builder.role });
     if (!c.ok) problems.push(c.reason);
+    else if (!listed.includes(src)) problems.push(`its reads must list ${src}`);
   }
+  const tr = spec.trigger || {};
+  if (tr.kind === "schedule" && !/^(every \d+ min|(weekdays|daily|fridays) at \d\d:\d\d)$/.test(String(tr.every))) problems.push(`the studio cannot run the schedule "${tr.every}": use every N min, or weekdays, daily or fridays at HH:MM`);
+  if (spec.builderId && spec.approver === spec.builderId) problems.push("the approver must be someone other than the builder");
+  if (spec.builderId && spec.backup === spec.builderId) problems.push("the backup approver must be someone other than the builder");
   for (const k of ["approver", "backup"]) if (spec[k] != null && (ont.get(spec[k]) || {}).type !== "Person") problems.push(`the ${k} ${spec[k]} is not a person`);
   if (!["hold", "drop"].includes(spec.onTimeout)) problems.push(`if nobody answers it must hold or drop, never ${spec.onTimeout}`);
   if (spec.escalateAfterMin != null && !(Number(spec.escalateAfterMin) > 0)) problems.push("escalation must be after a number of minutes");
@@ -231,8 +245,10 @@ export function dueStudioAgents(ont, nowIso, lastIso) {
 
 // Replay (agents design §6.1 step 4): the digester run over the last days of its source as its builder, in shadow,
 // each case matched to what the person did. A replay replaces the agent's earlier replay; it writes ShadowActions only.
-export function replay(sys, spec, { days = 14 } = {}) {
-  const { ont, connectors: c, tel } = sys, now = tel.now(), since = new Date(Date.parse(now) - days * 86400000).toISOString();
+// It covers the 14 days up to the source's latest document, so a quiet inbox does not shrink the record as the clock runs.
+// record: write the cases as the agent's replay ShadowActions (only create_studio_agent does, for the statement it stores).
+export function replay(sys, spec, { days = 14, record = false } = {}) {
+  const { ont, connectors: c } = sys, now = sys.now || sys.tel.now();
   const out = { cases: 0, agreed: 0, differed: 0, missed: 0, unsure: 0, caught: 0, stale: 0, constraintHits: 0, examples: [] };
   if (spec.template !== "digester") return { ...out, note: "Replay covers the document digester; the other templates build their record in shadow." };
   const builder = ont.get(spec.builderId), tol = Number(spec.params.tolerancePct) || 2, src = spec.params.source;
@@ -241,11 +257,13 @@ export function replay(sys, spec, { days = 14 } = {}) {
     const ok = catalogueAllows(ont, { kind: r.source.slice("connector:".length), op: "read", role: builder.role });
     if (!ok.ok) throw new Error(ok.reason);
   }
-  for (const x of ont.list("ShadowAction", (x) => x.agent === spec.name && x.replay)) ont.remove(x.id);
+  if (record) for (const x of ont.list("ShadowAction", (x) => x.agent === spec.name && x.replay)) ont.remove(x.id);
   const view = ont.view(builder), moves = c.m365.files.moves();
-  const docs = src.kind === "m365.mail" ? c.m365.mail.list(src.mailbox, { since }).flatMap((m) => m.attachments.map((att) => ({ att, at: m.receivedDateTime })))
-    : src.kind === "chat" ? view.list("Message", (m) => m.channelId === src.channelId && m.at >= since).flatMap((m) => (m.media || []).map((id) => ({ att: c.attachment(id), at: m.at })))
-    : moves.filter((x) => x.path.startsWith(src.path) && x.at >= since).map((x) => ({ att: c.attachment(x.sourceId), at: x.at }));
+  const all = (src.kind === "m365.mail" ? c.m365.mail.list(src.mailbox).flatMap((m) => m.attachments.map((att) => ({ att, at: m.receivedDateTime })))
+    : src.kind === "chat" ? view.list("Message", (m) => m.channelId === src.channelId).flatMap((m) => (m.media || []).map((id) => ({ att: c.attachment(id), at: m.at })))
+    : moves.filter((x) => x.path.startsWith(src.path)).map((x) => ({ att: c.attachment(x.sourceId), at: x.at }))).filter((d) => d.at <= now);
+  const end = all.reduce((m, d) => (Date.parse(d.at) > m ? Date.parse(d.at) : m), 0), since = new Date(end - days * 86400000).toISOString();
+  const docs = all.filter((d) => d.at >= since).sort((a, b) => a.at.localeCompare(b.at));
   const seen = [], examples = [];
   for (const doc of docs.filter((d) => d.att && isInvoiceDoc(d.att))) {
     const r = digestDoc(doc.att, { erp: c.erp, moves, seen, at: doc.at, tolerancePct: tol });
@@ -257,7 +275,7 @@ export function replay(sys, spec, { days = 14 } = {}) {
     const outcome = unsure ? "unsure" : caught ? "caught" : agreed ? "agreed" : "differed";
     out.cases++;
     out[outcome]++;
-    ont.upsert({ id: shadowId(), type: "ShadowAction", agent: spec.name, specVersion: spec.version, runId: null, action: r.verdict === "file" ? "file_document" : "digest_document",
+    if (record) ont.upsert({ id: shadowId(), type: "ShadowAction", agent: spec.name, specVersion: spec.version, runId: null, action: r.verdict === "file" ? "file_document" : "digest_document",
       params: { attachmentId: doc.att.id, ...(r.verdict === "file" ? { path: r.destination.path } : {}) }, at: doc.at, status: agreed ? "agreed" : "differed", reason: agreed ? null : outcome,
       matchedTo: filed ? filed.itemId : null, matchedAt: now, replay: true, minClearance: builder.clearance, audience: [builder.id, spec.approver].filter((x) => typeof x === "string") });
     examples.push({ attachmentId: doc.att.id, name: doc.att.name, at: doc.at, verdict: r.verdict, outcome, path: r.verdict === "file" ? r.destination.path : null, personPath: filed ? filed.path : null,

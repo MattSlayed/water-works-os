@@ -13,6 +13,10 @@ function sourceDocs(ctx, source, since) {
   throw new Error(`unknown source ${source.kind}`);
 }
 
+// A template whose every output reaches only its builder has no outside case to match in shadow: its promotion rests
+// on the second person who promotes it (and IT's sign-off), not on a record count it could never reach.
+const BUILDER_ONLY = { minCases: 0, minAgreePct: 0, maxBreaches: 0, maxStalePct: 5 };
+
 export const TEMPLATES = {
   // Read each new document, match it, and file only what is clean; posting is always a proposal; a bank change goes to a person.
   digester: {
@@ -30,7 +34,7 @@ export const TEMPLATES = {
       const seen = [];
       for (const doc of sourceDocs(ctx, p.source, since)) {
         if ((only && !only.has(doc.messageId)) || done.has(doc.att.id) || !isInvoiceDoc(doc.att)) continue;
-        const r = digestDoc(doc.att, { erp, moves, seen, at: doc.at, tolerancePct: tol });
+        const r = digestDoc(doc.att, { erp, moves, seen, at: doc.at, asOf: ctx.now, tolerancePct: tol });
         seen.push({ supplierId: r.fields.supplierId, number: r.fields.invoiceNo, total: r.fields.total, sourceId: doc.att.id, receivedAt: doc.at });
         ctx.think(`${doc.att.name}: ${r.verdict}${r.match.issues.length ? ` (${r.match.issues.map((i) => i.detail).join("; ")})` : ""}`);
         const dg = ctx.act("digest_document", { attachmentId: doc.att.id, source: p.source, fromMessage: doc.messageId, receivedAt: doc.at, tolerancePct: tol });
@@ -47,7 +51,7 @@ export const TEMPLATES = {
   // A reading past a threshold tells the builder (once an hour at most).
   watch: {
     label: "Watch", purpose: "Tell the builder when a reading crosses a threshold",
-    trigger: { kind: "schedule", every: "every 15 min" }, reads: ["telemetry"], tools: { notify: "act" },
+    trigger: { kind: "schedule", every: "every 15 min" }, reads: ["telemetry"], tools: { notify: "act" }, promotion: BUILDER_ONLY,
     run(ctx) {
       const p = ctx.params, v = ctx.latest(p.sensorId), st = ctx.statement;
       if (!v) return ctx.think(`${p.sensorId} has no reading in view.`);
@@ -61,7 +65,7 @@ export const TEMPLATES = {
   // Counts from the builder's view for the week, drafted, then sent to the builder's own chat.
   "weekly-report": {
     label: "Weekly report", purpose: "Count what happened this week and send the builder a short report",
-    trigger: { kind: "schedule", every: "fridays at 15:00" }, reads: ["objects"], tools: { draft_document: "act", send_message: "notify" },
+    trigger: { kind: "schedule", every: "fridays at 15:00" }, reads: ["objects"], tools: { draft_document: "act", send_message: "notify" }, promotion: BUILDER_ONLY,
     run(ctx) {
       const p = ctx.params, st = ctx.statement, since = Date.parse(ctx.now) - 7 * 86400000;
       const when = (o) => Date.parse(o.at || o.requested || o.created || 0);
@@ -87,7 +91,7 @@ export const TEMPLATES = {
   // Supplier records that are the same company written two ways.
   "data-tidy": {
     label: "Supplier tidy-up", purpose: "List supplier records in the ERP that look like the same company",
-    trigger: { kind: "schedule", every: "daily at 06:00" }, reads: ["connector:erp"], tools: { draft_document: "act" },
+    trigger: { kind: "schedule", every: "daily at 06:00" }, reads: ["connector:erp"], tools: { draft_document: "act" }, promotion: BUILDER_ONLY,
     run(ctx) {
       const norm = (n) => n.toLowerCase().replace(/\(pty\)|\bltd\b|\bcc\b|&|\band\b|[^a-z0-9 ]/g, " ").replace(/\s+/g, " ").trim();
       const groups = new Map();

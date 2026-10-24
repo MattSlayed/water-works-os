@@ -12,6 +12,15 @@ const cell = (key, value, grade, line, reasoning) => ({ key, value, grade, regio
 const num = (s) => (/^\d+(\.\d+)?$/.test(String(s).trim()) ? Number(s) : null);
 const pct = (a, b) => ((a - b) / b) * 100;
 
+// A supplier as written on a document, found in the ERP exactly or by its normalised name ("&" = "and", no "(Pty) Ltd").
+const normName = (n) => String(n).toLowerCase().replace(/&/g, " and ").replace(/\(pty\)|\bltd\b|\bcc\b/g, " ").replace(/[^a-z0-9]+/g, " ").trim();
+export const supplierFor = (erp, written) => {
+  const all = erp.suppliers(), exact = all.find((s) => s.name === written);
+  if (exact) return { sup: exact, exact: true };
+  const near = all.filter((s) => normName(s.name) === normName(written));
+  return near.length === 1 ? { sup: near[0], exact: false } : { sup: null, exact: false };
+};
+
 // An invoice, or a document the digester cannot tell (no text layer) and so sends to review; delivery notes are not.
 export const isInvoiceDoc = (att) => !!att && (!att.textLayer || /^TAX INVOICE/.test(att.textLayer));
 
@@ -43,8 +52,8 @@ export function extractFields(att, { erp, at = null, tolerancePct = 2 } = {}) {
     return check(v) ? put(key, v, "EXTRACTED", f.line, `read from line ${f.line}`) : put(key, f.raw, "AMBIGUOUS", f.line, `could not read "${f.raw}"`);
   };
 
-  const sup = found.supplier && erp.suppliers().find((s) => s.name === found.supplier.raw);
-  if (sup) { put("supplier", sup.name, "EXTRACTED", found.supplier.line, `read from line ${found.supplier.line}; ${sup.id} in the ERP`); fields.supplierId = sup.id; }
+  const { sup, exact } = found.supplier ? supplierFor(erp, found.supplier.raw) : { sup: null };
+  if (sup) { put("supplier", sup.name, exact ? "EXTRACTED" : "INFERRED", found.supplier.line, exact ? `read from line ${found.supplier.line}; ${sup.id} in the ERP` : `written "${found.supplier.raw}"; taken as ${sup.id} ${sup.name} in the ERP`); fields.supplierId = sup.id; }
   else if (found.supplier) put("supplier", found.supplier.raw, "AMBIGUOUS", found.supplier.line, "supplier not in the ERP");
   else put("supplier", null, "AMBIGUOUS", null, "not on the document");
   plain("invoiceNo");
@@ -70,7 +79,9 @@ export function extractFields(att, { erp, at = null, tolerancePct = 2 } = {}) {
 
 // The three-way match (invoice, PO, goods receipt), the duplicate check and the bank-detail check.
 // A duplicate is an earlier document (received before `at`, another attachment) with the same supplier, number and total.
-export function matchInvoice(fields, { erp, tolerancePct = 2, seen = [], at = null, sourceId = null } = {}) {
+// asOf is when the match is made: an invoice already posted by then, or a PO already invoiced, is not posted again.
+// A replay leaves it out, so the match is made as of the document's arrival.
+export function matchInvoice(fields, { erp, tolerancePct = 2, seen = [], at = null, asOf = null, sourceId = null } = {}) {
   const issues = [], f = fields || {};
   const po = f.poNo ? erp.purchaseOrders().find((p) => p.id === f.poNo) : null;
   if (!po) issues.push({ kind: "no-po", detail: f.poNo ? `${f.poNo} is not in the ERP` : "no PO to match against" });
@@ -85,7 +96,12 @@ export function matchInvoice(fields, { erp, tolerancePct = 2, seen = [], at = nu
     const dup = [...seen, ...erp.invoices()].find(same);
     if (dup) issues.push({ kind: "duplicate", detail: `same supplier, number ${f.invoiceNo} and total as ${dup.id || dup.sourceId}` });
   }
-  const sup = f.supplierId && erp.suppliers().find((s) => s.id === f.supplierId);
+  const when = asOf || at;
+  if (when && sourceId && erp.invoices().some((x) => x.sourceId === sourceId && (x.postedAt || x.receivedAt) <= when)) issues.push({ kind: "already-posted", detail: "this document is already posted in the ERP" });
+  else if (when && po) { const prior = erp.invoices().find((x) => x.poId === po.id && x.sourceId !== sourceId && (x.postedAt || x.receivedAt) <= when); if (prior) issues.push({ kind: "po-invoiced", detail: `${po.id} is already invoiced (${prior.number || prior.id})` }); }
+  // the bank details are checked against the PO's supplier, whatever name the document gives
+  if (po && f.supplierId && po.supplierId !== f.supplierId) issues.push({ kind: "supplier-mismatch", detail: `${po.id} is from ${po.supplierId}, the document names ${f.supplierId}` });
+  const sup = erp.suppliers().find((s) => s.id === ((po && po.supplierId) || f.supplierId));
   if (sup && f.bank && (f.bank.account !== sup.bank.account || f.bank.branch !== sup.bank.branch))
     issues.push({ kind: "bank-change", detail: `bank account ${f.bank.account} / ${f.bank.branch} differs from ${sup.name}'s ${sup.bank.account} / ${sup.bank.branch} in the ERP` });
   return { po: po ? po.id : null, receipt: receipt ? receipt.id : null, ok: !issues.length, issues };
@@ -106,6 +122,9 @@ export function destinationFor(fields, history = []) {
 // person: changed bank details, which never go further without someone checking with the supplier.
 export function digestVerdict({ cells, match }) {
   if (match.issues.some((i) => i.kind === "bank-change")) return "person";
+  // nothing is filed without a supplier, an invoice number and a total that reads as an amount
+  const usable = (k) => { const c = cells.find((x) => x.key === k); return c && c.value != null && (k !== "total" || Number.isFinite(Number(c.value))); };
+  if (!["supplier", "invoiceNo", "total"].every(usable)) return "review";
   if (cells.some((c) => c.grade === "AMBIGUOUS" && !c.reviewed) || match.issues.length) return "review";
   return "file";
 }
@@ -114,15 +133,15 @@ export function digestVerdict({ cells, match }) {
 const numOrNull = (v) => (v == null || v === "" || !Number.isFinite(Number(v)) ? null : Number(v));
 export function fieldsFromCells(cells, erp) {
   const f = Object.fromEntries(cells.map((c) => [c.key, c.grade === "AMBIGUOUS" && !c.reviewed ? null : ["total", "vat"].includes(c.key) ? numOrNull(c.value) : c.value]));
-  const sup = f.supplier && erp.suppliers().find((s) => s.name === f.supplier);
+  const { sup } = f.supplier ? supplierFor(erp, f.supplier) : { sup: null };
   return { ...f, supplierId: sup ? sup.id : null };
 }
 
 // One document end to end: cells (read here, or given, e.g. by Claude or a reviewer), match, verdict and destination.
 // moves is the filing log; only filings before the document count, so a replay never learns from its own answer.
-export function digestDoc(att, { erp, moves = [], seen = [], at = null, tolerancePct = 2, cells = null }) {
+export function digestDoc(att, { erp, moves = [], seen = [], at = null, asOf = null, tolerancePct = 2, cells = null }) {
   const ex = cells ? { cells, fields: fieldsFromCells(cells, erp) } : extractFields(att, { erp, at, tolerancePct });
-  const match = matchInvoice(ex.fields, { erp, tolerancePct, seen, at, sourceId: att && att.id });
+  const match = matchInvoice(ex.fields, { erp, tolerancePct, seen, at, asOf, sourceId: att && att.id });
   return { ...ex, match, verdict: digestVerdict({ cells: ex.cells, match }), destination: destinationFor(ex.fields, moves.filter((m) => !at || m.at < at)) };
 }
 

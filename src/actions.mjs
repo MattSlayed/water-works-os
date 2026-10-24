@@ -5,7 +5,8 @@ import { currentProcedure, stepLock, bandCheck, partNamesIn, stepRequires } from
 import { packageHash, currentPlantModel, writePlant } from "./plant.mjs";
 import { specFor, specId, promotionGap, MODES, checkWrite, approvalTerms, expectedEffect, shadowId } from "./harness.mjs";
 import { digestDoc } from "./digest.mjs";
-import { validateStatement } from "./studio.mjs";
+import { validateStatement, replay } from "./studio.mjs";
+import { TEMPLATES } from "./templates.mjs";
 
 export const LEVELS = ["read", "draft", "notify", "propose", "act"];
 const lv = (l) => LEVELS.indexOf(l);
@@ -92,6 +93,16 @@ const intakeOf = (ont, p) => {
 };
 const seenOf = (ont, d0) => ont.list("DocumentIntake", (d) => d.state !== "withdrawn" && d.attachmentId !== d0.attachmentId && d.receivedAt < d0.receivedAt)
   .map((d) => ({ id: d.id, supplierId: d.fields.supplierId, number: d.fields.invoiceNo, total: d.fields.total, sourceId: d.attachmentId, receivedAt: d.receivedAt }));
+// May this person (the builder, for an agent) read the document from the source it names? (agents design §7)
+const SOURCE_READ = { "m365.mail": "m365.mail", "m365.files": "m365.files" };
+function canReadSource(ont, c, builderId, source, attachmentId) {
+  const who = ont.get(builderId) || {}, kind = SOURCE_READ[source && source.kind];
+  for (const k of [kind, "erp"].filter(Boolean)) { const ok = catalogueAllows(ont, { kind: k, op: "read", role: who.role }); if (!ok.ok) throw new Error(ok.reason); }
+  const there = source.kind === "m365.mail" ? c.m365.mail.list(source.mailbox).some((m) => m.attachments.some((a) => a.id === attachmentId))
+    : source.kind === "m365.files" ? c.m365.files.moves().some((m) => m.sourceId === attachmentId)
+    : source.kind === "chat" ? ont.view(who).list("Message", (m) => m.channelId === source.channelId && (m.media || []).includes(attachmentId)).length > 0 : false;
+  if (!there) throw new Error(`${attachmentId} is not in ${source.kind}${source.mailbox ? ` ${source.mailbox}` : source.channelId ? ` ${source.channelId}` : ""} for ${builderId}`);
+}
 const notFile = (d) => { if (d.verdict !== "file") throw new Error(d.verdict === "person" ? `${d.id} goes to a person` : `${d.id} needs review`); };
 
 // A job follows the procedure version released when it starts; shared by start_execution and the sampling round.
@@ -130,8 +141,10 @@ export const ACTIONS = {
     if (ont.get(s.id) && ont.get(s.id).state !== "retired") throw new Error(`${s.name} already exists`);
     if (!s.trigger || !["schedule", "manual"].includes(s.trigger.kind)) throw new Error("a studio agent runs on a schedule or when its builder starts it");
     const keep = ["id", "name", "version", "purpose", "template", "params", "trigger", "reads", "tools", "approver", "backup", "escalateAfterMin", "onTimeout", "exclusions", "builderId", "constraints"];
-    ont.upsert({ ...Object.fromEntries(keep.filter((k) => k in s).map((k) => [k, structuredClone(s[k])])), type: "AgentSpec", owner: s.builderId, mode: "shadow", state: "live",
-      promotion: { minCases: 20, minAgreePct: 90, maxBreaches: 0, maxStalePct: 5 }, breaches: 0, killedAt: null, killedBy: null, createdAt: ctx.now() });
+    const stored = ont.upsert({ ...Object.fromEntries(keep.filter((k) => k in s).map((k) => [k, structuredClone(s[k])])), type: "AgentSpec", owner: s.builderId, mode: "shadow", state: "live",
+      promotion: { ...(TEMPLATES[s.template].promotion || { minCases: 20, minAgreePct: 90, maxBreaches: 0, maxStalePct: 5 }) }, breaches: 0, killedAt: null, killedBy: null, createdAt: ctx.now() });
+    // its record starts as the replay of exactly the statement it starts with (agents design §6.1 step 4)
+    if (s.template === "digester") replay({ ont, connectors: ctx.connectors, now: ctx.now() }, stored, { record: true });
     return { objects: [s.id], revert: () => setProps(ont, s.id, { state: "retired", killedAt: ctx.now(), killedBy: actorId(ctx) }) };
   }),
   // stepping down needs no second pair of eyes: it only narrows what the agent may do
@@ -192,8 +205,9 @@ export const ACTIONS = {
     const c = ctx.connectors, att = c && c.attachment(p.attachmentId);
     if (!att) throw new Error(`attachment not found: ${p.attachmentId}`);
     const who = digestParties(ont, ctx), at = p.receivedAt || ctx.now(), tol = Number(p.tolerancePct) || 2;
+    canReadSource(ont, c, who.builder, p.source, att.id);
     if (ont.list("DocumentIntake", (d) => d.attachmentId === att.id && d.builderId === who.builder && d.state !== "withdrawn").length) throw new Error(`${att.id} is already digested`);
-    const r = digestDoc(att, { erp: c.erp, moves: c.m365.files.moves(), seen: seenOf(ont, { attachmentId: att.id, receivedAt: at }), at, tolerancePct: tol, cells: Array.isArray(p.cells) ? p.cells : null });
+    const r = digestDoc(att, { erp: c.erp, moves: c.m365.files.moves(), seen: seenOf(ont, { attachmentId: att.id, receivedAt: at }), at, asOf: ctx.now(), tolerancePct: tol, cells: Array.isArray(p.cells) ? p.cells : null });
     const d = create(ont, { id: nextId("DIN"), type: "DocumentIntake", attachmentId: att.id, name: att.name, messageId: p.fromMessage || null, source: p.source, receivedAt: at, tolerancePct: tol, ...r,
       builderId: who.builder, approverId: who.approver, audience: [...new Set([who.builder, who.approver].filter(Boolean))], reviews: [], state: "digested", at: ctx.now() }, [["FROM", p.fromMessage]]);
     return { objects: [d.id], revert: () => setProps(ont, d.id, { state: "withdrawn" }) };
@@ -223,11 +237,12 @@ export const ACTIONS = {
       if (!c) throw new Error(`no cell ${m && m.key} in ${d.id}`);
       if (!["accept", "correct"].includes(m.verdict)) throw new Error("verdict must be accept or correct");
       if (m.verdict === "correct" && m.value === undefined) throw new Error(`correcting ${c.key} needs a value`);
+      if (m.verdict === "correct" && ["total", "vat"].includes(c.key) && !(m.value !== null && m.value !== "" && Number.isFinite(Number(m.value)))) throw new Error(`${c.key} needs an amount, such as 1234.50`);
       if (m.verdict === "accept" && c.grade === "AMBIGUOUS" && (c.value == null || /\?/.test(String(c.value)))) throw new Error(`${c.key} cannot be read: correct it with a value`);
     }
     const mark = { by: actorId(ctx), at: ctx.now() }, hit = new Map(p.marks.map((m) => [m.key, m]));
     const cells = d.cells.map((c) => { const m = hit.get(c.key); return !m ? c : { ...c, ...(m.verdict === "correct" ? { value: m.value, reasoning: `${c.reasoning} — corrected by ${mark.by} from ${JSON.stringify(c.value)}` } : {}), reviewed: mark }; });
-    const k = ctx.connectors, r = digestDoc(k.attachment(d.attachmentId), { erp: k.erp, moves: k.m365.files.moves(), seen: seenOf(ont, d), at: d.receivedAt, tolerancePct: d.tolerancePct, cells });
+    const k = ctx.connectors, r = digestDoc(k.attachment(d.attachmentId), { erp: k.erp, moves: k.m365.files.moves(), seen: seenOf(ont, d), at: d.receivedAt, asOf: ctx.now(), tolerancePct: d.tolerancePct, cells });
     return { objects: [d.id], revert: setProps(ont, d.id, { cells: r.cells, fields: r.fields, match: r.match, verdict: r.verdict, destination: r.destination, reviews: [...(d.reviews || []), { ...mark, cells: hit.size }] }) };
   }),
   // Suggestions (agents design §9): made only for the person whose work they read; only that person answers them.
@@ -655,7 +670,12 @@ export function createActionService({ ont, audit, clock = wallClock, tel = null,
     const bad = validate(action, params, actor);
     if (bad) return refuse(action, actor, bad);
     try {
-      if (actor.kind === "person") return apply(action, params, actor);
+      if (actor.kind === "person") {
+        // IT's catalogue binds people too: filing and posting through a connector need a role it allows (agents design §7)
+        const pl = catalogueLine(ont, action), pc = pl && catalogueAllows(ont, { kind: pl.kind, op: pl.op, role: (ont.get(actor.id) || {}).role });
+        if (pc && !pc.ok) return refuse(action, actor, pc.reason);
+        return apply(action, params, actor);
+      }
       if (a.ceiling === "human") return refuse(action, actor, `${action} is human-only`);
       // the harness: evidence freshness and the inherited hard constraints (agents design §4.3, §4.4)
       // the decision statement's switches and mode bind every agent call, from a run or not (agents design §4.2, §4.6)
@@ -667,7 +687,9 @@ export function createActionService({ ont, audit, clock = wallClock, tel = null,
       const cat = line && catalogueAllows(ont, { kind: line.kind, op: line.op, role: (ont.get(spec.builderId) || {}).role });
       if (cat && !cat.ok) return refuse(action, actor, cat.reason);
       if (spec && spec.mode === "shadow") {
-        const sha = ont.upsert({ id: shadowId(), type: "ShadowAction", agent: actor.id, specVersion: spec.version, runId: runId || null, action, params, at: now(), status: "pending", minClearance: actor.clearance });
+        // a studio agent's shadow actions are its builder's and approver's to see, like its documents
+        const shAud = spec.builderId ? [spec.builderId, spec.approver].filter((x) => typeof x === "string") : audienceFor(params);
+        const sha = ont.upsert({ id: shadowId(), type: "ShadowAction", agent: actor.id, specVersion: spec.version, runId: runId || null, action, params, at: now(), status: "pending", minClearance: actor.clearance, audience: shAud });
         log({ actor: actor.id, actorKind: actor.kind, action, outcome: "shadowed", ref: sha.id });
         return { status: "shadowed", shadow: sha };
       }

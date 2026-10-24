@@ -340,7 +340,9 @@ export function createServer(sys) {
       const name = decodeURIComponent(m[1]);
       if (!runtime.spec(name)) throw new HttpError(404, "unknown agent");
       const b = await body(req);
-      return runtime.run(name, { actingUser: v, mission: b.mission, scope: b.scope, chain: b.chain !== false, trigger: { kind: "console", by: v.id } });
+      const r = runtime.run(name, { actingUser: v, mission: b.mission, scope: b.scope, chain: b.chain !== false, trigger: { kind: "console", by: v.id } });
+      // a studio agent runs as its builder: the log is the builder's (and approver's) to read
+      return ont.view(v).get(r.id) ? r : { id: r.id, agent: r.agent, status: r.status, actingUserId: r.actingUserId, triggeredBy: r.triggeredBy, outputs: r.outputs.length, refusals: r.refusals.length, note: "Ran as its builder; the run log is theirs." };
     }],
     ["PUT", /^\/api\/agents\/([^/]+)\/autonomy$/, async (v, m, url, req) => {
       const name = decodeURIComponent(m[1]);

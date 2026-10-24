@@ -711,7 +711,7 @@ export function createRuntime({ ont, tel, actions, audit, connectors = null }) {
       r.error = e.message;
     }
     r.endedAt = new Date().toISOString();
-    let audience = opts.audience || null;
+    let audience = opts.audience || (builder ? [builder.id, hs.approver].filter((x) => typeof x === "string") : null);
     for (const o of r.read.map((id) => ont.get(id)).filter((x) => x && x.audience)) audience = audience ? audience.filter((x) => o.audience.includes(x)) : [...o.audience];
     ont.upsert({ ...r, minClearance: opts.actingUser.clearance, audience });
     runs.push(r);
@@ -728,7 +728,7 @@ export function createRuntime({ ont, tel, actions, audit, connectors = null }) {
 
   return {
     specs: () => { for (const s of ont.list("AgentSpec", (x) => x.template)) studio(s.name); return [...specs.values()]; },
-    spec: (name) => specs.get(name) || null,
+    spec: (name) => { studio(name); return specs.get(name) || null; },
     register(spec, fn) { specs.set(spec.name, spec); logic.set(spec.name, fn); },
     setAutonomy(name, action, level) {
       const s = specs.get(name);
