@@ -26,7 +26,8 @@ export function createSystem({ seed = 7 } = {}) {
   const plant = createPlantService({ ont, tel, actions, audit });
   // the clerk photographed a paper invoice at the stores counter and sent it on the works chat (plan 3b Task 1)
   const cp = connectors.chatPhoto;
-  ont.upsert({ id: "MSG-CHAT-PHOTO", type: "Message", channelId: cp.channelId, direction: "in", from: "P-043", at: cp.at, text: "Invoice from the stores counter, photo attached", media: [cp.attachmentId], audience: ont.get(cp.channelId).audience });
+  ont.upsert({ id: "MSG-CHAT-PHOTO", type: "Message", channelId: cp.channelId, direction: "in", from: "P-043", at: cp.at, text: "Invoice from the stores counter, photo attached", media: [cp.attachmentId], audience: ont.get(cp.channelId).audience,
+    prov: { source: "CHANNEL-STUB", source_uri: "synth://channel-stub/MSG-CHAT-PHOTO", source_version: "v1", extracted_at: cp.at, confidence: 1 } });
   ont.link("MSG-CHAT-PHOTO", "IN", cp.channelId);
   // the RES-2 contractor's open issue, raised through the action service so it has its audit entry (Region design §4.4)
   actions.invoke({ action: "raise_issue", params: { title: "Liner seam test failed on panel 14: re-weld before the cure", projectId: "PRJ-RES2" }, actor: { kind: "person", id: "P-004", clearance: ont.get("P-004").clearance } });
