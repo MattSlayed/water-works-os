@@ -52,12 +52,12 @@ test("each trap is findable by its marker", () => {
   assert.ok(c.m365.files.moves().some((x) => x.sourceId === att("duplicate").id));
 });
 
-test("the ERP holds 8 suppliers, 40 POs and receipts for 36 of them", () => {
+test("the ERP holds 8 suppliers, 40 POs and receipts for the 37 invoiced", () => {
   const { erp } = make();
   assert.equal(erp.suppliers().length, 8);
   assert.ok(erp.suppliers().every((s) => s.bank.account && s.bank.branch));
   assert.deepEqual(erp.purchaseOrders().map((p) => p.id), Array.from({ length: 40 }, (_, i) => `PO-2026-${String(301 + i).padStart(4, "0")}`));
-  assert.equal(new Set(erp.goodsReceipts().map((g) => g.poId)).size, 36);
+  assert.equal(new Set(erp.goodsReceipts().map((g) => g.poId)).size, 37);
 });
 
 test("a chat photo resolves as an attachment", () => {

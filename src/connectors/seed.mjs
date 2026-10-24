@@ -45,7 +45,7 @@ export function seedAccounts(seed, endIso) {
     } while (pos.some((p) => p.supplierId === sup.id && Math.abs(p.subtotal - sub) / p.subtotal < 0.03));
     pos.push({ id: `PO-2026-${String(301 + i).padStart(4, "0")}`, supplierId: sup.id, lines, subtotal: sub, total: cents(sub * 1.15), raisedAt: iso(at(int(32, 45), 9)), state: "open" });
   }
-  // POs 38-40 have no invoice; with the bank-change invoice's PO they are the four without a goods receipt
+  // POs 38-40 have no invoice and no goods receipt yet
   const usable = pos.slice(0, 37);
 
   // 38 invoices as [daysAgo, kind]: 25 in the 14-day window (days 1-13 before the clock), 13 in days 15-28
@@ -79,8 +79,8 @@ export function seedAccounts(seed, endIso) {
       receivedDateTime: iso(received), hasAttachments: true, attachments: [att] });
     docs.push({ number: f.number, date: f.date, total: f.total, poId: po.id });
     if (kind !== "clean") traps[kind] = id;
-    if (kind === "bankChange") return; // queried, not filed: the open supplier query Issue is seeded with the people
     if (!receipts.has(po.id)) receipts.set(po.id, { id: `GRN-${po.id.slice(-4)}`, poId: po.id, receivedAt: iso(Date.parse(po.raisedAt) + int(2, 6) * DAY) });
+    if (kind === "bankChange") return; // queried, not filed: the open supplier query Issue is seeded with the people
     const filedAt = received + int(20, 170) * 60000;
     file(att.name, att.contentType, folderPath(sup.folder, f.date), filedAt, att.id, sup.id);
     invoices.push({ id: `SINV-${String(invoices.length + 1).padStart(4, "0")}`, supplierId: sup.id, number: f.number, total: f.total, poId: po.id, sourceId: att.id, receivedAt: iso(received), postedAt: iso(filedAt + 5 * 60000), postedBy: CLERK });
