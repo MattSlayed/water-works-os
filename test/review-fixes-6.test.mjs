@@ -123,3 +123,32 @@ test("final: the Specs tab does not list a pending, disagreeing source as agreei
     assert.ok(!d.specs.find((x) => x.id === "SPC-DP-2-delivery").sources.some((x) => x.sourceId === "M365-WRK-001"));
   } finally { srv.close(); }
 });
+
+// ---- tidy-up of the deferred minors ----
+import { readFileSync } from "node:fs";
+
+test("minor: DP-1's brief says the suction-ball lesson once", () => {
+  const s = createSystem(), dp1 = s.ont.list("Asset").find((a) => a.positionTag === "DP-1");
+  s.ont.upsert({ id: "WO-T-DP1", type: "WorkOrder", kind: "CM", assetId: dp1.id, title: "DP-1 check", state: "open", assigneeId: "P-032", planned: "2026-10-14" });
+  const b = jobBrief(s.ont.view(as(s, "P-032")), "WO-T-DP1");
+  assert.equal(b.lines.filter((l) => /suction ball|suction check-valve ball|Check the ball/i.test(l)).length, 1, b.lines.join("\n"));
+});
+
+test("minor: Re-check records who asked; the Copilot brief has no chat-only footer", async () => {
+  const s = createSystem(), srv = createServer(s);
+  await new Promise((r) => srv.listen(0, r));
+  try {
+    const base = `http://127.0.0.1:${srv.address().port}`, h = (who) => ({ "x-acting-user": who, "content-type": "application/json" });
+    const r = await fetch(`${base}/api/assets/${dp2(s).id}/recheck-specs`, { method: "POST", headers: h("P-032") }).then((x) => x.json());
+    assert.equal(s.ont.get(r.runId).trigger.by, "P-032");
+    const o = await fetch(`${base}/api/copilot/open`, { method: "POST", headers: h("P-032"), body: JSON.stringify({ assetId: dp2(s).id }) }).then((x) => x.json());
+    const a = await fetch(`${base}/api/copilot/${o.id}/ask`, { method: "POST", headers: h("P-032"), body: JSON.stringify({ question: "brief me on DP-2" }) }).then((x) => x.json());
+    assert.doesNotMatch(a.answer, /Reply "brief"/);
+  } finally { srv.close(); }
+});
+
+test("minor: a correction note keeps its source; unsure sources stay listed when nothing is open", () => {
+  const app = readFileSync(new URL("../web/app.js", import.meta.url), "utf8");
+  assert.ok(app.includes("note ? `${po.title}: ${note}`"));
+  assert.ok(app.includes('/api/objects?type=SpecCandidate'));
+});

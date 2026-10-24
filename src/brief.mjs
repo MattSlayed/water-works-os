@@ -68,7 +68,8 @@ export function jobBrief(view, workOrderId, { execution = null } = {}) {
   }
   const finding = view.list("Finding", (f) => f.verified && sisters.has(f.assetId)).sort(newestFirst("at"))[0];
   const fromFinding = finding && view.list("Correction", (c) => c.fromId === finding.id)[0];
-  const findingText = finding ? `On ${(view.get(finding.assetId) || {}).positionTag || finding.assetId}, ${lowerFirst(fromFinding ? fromFinding.line : finding.text)}` : null;
+  // a finding whose correction is already listed is not said twice
+  const findingText = finding && !(fromFinding && cors.slice(0, 3).includes(fromFinding)) ? `On ${(view.get(finding.assetId) || {}).positionTag || finding.assetId}, ${lowerFirst(fromFinding ? fromFinding.line : finding.text)}` : null;
   const lastTime = lastText || findingText ? [item([lastText, findingText].filter(Boolean).join(" "), [lastRef, finding && finding.id, fromFinding && fromFinding.id])] : [];
 
   // 4. open now: issues on the asset, and analysers on it without a current certificate
@@ -82,7 +83,7 @@ export function jobBrief(view, workOrderId, { execution = null } = {}) {
   // 5. watch-outs: notes on this make and model's procedure steps, this asset first; a note the finding already says is dropped
   const sameProc = (n) => n.procedureId && (view.get(n.procedureId) || {}).template === asset.template;
   const notes = asset.template ? view.list("KnowledgeNote", (n) => sameProc(n) && sisters.has(n.assetId))
-    .filter((n) => !(finding && n.assetId !== asset.id && n.assetId === finding.assetId && n.partId === finding.partId))
+    .filter((n) => !(finding && n.assetId === finding.assetId && n.partId === finding.partId))
     .sort((a, b) => (a.assetId === asset.id ? 0 : 1) - (b.assetId === asset.id ? 0 : 1) || String(b.at).localeCompare(String(a.at))) : [];
   const watchOuts = notes.map((n) => item(`Step ${n.step}: ${lowerFirst(n.text.replace(/\.$/, ""))} (${n.id}).`, [n.id]));
 

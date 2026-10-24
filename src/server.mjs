@@ -361,7 +361,7 @@ export function createServer(sys) {
     ["POST", /^\/api\/assets\/([^/]+)\/recheck-specs$/, (v, m) => {
       const id = decodeURIComponent(m[1]);
       if (!ont.view(v).get(id)) throw new HttpError(404, "not found");
-      const r = triageSpecs({ assetId: id });
+      const r = triageSpecs({ assetId: id }, v.id); // runs as the site manager; the trigger names who asked
       return { runId: r && r.id, proposals: ont.list("Proposal", (p) => p.action === "update_spec" && p.state === "open" && p.params.assetId === id).map((p) => p.id) };
     }],
     ["GET", /^\/api\/catalogue$/, (v) => {
@@ -436,7 +436,7 @@ export function createServer(sys) {
         const view = ont.view(v), a = view.list("Asset", (x) => x.positionTag && x.positionTag.toLowerCase() === bm[1].replace(/[?.!]$/, "").toLowerCase())[0];
         const wo = a && view.list("WorkOrder", (w) => w.assetId === a.id && !["closed", "cancelled"].includes(w.state)).sort((x, y) => String(y.planned).localeCompare(String(x.planned)))[0];
         const b = wo && jobBrief(view, wo.id);
-        return { answer: b && b.lines.length ? b.lines.join("\n") : a ? `No open job on ${a.positionTag} to brief you on.` : `I do not know ${bm[1]}.`, citations: wo ? [{ id: wo.id, label: wo.title }] : [], lookHere: [] };
+        return { answer: b && b.lines.length ? b.lines.filter((l) => !/^Reply "brief"/.test(l)).join("\n") : a ? `No open job on ${a.positionTag} to brief you on.` : `I do not know ${bm[1]}.`, citations: wo ? [{ id: wo.id, label: wo.title }] : [], lookHere: [] };
       }
       return copilot.ask(s.id, question);
     }],
@@ -531,9 +531,9 @@ export function createServer(sys) {
   let since = 0, hour = tel.now().slice(0, 13), day = tel.now().slice(0, 10);
   // the Recommender, once each plant day, for each person as that person; its runs are theirs alone (agents design §9)
   // Spec Triage runs as the site manager, the one person who confirms what it proposes (job brief design §5)
-  const triageSpecs = (scope) => {
+  const triageSpecs = (scope, by = null) => {
     const sm = ont.list("Person").find((p) => p.role === "works_manager");
-    return sm ? runtime.run("Spec Triage", { actingUser: { id: sm.id, kind: "person", clearance: sm.clearance, role: sm.role }, chain: false, scope, trigger: { kind: scope ? "manual" : "schedule" } }) : null;
+    return sm ? runtime.run("Spec Triage", { actingUser: { id: sm.id, kind: "person", clearance: sm.clearance, role: sm.role }, chain: false, scope, trigger: { kind: scope ? "manual" : "schedule", by } }) : null;
   };
   const recommendAll = () => { for (const p of ont.list("Person")) runtime.run("Recommender", { actingUser: { id: p.id, kind: "person", clearance: p.clearance, role: p.role }, chain: false, audience: [p.id], trigger: { kind: "schedule" } }); };
   recommendAll();

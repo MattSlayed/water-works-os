@@ -656,9 +656,10 @@ const views = {
           <div class="btns"><button class="btn primary" data-spec="approve" data-id="${esc(p.id)}">Confirm</button><button class="btn" data-spec="edit" data-id="${esc(p.id)}">Edit value</button><button class="btn" data-spec="reject" data-id="${esc(p.id)}">Reject</button></div>`
           : `<p class="meta">Only the site manager confirms a spec change.</p>`}</section>`;
     };
-    const unsure = Object.values(specData).flatMap((d) => (d ? d.candidates.filter((c) => c.grade === "AMBIGUOUS") : []));
+    // unsure sources stay listed until someone deals with them, whether or not a change is open
+    const unsure = (await api("/api/objects?type=SpecCandidate").catch(() => [])).filter((c) => c.grade === "AMBIGUOUS" && c.status === "suggested");
     view.innerHTML = `<h2>06 / agents propose, people decide</h2><h1>Proposals</h1>
-      ${specP.length ? `<h2>Spec changes · ${specP.length}</h2>${specP.map(specCard).join("")}${unsure.length ? `<section class="panel" style="margin-bottom:12px"><h2>Read these yourself</h2><p class="meta">Triage could not read these, so it proposes nothing from them.</p><ul class="list">${unsure.map((c) => `<li>${esc(c.title)} <span class="meta">${esc(c.text || "")}</span></li>`).join("")}</ul></section>` : ""}` : ""}
+      ${specP.length ? `<h2>Spec changes · ${specP.length}</h2>${specP.map(specCard).join("")}` : ""}${unsure.length ? `<section class="panel" style="margin-bottom:12px"><h2>Read these yourself</h2><p class="meta">Triage could not read these, so it proposes nothing from them.</p><ul class="list">${unsure.map((c) => `<li>${esc(c.source.title)} <span class="meta">${link(c.subject)} · ${esc(String(c.source.at || "").slice(0, 10))}</span></li>`).join("")}</ul></section>` : ""}
       ${open.map((p) => `<section class="panel" style="margin-bottom:12px"><div class="row"><b>${esc(p.action)}</b><span class="meta">${esc(p.id)} · ${esc(p.actorId)}${p.runId ? ` · <a href="#/run/${esc(p.runId)}">${esc(p.runId)}</a>` : ""}</span></div>
         <pre>${esc(JSON.stringify(p.params, null, 2))}</pre>${p.evidence?.length ? `<p class="meta">Evidence: ${p.evidence.map((e) => esc(typeof e === "string" ? e : JSON.stringify(e))).join(" · ")}</p>` : ""}
         ${p.card ? `<dl class="kv"><dt>Expected effect</dt><dd>${esc(p.card.expectedEffect)}</dd><dt>Evidence age</dt><dd>${p.card.evidence.map((e) => `${esc(e.id)} ${e.ageMin == null ? "" : `(${esc(e.ageMin)} min old)`}`).join(" · ") || "none cited"}</dd>
@@ -681,7 +682,7 @@ const views = {
           const c = d.candidates.find((x) => x.id === po.candidateId) || {}, sc = view.querySelector(`[data-scope="${CSS.escape(po.candidateId)}"]`).value;
           const note = view.querySelector(`[data-note="${CSS.escape(po.candidateId)}"]`).value.trim();
           const scope = sc === "asset" ? { assetId: p.params.assetId } : sc === "template" ? { template: d.asset.template } : { orgId: sc.slice(4) };
-          await api("/api/actions/record_correction", { method: "POST", body: { params: { line: (note || `${po.title} is wrong for ${d.asset.positionTag}.`).slice(0, 100), scope, wrongSourceRef: { kind: c.kind, id: c.sourceId }, wrongValue: po.value, fromId: id } } });
+          await api("/api/actions/record_correction", { method: "POST", body: { params: { line: (note ? `${po.title}: ${note}` : `${po.title} is wrong for ${d.asset.positionTag}.`).slice(0, 100), scope, wrongSourceRef: { kind: c.kind, id: c.sourceId }, wrongValue: po.value, fromId: id } } });
           made++;
         }
         toast(`${id}: ${verdict}${made ? `, ${made} correction(s) recorded` : ""}`);
