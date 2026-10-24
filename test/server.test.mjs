@@ -117,7 +117,8 @@ test("inbound chat: a member gets one reply; a non-member, a missing sender or a
   const r = await send("CHN-P-028", "P-028", `start ${survey}`);
   assert.equal(r.status, 200);
   assert.equal(r.json.replies.length, 1);
-  assert.match(r.json.replies[0].text, /Step 1\/11/);
+  assert.match(r.json.replies[0].text, /Before you start:/);
+  assert.match((await send("CHN-P-028", "P-028", "start step 1")).json.replies[0].text, /Step 1\/11/);
   assert.equal((await send("CHN-P-028", "P-029", "start")).status, 403);
   assert.equal((await send("CHN-P-028", null, "start")).status, 401);
   assert.equal((await send("CHN-NOPE", "P-028", "start")).status, 404);

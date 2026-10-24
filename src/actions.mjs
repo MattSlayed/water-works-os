@@ -5,6 +5,7 @@ import { currentProcedure, stepLock, bandCheck, partNamesIn, stepRequires } from
 import { packageHash, currentPlantModel, writePlant } from "./plant.mjs";
 import { specFor, specId, promotionGap, MODES, checkWrite, approvalTerms, expectedEffect, shadowId } from "./harness.mjs";
 import { digestDoc } from "./digest.mjs";
+import { jobBrief, readingNeed } from "./brief.mjs";
 import { validateStatement, replay } from "./studio.mjs";
 import { TEMPLATES } from "./templates.mjs";
 
@@ -428,7 +429,16 @@ export const ACTIONS = {
     const proc = currentProcedure(ont.list("Procedure"), asset && asset.template);
     if (!proc) throw new Error(`no released procedure for ${wo.id}`);
     const { ex, revert } = openExecution(ont, wo, p.personId, proc, ctx.now());
-    return { objects: [ex.id, wo.id], revert };
+    // the job is held to the specs confirmed when it starts; a later change never moves it (job brief design §6)
+    const specPins = ont.list("Spec", (x) => x.assetId === wo.assetId && x.step != null && proc.steps.some((st) => st.step === x.step))
+      .map((x) => ({ specId: x.id, version: x.version, step: x.step, partName: x.partName, measure: x.measure, unit: x.unit, lo: x.lo, hi: x.hi }));
+    ont.upsert({ id: ex.id, type: "Execution", specPins });
+    // what the person was told before step 1, so root cause can later ask (design §4.6)
+    const person = ont.get(p.personId), sm = ont.list("Person", (x) => x.role === "works_manager")[0];
+    const b = jobBrief(ont.view({ id: person.id, clearance: person.clearance }), wo.id);
+    const br = b && create(ont, { id: nextId("BRF"), type: "Brief", executionId: ex.id, workOrderId: wo.id, assetId: wo.assetId, personId: person.id, at: ctx.now(),
+      specVersions: b.specVersions, correctionIds: b.correctionIds, lines: b.lines, audience: [...new Set([person.id, person.supervisorId, sm && sm.id].filter(Boolean))] }, [["FOR", ex.id]]);
+    return { objects: [ex.id, wo.id, ...(br ? [br.id] : [])], revert: () => { if (br) ont.remove(br.id); revert(); } };
   }),
   complete_step: def("act", "act", ["executionId", "step"], (ont, p, ctx) => {
     const ex = ont.get(p.executionId);
@@ -439,14 +449,14 @@ export const ACTIONS = {
     const spec = ont.get(ex.procedureId).steps.find((s) => s.step === next.step);
     const lock = stepLock(spec, isolatedPermit(ont, ex.assetId));
     if (lock.locked) throw new Error(lock.reason);
-    const need = spec.requires && spec.requires.reading;
+    const need = readingNeed(ont, ex, spec);
     const value = p.value === undefined || p.value === null || p.value === "" ? null : Number(p.value);
     if (value !== null && !Number.isFinite(value)) throw new Error("the reading must be a number");
     if (need && value === null) throw new Error(`Step ${next.step} needs a reading: ${need.measure} in ${need.unit}`);
     let readingId = null, inBand = null;
     if (need) {
       const part = ont.list("Part", (x) => x.assetId === ex.assetId && x.name === need.partName)[0];
-      if (part.band) inBand = bandCheck(part, value).inBand;
+      if (need.lo != null) inBand = bandCheck({ band: { lo: need.lo, hi: need.hi, measure: need.measure, unit: need.unit } }, value).inBand;
       readingId = create(ont, { id: nextId("RDG"), type: "Reading", targetId: part.id, assetId: ex.assetId, measure: need.measure, value, unit: need.unit, workOrderId: ex.workOrderId, executionId: ex.id, at: ctx.now(), source: "field" }, [["OF", part.id]]).id;
     }
     // a reading on a sampling round for a satellite detection is also the Sample that confirms or rejects it (Region design §5.4)
@@ -455,14 +465,17 @@ export const ACTIONS = {
     const undoDet = sampleId ? setProps(ont, det.id, { sampleIds: [...(det.sampleIds || []), sampleId] }) : null;
     const prevAt = [...ex.steps].reverse().find((s) => s.at)?.at || ex.startedAt;
     const minutes = Math.round((Date.parse(ctx.now()) - Date.parse(prevAt)) / 60000);
-    const steps = ex.steps.map((s) => (s.step === next.step ? { ...s, state: "done", at: ctx.now(), minutes, value, inBand, readingId, note: p.note ? String(p.note) : null } : s));
+    const steps = ex.steps.map((s) => (s.step === next.step ? { ...s, state: "done", at: ctx.now(), minutes, value, inBand, readingId, specId: need ? need.specId : null, specVersion: need ? need.specVersion : null, note: p.note ? String(p.note) : null } : s));
     const last = steps.every((s) => s.state === "done");
-    ont.upsert({ id: ex.id, type: "Execution", steps, ...(last ? { state: "done", finishedAt: ctx.now() } : {}) });
+    // say once that a pinned spec changed after the job started
+    const moved = !ex.specNotice && (ex.specPins || []).map((pin) => ({ pin, cur: ont.get(pin.specId) })).find((x) => x.cur && x.cur.version > x.pin.version);
+    const specNotice = moved ? { specId: moved.pin.specId, measure: moved.pin.measure, from: moved.pin.version, to: moved.cur.version, atStep: next.step } : ex.specNotice || null;
+    ont.upsert({ id: ex.id, type: "Execution", steps, specNotice, ...(last ? { state: "done", finishedAt: ctx.now() } : {}) });
     const undoWo = last ? setProps(ont, ex.workOrderId, { state: "closed", closed: ctx.now().slice(0, 10) }) : null;
     const revert = () => {
       const now = ont.get(ex.id), doneSteps = now.steps.filter((s) => s.state === "done");
       if (doneSteps[doneSteps.length - 1].step !== next.step) throw new Error(`reverse the later steps of ${ex.id} first`);
-      ont.upsert({ id: ex.id, type: "Execution", state: "running", finishedAt: null, steps: now.steps.map((s) => (s.step === next.step ? { ...s, state: "todo", at: null, minutes: null, value: null, inBand: null, readingId: null, note: null } : s)) });
+      ont.upsert({ id: ex.id, type: "Execution", state: "running", finishedAt: null, steps: now.steps.map((s) => (s.step === next.step ? { ...s, state: "todo", at: null, minutes: null, value: null, inBand: null, readingId: null, specId: null, specVersion: null, note: null } : s)), specNotice: moved ? null : now.specNotice || null });
       if (readingId) setProps(ont, readingId, { state: "withdrawn" });
       if (sampleId) {
         if (ont.get(det.id).status !== "suggested") throw new Error(`${det.id} has been reviewed with this sample; reverse the review first`);

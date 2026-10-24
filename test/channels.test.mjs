@@ -23,9 +23,12 @@ test("J8: start, a locked step, the permit, steps by chat, and an out-of-band re
   const t = setup();
   const s = await t.say("start");
   assert.equal(s.outcome, "recorded");
-  assert.match(s.replies[0].text, /Step 1\/11/);
-  assert.match(s.replies[0].text, /permit/);
+  // the brief comes first (job brief design §6); "start step 1" during the job gives the step
+  assert.match(s.replies[0].text, /Before you start:/);
   assert.ok(t.running());
+  const first = await t.say("start step 1");
+  assert.match(first.replies[0].text, /Step 1\/11/);
+  assert.match(first.replies[0].text, /permit/);
   const locked = await t.say("done");
   assert.equal(locked.outcome, "asked");
   assert.match(locked.replies[0].text, /permit/);

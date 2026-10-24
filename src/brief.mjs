@@ -96,3 +96,15 @@ export function jobBrief(view, workOrderId) {
     lastTime[0] && lastTime[0].text, open[0] && open[0].text, watchOuts[0] && watchOuts[0].text, 'Reply "brief" for the full brief, "start step 1" to begin.'].filter(Boolean);
   return { lines, full, specVersions: specs.map((x) => ({ specId: x.id, version: x.version })), correctionIds: cors.slice(0, 3).map((c) => c.id) };
 }
+
+// What a step asks the person to measure, and the band it is held to: the spec pinned when the job started, else the
+// Part's own band (jobs started before specs existed). view may be the ontology, a view or an agent's context.
+export function readingNeed(view, ex, procStep) {
+  const pin = (ex.specPins || []).find((p) => p.step === procStep.step);
+  if (pin) return { partName: pin.partName, measure: pin.measure, unit: pin.unit, lo: pin.lo, hi: pin.hi, specId: pin.specId, specVersion: pin.version };
+  const r = procStep.requires && procStep.requires.reading;
+  if (!r) return null;
+  const part = view.list("Part", (p) => p.assetId === ex.assetId && p.name === r.partName)[0];
+  const b = part && part.band;
+  return { partName: r.partName, measure: r.measure, unit: r.unit, lo: b ? b.lo : null, hi: b ? b.hi : null, specId: null, specVersion: null };
+}

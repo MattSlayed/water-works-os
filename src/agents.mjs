@@ -11,7 +11,7 @@ import { TEMPLATES } from "./templates.mjs";
 import { manifestFromSpec } from "./studio.mjs";
 import { signalsFor } from "./recommend.mjs";
 import { matchAssets, readValue, authorityOf, rank, decide } from "./specs.mjs";
-import { correctionsFor } from "./brief.mjs";
+import { correctionsFor, jobBrief, readingNeed } from "./brief.mjs";
 import { WORKS_MAILBOX, DOSE_SHEET } from "./connectors/engineering.mjs";
 
 const v = (s) => ({ version: "1.0.0", owner: "P-002", ...s }); // P-002, a reliability engineer, owns the default agents (agents design §4.1)
@@ -207,8 +207,8 @@ const LOGIC = {
       const pr = ctx.get(e.procedureId);
       const st = pr.steps.find((s) => s.step === e.steps.find((x) => x.state === "todo").step);
       const lock = ctx.fn("stepLock", st, permitOn(e.assetId));
-      const r = st.requires && st.requires.reading;
-      return `Step ${st.step}/${pr.steps.length}: ${st.text}.${r ? ` Reply "done" with the ${r.measure} in ${r.unit}.` : ' Reply "done" when finished.'}${lock.locked ? ` Locked: ${lock.reason}` : ""}`;
+      const r = readingNeed(ctx, e, st);
+      return `Step ${st.step}/${pr.steps.length}: ${st.text}.${r ? ` Reply "done" with the ${r.measure} in ${r.unit}${r.lo != null ? ` (target ${r.lo}–${r.hi})` : ""}.` : ' Reply "done" when finished.'}${lock.locked ? ` Locked: ${lock.reason}` : ""}`;
     };
     const tagOf = (id) => { const o = ctx.get(id) || {}; return o.positionTag || o.name || id; }; // a sample point has a name, not a position tag
 
@@ -223,8 +223,17 @@ const LOGIC = {
         if (r.status === "proposed") { say(`Starting ${wos[0].id} waits for a person's approval (${r.ref}).`); return outcome("asked"); }
         if (r.status !== "done") { say(`Could not start ${wos[0].id}: ${r.reason}`); return outcome("asked"); }
         const e = ctx.get(r.objects[0]);
+        // the brief comes before step 1; "start step 1" (a start during the job) then gives the step
+        const brief = r.objects.map((id) => ctx.get(id)).find((o) => o && o.type === "Brief");
+        if (brief && brief.lines.length) { say(brief.lines.join("\n")); return outcome("recorded"); }
         say(`${wos[0].id} ${wos[0].title} (${tagOf(e.assetId)}), ${ctx.get(e.procedureId).title} v${e.procedureVersion}. ${stepLine(e)}`);
         return outcome("recorded");
+      }
+      case "brief": {
+        if (!ex) { say('No job is running. Reply "start" first.'); return outcome("asked"); }
+        const b = jobBrief(ctx, ex.workOrderId);
+        say(b ? Object.values(b.full).flat().map((x) => x.text).join("\n") : "No brief for this job.");
+        return outcome("asked");
       }
       case "done": {
         if (!ex) { say('No job is running. Reply "start" first.'); return outcome("asked"); }
@@ -234,19 +243,24 @@ const LOGIC = {
         if (r.status === "proposed") { say(`Step ${next.step} waits for a person's approval (${r.ref}).`); return outcome("asked"); }
         if (r.status !== "done") { say(r.reason || `Step ${next.step} was not recorded.`); return outcome("asked"); }
         const st = ctx.get(ex.procedureId).steps.find((s) => s.step === next.step);
-        const need = st.requires && st.requires.reading;
+        const need = readingNeed(ctx, ex, st);
         let lead = `Step ${next.step} done.`, out = "recorded";
         if (need) {
           const part = ctx.list("Part", (p) => p.assetId === ex.assetId && p.name === need.partName)[0];
-          const b = part && part.band ? ctx.fn("bandCheck", part, f.value) : { inBand: true, finding: `${need.measure} ${f.value} ${need.unit} recorded` };
+          const b = need.lo != null ? ctx.fn("bandCheck", { band: { lo: need.lo, hi: need.hi, measure: need.measure, unit: need.unit } }, f.value) : { inBand: true, finding: `${need.measure} ${f.value} ${need.unit} recorded` };
           if (b.inBand) lead += ` ${b.finding}.`;
           else {
-            const d = ctx.act("raise_deviation", { targetId: part.id, finding: b.finding, disposition: "repair or replace; engineer to decide", assetId: ex.assetId });
-            lead += ` ${need.measure} is ${b.by} ${need.unit} ${b.side} the band. Do not reuse the ${part.name.toLowerCase()} as it is; I have proposed a deviation for the engineer${d.ref ? ` (${d.ref})` : ""}.`;
+            const d = ctx.act("raise_deviation", { targetId: part.id, finding: b.finding, disposition: part.band ? "repair or replace; engineer to decide" : "adjust and test again; engineer to decide", assetId: ex.assetId });
+            const ref = d.ref ? ` (${d.ref})` : "";
+            // a worn part is not reused; a calibration off its spec is adjusted and tested again
+            lead += part.band ? ` ${need.measure} is ${b.by} ${need.unit} ${b.side} the band. Do not reuse the ${part.name.toLowerCase()} as it is; I have proposed a deviation for the engineer${ref}.`
+              : ` ${b.finding}. Adjust and test again; I have proposed a deviation for the engineer${ref}.`;
             out = "proposed";
           }
         }
         const after = ctx.get(ex.id);
+        const sn = after.specNotice;
+        if (sn && sn.atStep === next.step) lead += ` The spec for ${sn.measure.toLowerCase()} changed to v${sn.to} after you started; this job keeps v${sn.from}.`;
         if (after.state === "done") say(`${lead} Job done on ${tagOf(ex.assetId)}. What would you tell the next person who does this job?`, { kind: "note", executionId: ex.id });
         else say(`${lead} ${stepLine(after)}`);
         return outcome(out);
