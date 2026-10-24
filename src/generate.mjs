@@ -565,7 +565,7 @@ export function generateWorks(seed = 7) {
   for (const [kind, lines] of [
     ["m365.mail", [line("read", null, [...money, "works_manager"], "read")]],
     ["m365.files", [line("read", null, [...money, "works_manager"], "read"), line("write", "file_document", money, "act", true)]],
-    ["m365.teams", [line("send", "send_message", ALL, "notify")]],
+    ["m365.teams", [line("send", null, ALL, "notify")]], // Teams posting is not an action yet; send_message is the works chat
     ["google.mail", [line("read", null, ALL, "read")]], ["google.drive", [line("read", null, ALL, "read")]], ["google.sheets", [line("read", null, ALL, "read")]],
     ["erp", [line("read", null, [...money, "planner", "works_manager"], "read"), line("post", "post_invoice_match", money, "propose")]],
     ["cmms", [line("read", null, ALL, "read"), line("write", null, ALL, "act")]]

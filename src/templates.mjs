@@ -16,7 +16,9 @@ function sourceDocs(ctx, source, since) {
 export const TEMPLATES = {
   // Read each new document, match it, and file only what is clean; posting is always a proposal; a bank change goes to a person.
   digester: {
-    tools: ["digest_document", "file_document", "post_invoice_match", "raise_issue"],
+    label: "Invoice digester", purpose: "Read supplier invoices, check them against the PO and goods receipt, and file them in the supplier's folder",
+    trigger: { kind: "schedule", every: "weekdays at 07:00" }, reads: ["connector:m365.mail", "connector:m365.files", "connector:erp"],
+    tools: { digest_document: "act", file_document: "act", post_invoice_match: "propose", raise_issue: "act" },
     run(ctx) {
       const p = ctx.params, st = ctx.statement, tol = Number(p.tolerancePct) || 2;
       const erp = ctx.connector("erp"), moves = ctx.connector("m365.files").moves();
@@ -40,6 +42,58 @@ export const TEMPLATES = {
         if (r.verdict === "person") ctx.act("raise_issue", { title: "Supplier query: bank details changed", attachmentId: doc.att.id, evidence: [intakeId || doc.att.id, ...r.match.issues.map((i) => i.detail)],
           assigneeId: typeof st.approver === "string" ? st.approver : undefined, audience: [st.builderId, st.approver].filter((x) => typeof x === "string") });
       }
+    }
+  },
+  // A reading past a threshold tells the builder (once an hour at most).
+  watch: {
+    label: "Watch", purpose: "Tell the builder when a reading crosses a threshold",
+    trigger: { kind: "schedule", every: "every 15 min" }, reads: ["telemetry"], tools: { notify: "act" },
+    run(ctx) {
+      const p = ctx.params, v = ctx.latest(p.sensorId), st = ctx.statement;
+      if (!v) return ctx.think(`${p.sensorId} has no reading in view.`);
+      const crossed = (p.above != null && v.value > p.above) || (p.below != null && v.value < p.below);
+      if (!crossed) return ctx.think(`${p.sensorId} reads ${v.value}: inside the threshold.`);
+      const hour = Date.parse(ctx.now) - 3600000;
+      if (ctx.list("Notification", (n) => n.aboutId === p.sensorId && n.to.includes(st.builderId) && Date.parse(n.at) > hour).length) return ctx.think("Already told within the hour.");
+      ctx.act("notify", { to: [st.builderId], message: `${p.label || p.sensorId} reads ${Number(v.value).toFixed(1)}, ${p.above != null ? `above ${p.above}` : `below ${p.below}`}.`, aboutId: p.sensorId }, { evidence: [p.sensorId] });
+    }
+  },
+  // Counts from the builder's view for the week, drafted, then sent to the builder's own chat.
+  "weekly-report": {
+    label: "Weekly report", purpose: "Count what happened this week and send the builder a short report",
+    trigger: { kind: "schedule", every: "fridays at 15:00" }, reads: ["objects"], tools: { draft_document: "act", send_message: "notify" },
+    run(ctx) {
+      const p = ctx.params, st = ctx.statement, since = Date.parse(ctx.now) - 7 * 86400000;
+      const when = (o) => Date.parse(o.at || o.requested || o.created || 0);
+      const rows = (p.types || ["Issue", "WorkOrder"]).map((t) => [t, ctx.list(t, (o) => when(o) >= since).length, ctx.list(t, (o) => ["open", "requested", "active", "in_work"].includes(o.state)).length]);
+      const body = rows.map(([t, n, open]) => `${t}: ${n} new this week, ${open} open`).join("\n");
+      ctx.act("draft_document", { kind: "report", title: `Weekly report for ${st.builderId}`, body, audience: [st.builderId] });
+      ctx.act("send_message", { channelId: `CHN-${st.builderId}`, text: `Your weekly report:\n${body}` });
+    }
+  },
+  // Open issues past an age: a reminder to whoever holds each one.
+  chaser: {
+    label: "Chaser", purpose: "Remind people about open items older than a number of days",
+    trigger: { kind: "schedule", every: "weekdays at 08:00" }, reads: ["objects"], tools: { send_message: "act" },
+    run(ctx) {
+      const p = ctx.params, st = ctx.statement, cutoff = Date.parse(ctx.now) - (p.olderThanDays || 5) * 86400000;
+      const like = p.match ? new RegExp(p.match, "i") : null;
+      for (const i of ctx.list("Issue", (x) => ["open", "triaged"].includes(x.state) && Date.parse(x.at) < cutoff && (!like || like.test(x.title)) && [x.raisedBy, x.assigneeId].includes(st.builderId))) {
+        const to = i.assigneeId || i.raisedBy, ch = ctx.get(`CHN-${to}`);
+        if (ch) ctx.act("send_message", { channelId: ch.id, text: `Reminder: "${i.title}" (${i.id}) has been open since ${i.at.slice(0, 10)}.`, issueId: i.id });
+      }
+    }
+  },
+  // Supplier records that are the same company written two ways.
+  "data-tidy": {
+    label: "Supplier tidy-up", purpose: "List supplier records in the ERP that look like the same company",
+    trigger: { kind: "schedule", every: "daily at 06:00" }, reads: ["connector:erp"], tools: { draft_document: "act" },
+    run(ctx) {
+      const norm = (n) => n.toLowerCase().replace(/\(pty\)|\bltd\b|\bcc\b|&|\band\b|[^a-z0-9 ]/g, " ").replace(/\s+/g, " ").trim();
+      const groups = new Map();
+      for (const sup of ctx.connector("erp").suppliers()) groups.set(norm(sup.name), [...(groups.get(norm(sup.name)) || []), sup]);
+      const pairs = [...groups.values()].filter((g) => g.length > 1);
+      ctx.act("draft_document", { kind: "report", title: "Supplier records that look the same", body: pairs.length ? pairs.map((g) => g.map((x) => `${x.id} ${x.name}`).join(" = ")).join("\n") : "No two supplier records look like the same company.", audience: [ctx.statement.builderId] });
     }
   }
 };
