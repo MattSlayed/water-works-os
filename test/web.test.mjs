@@ -125,3 +125,9 @@ test("the studio, the IT catalogue and document review are on the console", asyn
   for (const x of ["async studio(", "async catalogue(", "async intakes(", "Rule, agent or person", "Start in shadow", "Suggested for you", "needs IT approval", "Claude is off", "data-sentence"]) assert.ok(app.includes(x), x);
   for (const x of ['href="#/studio"', 'href="#/intakes"', 'href="#/catalogue"']) assert.ok(html.includes(x), x);
 });
+
+test("browser walk (plan 3b): the document's review buttons fit beside it, and catalogue role boxes are readable", async () => {
+  const app = await (await fetch(base + "/app.js")).text(), css = await (await fetch(base + "/styles.css")).text();
+  assert.ok(app.includes('class="grid console intake-grid"'));
+  for (const s of [".grid.console.intake-grid", ".intake-grid .panel", "#view table input"]) assert.ok(css.includes(s), s);
+});

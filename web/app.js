@@ -947,11 +947,12 @@ const views = {
     }
     const d = await api(`/api/intakes/${encodeURIComponent(id)}`), open = d.state === "digested";
     const order = { AMBIGUOUS: 0, INFERRED: 1, EXTRACTED: 2 };
-    const val = (v) => (v == null ? "" : typeof v === "string" ? v : JSON.stringify(v));
+    // lines and bank details read as they do on the document, not as JSON
+    const val = (v) => (v == null ? "" : typeof v === "string" ? v : Array.isArray(v) ? v.map((l) => `${l.qty} × ${l.desc} @ ${l.price}`).join("; ") : v.account ? `${v.account} / ${v.branch}` : JSON.stringify(v));
     const page = d.preview.textLayer ? esc(d.preview.textLayer).replace(/\?+(\.\?+)?/g, (m) => `<mark>${m}</mark>`) : `<span class="meta">No text layer: this image could not be read${state.llm ? "" : " while Claude is off"}.</span>`;
     view.innerHTML = `<div id="intake"><div class="row"><div><h2>09 / ${esc(d.id)} · ${esc(d.state)}</h2><h1>${esc(d.preview.name)}</h1></div><div class="btns"><a class="btn" href="#/intakes">All documents</a></div></div>
       <p class="sub">${pill(d.verdict, d.verdict === "file" ? "done" : d.verdict === "person" ? "high" : "medium")} ${d.match.issues.map((i) => esc(i.detail)).join(" · ") || "Matches its PO and goods receipt."} ${d.verdict === "file" ? `Files to <span class="mono">${esc(d.destination.path)}</span>.` : ""}</p>
-      <div class="grid console"><section class="panel"><h2>The document · ${esc(d.preview.quality || "")}</h2><pre class="docpage">${page}</pre></section>
+      <div class="grid console intake-grid"><section class="panel"><h2>The document · ${esc(d.preview.quality || "")}</h2><pre class="docpage">${page}</pre></section>
       <section class="panel"><h2>Fields</h2><table class="cells"><thead><tr><th>Field</th><th>Grade</th><th>Value</th><th>Reasoning</th><th></th></tr></thead><tbody>
         ${[...d.cells].sort((a, b) => order[a.grade] - order[b.grade]).map((c) => `<tr class="${c.grade === "AMBIGUOUS" ? "amb" : c.grade === "INFERRED" ? "inf" : ""}"><td class="mono">${esc(c.key)}</td><td>${pill(c.grade, c.grade === "AMBIGUOUS" ? "medium" : c.grade === "INFERRED" ? "agent" : "low")}</td><td class="mono cv">${esc(val(c.value)).slice(0, 120)}</td><td class="why meta">${esc(c.reasoning)}</td>
           <td>${c.reviewed ? `<span class="meta">${esc(c.reviewed.by)} ${time(c.reviewed.at)}</span>` : open && c.grade !== "EXTRACTED" ? `<div class="btns"><button class="btn" data-ok="${esc(c.key)}">Accept</button><button class="btn" data-fix="${esc(c.key)}">Correct</button></div>` : ""}</td></tr>`).join("")}
