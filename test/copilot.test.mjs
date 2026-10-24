@@ -55,7 +55,7 @@ test("a reading over the band is called out and a deviation is proposed", async 
   const r = await s.ask("Can I reuse the housing? bore reads 110.065");
   assert.match(r.answer, /over the limit/i);
   assert.ok(sys.ont.list("Proposal", (p) => p.action === "raise_deviation").length === 1);
-  assert.ok(sys.ont.list("Reading").length === 1);
+  assert.ok(sys.ont.list("Reading", (x) => !x.id.startsWith("RDG-H")).length === 1); // the seeded morning checks aside
 });
 
 test("a reading inside the band is accepted", async () => {

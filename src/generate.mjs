@@ -570,5 +570,32 @@ export function generateWorks(seed = 7) {
     ["erp", [line("read", null, [...money, "planner", "works_manager"], "read"), line("post", "post_invoice_match", money, "propose")]],
     ["cmms", [line("read", null, ALL, "read"), line("write", null, ALL, "act")]]
   ]) add({ id: connectorId(kind), type: "Connector", kind, lines }, "CONFIG");
+
+  // ---- How people work (plan 3b Task 8): the history the Recommender reads, fixed values, no seeded draws ----
+  const hlpb = astOf("HLP-B"), mill = millwrights[0];
+  // P-028 checks the HLP-B bearing temperature by hand most mornings
+  ["2026-09-30", "2026-10-01", "2026-10-02", "2026-10-05", "2026-10-06", "2026-10-07", "2026-10-08", "2026-10-09", "2026-10-12", "2026-10-13"].forEach((d, i) => {
+    add({ id: `RDG-H${String(i + 1).padStart(2, "0")}`, type: "Reading", targetId: hlpb.id, assetId: hlpb.id, measure: "bearing temp", value: 66 + (i % 4) * 1.5, unit: "°C", workOrderId: null, at: `${d}T07:${String(5 + i).padStart(2, "0")}:00Z`, source: "field", by: mill.id }, "APP");
+    link(`RDG-H${String(i + 1).padStart(2, "0")}`, "OF", hlpb.id);
+  });
+  // the planner rejected Scheduler five times for the same reason
+  const cms = objects.filter((o) => o.type === "WorkOrder").slice(0, 5);
+  cms.forEach((w, i) => {
+    const at = `2026-10-${String(1 + i * 2).padStart(2, "0")}T08:30:00Z`, done = `2026-10-${String(1 + i * 2).padStart(2, "0")}T09:10:00Z`, id = `PRP-H${String(i + 1).padStart(2, "0")}`;
+    add({ id, type: "Proposal", action: "schedule_work", params: { workOrderId: w.id, assigneeId: millwrights[i % 2].id }, actorId: "Scheduler", actorKind: "agent", runId: null, assetId: w.assetId || null, evidence: [], risk: null, state: "rejected", created: at, resolvedBy: "P-004", resolvedAt: done, zoneId: null, audience: null }, "APP");
+    add({ id: `FBK-H${String(i + 1).padStart(2, "0")}`, type: "Feedback", targetId: id, runId: null, verdict: "reject", comment: "artisan on leave", authorId: "P-004", at: done }, "APP");
+    link(`FBK-H${String(i + 1).padStart(2, "0")}`, "ON", id);
+  });
+  // raw-water sampling rounds wait about three hours for the C-shift supervisor's approval at night
+  const cSup = sups.find((p) => p.shift === "C");
+  [["2026-09-24", 150], ["2026-09-27", 180], ["2026-09-30", 165], ["2026-10-03", 210], ["2026-10-06", 195], ["2026-10-09", 170]].forEach(([night, wait], i) => {
+    const created = Date.parse(`${night}T22:30:00Z`);
+    const id = `PRP-H${String(6 + i).padStart(2, "0")}`;
+    add({ id, type: "Proposal", action: "start_sampling_round", params: { detectionId: `GEO-H${i + 1}` }, actorId: "Geo Watch", actorKind: "agent", runId: null, assetId: null, evidence: [], risk: null, state: "approved",
+      created: new Date(created).toISOString(), resolvedBy: cSup.id, resolvedAt: new Date(created + wait * 60000).toISOString(), zoneId: null, audience: null }, "APP");
+  });
+  // the supplier queries waiting on the clerk; the bank-change one is the invoice in the accounts inbox (connectors)
+  [["new bank details on a resent invoice", "2026-09-26T10:00:00Z"], ["credit note missing for returned bearings", "2026-09-29T09:00:00Z"], ["statement does not reconcile for September", "2026-10-02T11:30:00Z"], ["VAT number missing on invoice", "2026-10-06T14:00:00Z"]].forEach(([what, at], i) =>
+    add({ id: `ISS-A${String(i + 1).padStart(2, "0")}`, type: "Issue", title: `Supplier query: ${what}`, state: "open", raisedBy: "P-043", assetId: null, partId: null, workOrderId: null, projectId: null, procedureId: null, step: null, evidence: [], assigneeId: "P-043", audience: ["P-043", "P-044"], at }, "APP"));
   return { objects, links, clock: CLOCK };
 }

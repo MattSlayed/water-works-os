@@ -9,6 +9,7 @@ import { specFor, demoteIfNeeded, objectTime } from "./harness.mjs";
 import { rootCause, rcaSummary } from "./rca.mjs";
 import { TEMPLATES } from "./templates.mjs";
 import { manifestFromSpec } from "./studio.mjs";
+import { signalsFor } from "./recommend.mjs";
 
 const v = (s) => ({ version: "1.0.0", owner: "P-002", ...s }); // P-002, a reliability engineer, owns the default agents (agents design §4.1)
 export const AGENT_SPECS = [
@@ -31,7 +32,8 @@ export const AGENT_SPECS = [
   v({ name: "Procedure Steward", purpose: "Point engineers at procedure steps that run long or collect notes and issues", trigger: { kind: "schedule", every: "weekly" }, tools: ["notify"], autonomy: { notify: "act" } }),
   v({ name: "Geo Watch", purpose: "Watch the dam and catchment in each new scene; raise and triage index anomalies and extent changes; ask for a raw-water sample", trigger: { kind: "event", on: "Scene ingested" }, tools: ["record_detection", "raise_alert", "propose_dose_change", "start_sampling_round", "notify"], autonomy: { record_detection: "act", raise_alert: "act", propose_dose_change: "propose", start_sampling_round: "propose", notify: "act" } }),
   v({ name: "Root Cause", purpose: "Explain an alert: rank the local and upstream causes from the process graph, the region and history, with their evidence and the hypotheses rejected", trigger: { kind: "event", on: "Alert ranked high" }, tools: ["draft_document"], autonomy: { draft_document: "act" } }),
-  v({ name: "Tag Matcher", purpose: "Match historian tags to positions and report unmatched keys", trigger: { kind: "event", on: "Connector import" }, tools: ["draft_document"], autonomy: { draft_document: "act" } })
+  v({ name: "Tag Matcher", purpose: "Match historian tags to positions and report unmatched keys", trigger: { kind: "event", on: "Connector import" }, tools: ["draft_document"], autonomy: { draft_document: "act" } }),
+  v({ name: "Recommender", purpose: "Suggest agents from how each person works, shown only to that person, with the evidence", trigger: { kind: "schedule", every: "each plant day" }, tools: ["record_suggestion"], autonomy: { record_suggestion: "act" } })
 ];
 
 const HAZARD_COMPETENCE = { chlorine: "gas-safety:chlorine" };
@@ -87,6 +89,15 @@ const projectAnswer = (ctx, projects) => {
 };
 
 const LOGIC = {
+  // One person's suggestions: never one already open or accepted, nor one they dismissed in the last 30 days.
+  Recommender: (ctx) => {
+    const month = Date.parse(ctx.now) - 30 * 86400000;
+    for (const sg of ctx.signals()) {
+      const prior = ctx.list("Suggestion", (x) => x.personId === ctx.who && x.key === sg.key && (x.state !== "dismissed" || Date.parse(x.dismissedAt) > month));
+      if (prior.length) { ctx.think(`${sg.key}: already ${prior[0].state}.`); continue; }
+      ctx.act("record_suggestion", { personId: ctx.who, signal: sg.signal, key: sg.key, title: sg.title, evidence: sg.evidence, statement: sg.statement, savedMinPerWeek: sg.savedMinPerWeek, basis: sg.basis, audience: sg.audience || [ctx.who] });
+    }
+  },
   // Groups: only progress and issues are written, and the bot stays quiet. One-to-one: one reply per message.
   "Chat Intake"(ctx) {
     const m = ctx.get(ctx.scope.messageId);
@@ -620,7 +631,9 @@ export function createRuntime({ ont, tel, actions, audit, connectors = null }) {
     const call = (tool, args, result) => { run.calls.push({ tool, args, result }); return result; };
     const now = tel.now(), statement = specFor(ont, spec.name) || {};
     const ctxApi = {
-      spec, statement, params: statement.params || {}, now, today: now.slice(0, 10), mission: opts.mission || null, scope: opts.scope || {},
+      spec, statement, params: statement.params || {}, now, who: opts.actingUser.id,
+      // the Recommender's signals, only ever for the person the run is for (agents design §9)
+      signals: () => signalsFor(ont, connectors, opts.actingUser.id, now), today: now.slice(0, 10), mission: opts.mission || null, scope: opts.scope || {},
       get: (id) => read(view.get(id)),
       list: (type, pred) => view.list(type, pred).map(read),
       search: (q, k) => view.search(q, k).map(read),

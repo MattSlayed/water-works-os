@@ -425,6 +425,9 @@ export function createServer(sys) {
   // Plant clock: scheduled agents run every 15 plant minutes, as the system user; Project Watch every plant hour
   // (it posts the weekly status from Friday 15:00), Procedure Steward each plant day (it notifies once a week).
   let since = 0, hour = tel.now().slice(0, 13), day = tel.now().slice(0, 10);
+  // the Recommender, once each plant day, for each person as that person; its runs are theirs alone (agents design §9)
+  const recommendAll = () => { for (const p of ont.list("Person")) runtime.run("Recommender", { actingUser: { id: p.id, kind: "person", clearance: p.clearance, role: p.role }, chain: false, audience: [p.id], trigger: { kind: "schedule" } }); };
+  recommendAll();
   // a scene is processed 3 h after acquisition; Geo Watch runs when one becomes due (Region design §5.4)
   const dueScenes = () => ont.list("Scene", (s) => s.inWindow && Date.parse(s.acquiredAt) + 3 * 3600000 <= Date.parse(tel.now())).length;
   function tick(minutes) {
@@ -436,7 +439,7 @@ export function createServer(sys) {
     for (const name of dueStudioAgents(ont, tel.now(), last)) runtime.run(name, { actingUser: SYSTEM_USER, trigger: { kind: "schedule" } }); // as their builders
     if (dueScenes() > before) runtime.run("Geo Watch", { actingUser: SYSTEM_USER, trigger: { kind: "event", on: "Scene ingested" } });
     if (tel.now().slice(0, 13) !== hour) { hour = tel.now().slice(0, 13); runtime.run("Project Watch", { actingUser: SYSTEM_USER, trigger: { kind: "schedule" } }); }
-    if (tel.now().slice(0, 10) !== day) { day = tel.now().slice(0, 10); runtime.run("Procedure Steward", { actingUser: SYSTEM_USER, trigger: { kind: "schedule" } }); }
+    if (tel.now().slice(0, 10) !== day) { day = tel.now().slice(0, 10); runtime.run("Procedure Steward", { actingUser: SYSTEM_USER, trigger: { kind: "schedule" } }); recommendAll(); }
     since += minutes;
     if (since >= 15) {
       since = 0;

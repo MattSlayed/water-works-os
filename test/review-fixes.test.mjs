@@ -120,6 +120,6 @@ test("I1: a technician sees only runs made for their own clearance, and no audit
   const runs = await (await fetch(base + "/api/runs", { headers: h })).json();
   assert.ok(runs.every((r) => r.actingUserId === "P-028"));
   const objs = await (await fetch(base + "/api/objects?type=AgentRun", { headers: h })).json();
-  assert.equal(objs.length, 0);
+  assert.ok(objs.every((r) => r.actingUserId === "P-028")); // only their own Recommender run
   assert.equal((await fetch(base + "/api/audit", { headers: h })).status, 403);
 });

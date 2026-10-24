@@ -39,7 +39,7 @@ const create = (ont, obj, linksTo = []) => {
 };
 
 // Parameters that name an object: the type it must be. Every named object must also be visible to the actor.
-const TARGET_TYPES = { sceneId: ["Scene"], aoiId: ["Region"], detectionId: ["GeoDetection"], chemicalId: ["Chemical"], modelId: ["PlantModel"], channelId: ["Channel"], messageId: ["Message"], documentId: ["Draft"], onBehalfOf: ["Person", "Project"], procedureId: ["Procedure"], executionId: ["Execution"], issueId: ["Issue"], noteId: ["KnowledgeNote"], personId: ["Person"], projectId: ["Project"], workOrderId: ["WorkOrder"], assetId: ["Asset"], partIds: ["Part"], partId: ["Part"], alertId: ["Alert"], permitId: ["Permit"], assigneeId: ["Person"], holderId: ["Person"], intakeId: ["DocumentIntake"], itemId: ["Part", "Chemical"], targetId: null };
+const TARGET_TYPES = { sceneId: ["Scene"], aoiId: ["Region"], detectionId: ["GeoDetection"], chemicalId: ["Chemical"], modelId: ["PlantModel"], channelId: ["Channel"], messageId: ["Message"], documentId: ["Draft"], onBehalfOf: ["Person", "Project"], procedureId: ["Procedure"], executionId: ["Execution"], issueId: ["Issue"], noteId: ["KnowledgeNote"], personId: ["Person"], projectId: ["Project"], workOrderId: ["WorkOrder"], assetId: ["Asset"], partIds: ["Part"], partId: ["Part"], alertId: ["Alert"], permitId: ["Permit"], assigneeId: ["Person"], holderId: ["Person"], intakeId: ["DocumentIntake"], suggestionId: ["Suggestion"], itemId: ["Part", "Chemical"], targetId: null };
 const PATCHABLE = ["title", "priority", "state", "planned", "hours", "closed"];
 const ISSUE_STATES = ["open", "triaged", "in_work", "done", "dropped"];
 // The person an action is done by or for: an agent acts for the person who launched it.
@@ -229,6 +229,26 @@ export const ACTIONS = {
     const cells = d.cells.map((c) => { const m = hit.get(c.key); return !m ? c : { ...c, ...(m.verdict === "correct" ? { value: m.value, reasoning: `${c.reasoning} — corrected by ${mark.by} from ${JSON.stringify(c.value)}` } : {}), reviewed: mark }; });
     const k = ctx.connectors, r = digestDoc(k.attachment(d.attachmentId), { erp: k.erp, moves: k.m365.files.moves(), seen: seenOf(ont, d), at: d.receivedAt, tolerancePct: d.tolerancePct, cells });
     return { objects: [d.id], revert: setProps(ont, d.id, { cells: r.cells, fields: r.fields, match: r.match, verdict: r.verdict, destination: r.destination, reviews: [...(d.reviews || []), { ...mark, cells: hit.size }] }) };
+  }),
+  // Suggestions (agents design §9): made only for the person whose work they read; only that person answers them.
+  record_suggestion: def("draft", "act", ["personId", "signal", "key", "title"], (ont, p, ctx) => {
+    if (actorId(ctx) !== p.personId) throw new Error("a suggestion is only made for the person whose work it reads");
+    const audience = Array.isArray(p.audience) && p.audience.includes(p.personId) ? p.audience.map(String) : [p.personId];
+    const s = create(ont, { id: nextId("SUG"), type: "Suggestion", personId: p.personId, signal: p.signal, key: p.key, title: String(p.title), evidence: Array.isArray(p.evidence) ? p.evidence.map(String) : [],
+      statement: p.statement || null, savedMinPerWeek: Number(p.savedMinPerWeek) || 0, basis: p.basis || null, state: "open", audience, at: ctx.now() });
+    return { objects: [s.id], revert: () => setProps(ont, s.id, { state: "withdrawn" }) };
+  }),
+  accept_suggestion: def("act", "human", ["suggestionId"], (ont, p, ctx) => {
+    const s = ont.get(p.suggestionId);
+    if (s.personId !== actorId(ctx)) throw new Error("only the person it was made for answers a suggestion");
+    if (s.state !== "open") throw new Error(`${s.id} is ${s.state}`);
+    return { objects: [s.id], revert: setProps(ont, s.id, { state: "accepted", acceptedAt: ctx.now() }) };
+  }),
+  dismiss_suggestion: def("act", "human", ["suggestionId"], (ont, p, ctx) => {
+    const s = ont.get(p.suggestionId);
+    if (s.personId !== actorId(ctx)) throw new Error("only the person it was made for answers a suggestion");
+    if (s.state !== "open") throw new Error(`${s.id} is ${s.state}`);
+    return { objects: [s.id], revert: setProps(ont, s.id, { state: "dismissed", dismissedAt: ctx.now(), dismissReason: p.reason ? String(p.reason) : null }) };
   }),
   create_work_order: def("act", "act", ["assetId", "title"], (ont, p, ctx) => {
     const wo = create(ont, { id: nextId("WO-N"), type: "WorkOrder", assetId: p.assetId, title: p.title, kind: p.kind || "CM", priority: p.priority || "P3", state: "requested", requested: ctx.now(), source: p.source || null }, [["TARGETS", p.assetId]]);

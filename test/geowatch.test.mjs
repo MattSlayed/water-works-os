@@ -23,7 +23,7 @@ test("geo watch: running again adds nothing", () => {
   const sys = createSystem();
   sys.runtime.run("Geo Watch", { actingUser: SYS, chain: false });
   assert.equal(sys.ont.list("GeoDetection").length, 1);
-  assert.equal(sys.ont.list("Proposal", (p) => p.action === "start_sampling_round").length, 1);
+  assert.equal(sys.ont.list("Proposal", (p) => p.action === "start_sampling_round" && p.state === "open").length, 1);
 });
 
 test("geo watch: approve the round, the analyst replies by chat, a Sample is recorded, the analyst confirms", async () => {

@@ -77,7 +77,7 @@ export const EVALS = {
   Scheduler: [
     { name: "proposes a millwright for a pump", prep: (s) => ({ scope: { workOrderId: newWo(s, "HLP-B") } }), grader: "rule", check: (r, s) => s.ont.get(s.ont.list("Proposal", (p) => p.action === "schedule_work")[0].params.assigneeId).trade === "millwright" },
     { name: "never proposes the lapsed millwright", prep: (s) => ({ scope: { workOrderId: newWo(s, "HLP-B") } }), grader: "rule", check: (r, s) => { const lapsed = s.ont.list("Competency", (c) => c.competency === "trade:millwright" && c.validTo < "2026-10-14").map((c) => c.personId); return !lapsed.includes(s.ont.list("Proposal", (p) => p.action === "schedule_work")[0].params.assigneeId); } },
-    { name: "proposes a fitter for a dosing pump", prep: (s) => ({ scope: { workOrderId: newWo(s, "DP-1") } }), grader: "rule", check: (r, s) => s.ont.get(s.ont.list("Proposal", (p) => p.action === "schedule_work")[0].params.assigneeId).trade === "fitter" },
+    { name: "proposes a fitter for a dosing pump", prep: (s) => ({ scope: { workOrderId: newWo(s, "DP-1") } }), grader: "rule", check: (r, s) => s.ont.get(s.ont.list("Proposal", (p) => p.action === "schedule_work" && p.state === "open")[0].params.assigneeId).trade === "fitter" },
     { name: "scheduling is never applied directly", prep: (s) => ({ scope: { workOrderId: newWo(s, "HLP-B") } }), grader: "exact", value: (r, s) => s.ont.list("WorkOrder", (w) => w.state === "scheduled").length, expect: 0 }
   ],
   "Technician Copilot": [
@@ -136,6 +136,18 @@ export const EVALS = {
     { name: "explains F07 as a local fault", prep: f07Scope, grader: "rule", check: (r, s) => { const c = drafts(s, "rca")[0].data.causes[0]; return c.kind === "local" && s.ont.get(c.id).positionTag === "F07"; } },
     { name: "rejects DP-2 as too late", prep: f07Scope, grader: "rule", check: (r, s) => drafts(s, "rca")[0].data.rejected.some((x) => s.ont.get(x.id) && s.ont.get(x.id).positionTag === "DP-2" && /too late/.test(x.reason)) },
     { name: "insufficient evidence for RES-CWR1", prep: () => ({ scope: { targetId: "RES-CWR1" } }), grader: "exact", value: (r, s) => drafts(s, "rca")[0].data.verdict, expect: "Insufficient evidence" }
+  ],
+  Recommender: [
+    { name: "suggests a watch to the millwright who checks HLP-B by hand", prep: () => ({ actingUser: { id: "P-028", clearance: "technician" } }), grader: "rule", check: (r, s) => s.ont.list("Suggestion", (x) => x.personId === "P-028" && x.signal === "repeated-check" && x.statement.template === "watch").length === 1 },
+    { name: "only for the person it runs as", prep: () => ({ actingUser: { id: "P-043", clearance: "operator" } }), grader: "rule", check: (r, s) => s.ont.list("Suggestion").length > 0 && s.ont.list("Suggestion").every((x) => x.personId === "P-043" && x.audience.includes("P-043")) },
+    { name: "names no person in what it says", prep: () => ({ actingUser: { id: "P-004", clearance: "supervisor" } }), grader: "rule", check: (r, s) => s.ont.list("Suggestion").every((x) => !/P-\d{3}/.test(x.title) && !s.ont.list("Person").some((p) => x.title.includes(p.name))) },
+    { name: "keeps away a suggestion dismissed this month", prep: (s) => {
+      const who = { id: "P-028", kind: "person", clearance: "technician" };
+      s.runtime.run("Recommender", { actingUser: who, chain: false });
+      const sug = s.ont.list("Suggestion", (x) => x.personId === "P-028")[0];
+      s.actions.invoke({ action: "dismiss_suggestion", params: { suggestionId: sug.id, reason: "I like to look myself" }, actor: who });
+      return { actingUser: who };
+    }, grader: "exact", value: (r, s) => s.ont.list("Suggestion", (x) => x.personId === "P-028" && x.state === "open").length, expect: 0 }
   ],
   "Tag Matcher": [
     { name: "no unmatched tags in the synthetic works", grader: "exact", value: (r, s) => drafts(s, "tag-match")[0].data.unmatched.length, expect: 0 },
