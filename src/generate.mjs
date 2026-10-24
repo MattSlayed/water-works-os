@@ -597,5 +597,42 @@ export function generateWorks(seed = 7) {
   // the supplier queries waiting on the clerk; the bank-change one is the invoice in the accounts inbox (connectors)
   [["new bank details on a resent invoice", "2026-09-26T10:00:00Z"], ["credit note missing for returned bearings", "2026-09-29T09:00:00Z"], ["statement does not reconcile for September", "2026-10-02T11:30:00Z"], ["VAT number missing on invoice", "2026-10-06T14:00:00Z"]].forEach(([what, at], i) =>
     add({ id: `ISS-A${String(i + 1).padStart(2, "0")}`, type: "Issue", title: `Supplier query: ${what}`, state: "open", raisedBy: "P-043", assetId: null, partId: null, workOrderId: null, projectId: null, procedureId: null, step: null, evidence: [], assigneeId: "P-043", audience: ["P-043", "P-044"], at }, "APP"));
+  // ---- Specs, corrections and organisations (plan 4, job brief design §4, §7): fixed values after every seeded draw ----
+  const slug = (t) => t.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+  const sop = (tpl) => ({ kind: "Document", id: docsByTemplate[tpl], title: "SOP revision C", at: "2025-02-01", authorId: "P-001" });
+  const fromSop = { confirmedBy: "P-001", confirmedAt: "2025-02-01T00:00:00Z", reason: "From SOP revision C" };
+  for (const part of objects.filter((o) => o.type === "Part" && o.band)) {
+    const a = byId(part.assetId), proc = objects.find((o) => o.type === "Procedure" && o.template === a.template && o.state === "released");
+    const st = proc && proc.steps.find((x) => x.requires && x.requires.reading && x.requires.reading.partName === part.name);
+    const key = slug(part.band.measure);
+    add({ id: `SPC-${a.positionTag}-${key}`, type: "Spec", assetId: a.id, partName: part.name, step: st ? st.step : null, key, measure: part.band.measure, unit: part.band.unit,
+      lo: part.band.lo, hi: part.band.hi, target: null, condition: null, version: 1, state: "confirmed", sourceRefs: [sop(a.template)], ...fromSop, history: [] }, "SYNTH-DOCS");
+  }
+  // the coagulant pumps' delivery: the owner's spec revision B (source b) confirmed in March over the SOP's range
+  for (const tag of ["DP-1", "DP-2"]) {
+    add({ id: `SPC-${tag}-delivery`, type: "Spec", assetId: astOf(tag).id, partName: "Dosing head", step: 2, key: "delivery", measure: "Delivery at 60% stroke", unit: "L/h",
+      lo: 114, hi: 126, target: 120, condition: null, version: 2, state: "confirmed",
+      sourceRefs: [{ kind: "m365.files", id: "ATT-ENG-01", title: "owner spec rev B", at: "2026-03-02", authorId: null }], confirmedBy: "P-001", confirmedAt: "2026-03-05T09:00:00Z", reason: "Owner specification revision B",
+      history: [{ version: 1, lo: 100, hi: 140, target: null, sourceRefs: [sop("dosing_pump")], ...fromSop }] }, "SYNTH-DOCS");
+  }
+  [["ORG-OWNER", "Riverbend Water Board", "owner"], ["ORG-SYNCON", "Synthetic Contractor (Pty) Ltd", "contractor"], ["ORG-DOSATEC", "Dosatec", "oem"]]
+    .forEach(([id, name, kind]) => add({ id, type: "Organisation", name, kind }, "SYNTH-ERP"));
+  const dp1 = astOf("DP-1"), dp2a = astOf("DP-2");
+  add({ id: "PRJ-H2025-DOSE", type: "Project", title: "Coagulant dosing upgrade", kind: "contract", state: "closed", start: "2025-04-01", end: "2025-07-31", ownerId: "P-004",
+    assetIds: [dp1.id, dp2a.id], assetId: dp1.id, contractorEmployer: "Synthetic Contractor (Pty) Ltd", milestones: [], channelId: null, autoSubmit: false }, "SYNTH-ERP");
+  link("PRJ-H2025-DOSE", "TARGETS", dp1.id);
+  for (const p of objects.filter((o) => o.type === "Project")) Object.assign(p, { clientOrgId: "ORG-OWNER", ...(p.contractorEmployer ? { contractorOrgId: "ORG-SYNCON" } : {}) });
+  const correction = (id, scope, fromId, at, line, text, wrongSourceRef = null) => {
+    add({ id, type: "Correction", line, text, wrongSourceRef, wrongValue: null, rightValue: null, scope, fromId, by: "P-001", at }, "APP");
+    link(id, "FROM", fromId);
+  };
+  correction("COR-H01", { template: "dosing_pump" }, "PRJ-H2025-DOSE", "2025-07-20T10:00:00Z", "Same model: check delivery by draw-down, never from the DM 400 table (40 Hz drives).",
+    "The DM 400 manual's stroke-to-delivery table is for 50 Hz; our drives run at 40 Hz. Check delivery by draw-down, never from the table.", { kind: "Document", id: "DOC-OEM-DOSING_PUMP" });
+  correction("COR-H02", { orgId: "ORG-SYNCON" }, "PRJ-H2025-DOSE", "2025-07-22T10:00:00Z", "Synthetic Contractor sheets give mL/min: ×0.06 for L/h.",
+    "Their commissioning sheets give delivery in mL/min. Convert (×0.06) before comparing with L/h.");
+  correction("COR-H03", { assetId: dp1.id }, "FND-003", "2026-05-19T16:00:00Z", "loss of prime was the suction ball. Check it first.",
+    "Loss of prime was the suction check-valve ball. Check the ball before the diaphragm.");
+  // source f: the C-shift supervisor's word on the works chat after the storm
+  msg("MSG-H-SPEC1", `CHN-${cSup.id}`, cSup.id, "2026-10-13T23:15:00Z", "we've had DP-2 delivering 125 L/h since the storm");
   return { objects, links, clock: CLOCK };
 }

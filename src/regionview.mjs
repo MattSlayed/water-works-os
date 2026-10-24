@@ -65,7 +65,7 @@ export function regionPayload(sys, v, { clipLine = (c) => [c], trails = [], live
     region, zones: view.list("Zone", (z) => z.remote).map((z) => ({ id: z.id, name: z.name, clearance: z.clearance, geo: z.geo })),
     sites: view.list("RemoteSite").map((s) => ({ ...s, readings: sensorsOf(s.id) })),
     trackers,
-    projects: view.list("Project").map((p) => ({ id: p.id, title: p.title, start: p.start, end: p.end, ownerId: p.ownerId, footprint: p.footprint, capacityImpact: p.capacityImpact,
+    projects: view.list("Project", (p) => p.state !== "closed").map((p) => ({ id: p.id, title: p.title, start: p.start, end: p.end, ownerId: p.ownerId, footprint: p.footprint, capacityImpact: p.capacityImpact,
       status: projectStatus(p, sys.ont.list("ProgressClaim"), view.list("Issue"), now) })),
     detections: view.list("GeoDetection"),
     // operations to focus on (option A): detection responses, active alerts and open work orders

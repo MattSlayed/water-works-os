@@ -89,6 +89,9 @@ export function stepLock(step, { permit, isolated }) {
   return { locked: false, reason: null };
 }
 
+// An analyser whose calibration certificate the Blue Drop pack checks (REQ-BD-CAL); the job brief uses the same test.
+export const isAnalyser = (s) => !!s.processUnitId && /turb|cl|ph/.test(s.key) && !s.id.startsWith("SEN-RAW");
+
 // Where a field reading sits against a part's band; the finding text is what a deviation records.
 export function bandCheck(part, value) {
   const { lo, hi, measure, unit } = part.band;

@@ -595,7 +595,7 @@ export function dropPackEvidence(ctx) {
   items.push({ requirementId: "REQ-BD-QUAL", status: pct >= 97 ? "met" : "gap", detail: `${pct}% of ${samples.length} final-water results within SANS 241 limits.`, refs: bad.map((s) => s.id) });
   const noResponse = bad.filter((s) => !s.response);
   items.push({ requirementId: "REQ-BD-INC", status: noResponse.length ? "gap" : "met", detail: noResponse.length ? `${noResponse.length} non-compliance(s) without a documented response.` : "Every non-compliance has a response.", refs: noResponse.map((s) => s.id) });
-  const analysers = ctx.list("Sensor", (s) => s.processUnitId && /turb|cl|ph/.test(s.key) && !s.id.startsWith("SEN-RAW"));
+  const analysers = ctx.list("Sensor", F.isAnalyser);
   const certs = ctx.list("Document", (d) => d.kind === "certificate");
   const missing = analysers.filter((s) => !certs.some((c) => c.sensorId === s.id && c.validTo >= ctx.today));
   items.push({ requirementId: "REQ-BD-CAL", status: missing.length ? "gap" : "met", detail: missing.length ? `No current calibration certificate for: ${missing.map((s) => s.name).join(", ")}.` : "All analysers calibrated.", refs: missing.map((s) => s.id) });
