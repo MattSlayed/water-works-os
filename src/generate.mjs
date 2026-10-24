@@ -630,7 +630,7 @@ export function generateWorks(seed = 7) {
     "The DM 400 manual's stroke-to-delivery table is for 50 Hz; our drives run at 40 Hz. Check delivery by draw-down, never from the table.", { kind: "Document", id: "DOC-OEM-DOSING_PUMP" });
   correction("COR-H02", { orgId: "ORG-SYNCON" }, "PRJ-H2025-DOSE", "2025-07-22T10:00:00Z", "Synthetic Contractor sheets give mL/min: ×0.06 for L/h.",
     "Their commissioning sheets give delivery in mL/min. Convert (×0.06) before comparing with L/h.");
-  correction("COR-H03", { assetId: dp1.id }, "FND-003", "2026-05-19T16:00:00Z", "loss of prime was the suction ball. Check it first.",
+  correction("COR-H03", { assetId: dp1.id }, "FND-003", "2026-05-19T16:00:00Z", "Loss of prime was the suction ball. Check it first.",
     "Loss of prime was the suction check-valve ball. Check the ball before the diaphragm.");
   // source f: the C-shift supervisor's word on the works chat after the storm
   msg("MSG-H-SPEC1", `CHN-${cSup.id}`, cSup.id, "2026-10-13T23:15:00Z", "we've had DP-2 delivering 125 L/h since the storm");

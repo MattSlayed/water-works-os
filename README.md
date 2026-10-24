@@ -6,7 +6,7 @@ An ontology-driven operating system for a **synthetic** water treatment works (R
 ## Run it
 
 ```bash
-npm test          # 392 tests: generator, ontology, telemetry, functions, actions, agents + evals, copilot, chat, drawings, parsers, plant model, process graph, region, trackers, scenes, Geo Watch, live mode, agent harness, root cause, connectors, digester, studio, recommendations, API, web
+npm test          # 458 tests: generator, ontology, telemetry, functions, actions, agents + evals, copilot, chat, drawings, parsers, plant model, process graph, region, trackers, scenes, Geo Watch, live mode, agent harness, root cause, connectors, digester, studio, recommendations, spec triage, job briefs, API, web
 npm start         # http://localhost:8830  (plant clock advances 1 minute every 2 seconds)
 ```
 
@@ -63,6 +63,10 @@ Phase 2, Workforce Intelligence (design: `docs/superpowers/specs/2026-10-23-work
 | Agent Studio: rule / agent / person screen, a keyword planner for five templates (digester, watch, weekly report, chaser, supplier tidy-up) or Claude when on, statement checks against the catalogue, read-back sentences that edit the statement both ways, a 14-day replay matched to what the person did, start in shadow, IT sign-off before promotion, the named approver promotes | `src/studio.mjs`, `src/templates.mjs`, `src/harness.mjs` | Agents design §6 |
 | Recommender (agent 21): six signals from each person's own work (filings by hand, the same check every morning, slow approvals, repeated overrides, long steps, a pile of one kind of issue); private, with evidence and a basis, dismissed for 30 days | `src/recommend.mjs`, `src/agents.mjs` | Agents design §9 |
 | Studio, Suggested for you, IT catalogue and Documents screens | `web/app.js` | Agents design §10 |
+| Specs per asset and measure, with their sources and every earlier version (seeded from the SOP bands; the coagulant pumps' delivery from the owner's spec); corrections scoped to an asset, a make and model or an organisation, carried from project to project | `src/generate.mjs`, `src/actions.mjs` | Job brief design §4 |
+| Spec Triage (agent 22): reads the works mailbox, the Engineering folders, the dose sheet and the works chat, ties each line to an asset, grades it, ranks by the site manager's newest word then authority and date, and proposes one answer; only the site manager confirms, a rejected value is not proposed again, an unreadable source is never proposed | `src/specs.mjs`, `src/agents.mjs`, `src/connectors/engineering.mjs` | Job brief design §5 |
+| The job brief: at most 8 lines in chat before step 1 (target, waiting change, corrections, last time, open, watch-outs), the full brief one reply away, recorded per job; specs pinned when the job starts and readings tested against them | `src/brief.mjs`, `src/actions.mjs`, `src/agents.mjs` | Job brief design §6 |
+| Brief panel, Specs tab, Spec changes for the site manager (with "this source is wrong" corrections), corrections on asset and project pages | `web/app.js`, `src/server.mjs` | Job brief design §8 |
 | Optional live mode (`GEO_LIVE=1`): Sentinel-2 index statistics from Microsoft Planetary Computer over `data/geo/live-aoi.geojson`; tests use captured fixtures | `src/geolive.mjs` | Region design §5.5 |
 | Region view: Since you left, Today's supply risks, scene timeline, layers and filters, clustering, projects and operations tab with the four-part project panel, operation focus, Enter plant; offline basemap fallback; phone layout; server-side pruning | `web/region.js`, `web/app.js`, `src/server.mjs` | Region design §6–7 |
 
@@ -110,6 +114,19 @@ Phase 3, project 2 — the Region map and satellite layer (design: `docs/superpo
 - **J27, a suggestion (P-028):** Agent Studio → Suggested for you shows a watch on HLP-B bearing temperature with its
   readings as evidence. Dismiss it with "I like to look myself"; a day later it has not come back.
 - **J28, Claude off:** with no API key, J25 works on the text-layer documents and the studio says "Claude is off".
+- **J29, triage (P-001):** Proposals → Spec changes shows "DP-2 delivery at 60% stroke: 114–126 → 128.25–141.75 L/h",
+  the site manager's mail as the winner and four sources passed over with their reasons. The handwritten tag photo is
+  under "Read these yourself".
+- **J30, the brief before confirmation (P-032):** on the works chat, `start WO-26044` → the 8-line brief: the
+  confirmed 114–126 L/h with "a newer value, 135 L/h, waits for the site manager", the DM 400 and mL/min corrections,
+  last time, ISS-H04 and the step 2 note. `start step 1` gives step 1; step 2 asks for the delivery with its target.
+- **J31, confirm with a correction (P-001):** Confirm, ticking the dose sheet as wrong for this asset. Spec v3 is
+  written and the correction appears on DP-2. As P-008, Confirm is refused.
+- **J32, tested to the spec (P-032):** a new job on DP-2 shows target 128.25–141.75 L/h; 127 L/h at step 2 is
+  "1.25 L/h under the band" and the job records Spec v3.
+- **J33, the next project inherits (P-004):** a new Synthetic Contractor project on DP-1 lists COR-H02 "from
+  PRJ-H2025-DOSE".
+- **J34, Claude off:** J29–J32 run on the text layers; the photo stays unsure.
 - Live mode: `GEO_LIVE=1 npm start` fetches real Sentinel-2 statistics for the example area (a rough outline of
   Rietvlei Dam) and shows them as their own line; they are never mixed into the synthetic works.
 

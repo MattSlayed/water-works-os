@@ -65,7 +65,7 @@ export function jobBrief(view, workOrderId) {
   }
   const finding = view.list("Finding", (f) => f.verified && sisters.has(f.assetId)).sort(newestFirst("at"))[0];
   const fromFinding = finding && view.list("Correction", (c) => c.fromId === finding.id)[0];
-  const findingText = finding ? `On ${(view.get(finding.assetId) || {}).positionTag || finding.assetId}, ${fromFinding ? fromFinding.line : lowerFirst(finding.text)}` : null;
+  const findingText = finding ? `On ${(view.get(finding.assetId) || {}).positionTag || finding.assetId}, ${lowerFirst(fromFinding ? fromFinding.line : finding.text)}` : null;
   const lastTime = lastText || findingText ? [item([lastText, findingText].filter(Boolean).join(" "), [lastRef, finding && finding.id, fromFinding && fromFinding.id])] : [];
 
   // 4. open now: issues on the asset, and analysers on it without a current certificate

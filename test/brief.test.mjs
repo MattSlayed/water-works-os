@@ -76,3 +76,9 @@ test("a work order the viewer cannot see gives no brief", () => {
   const s = createSystem();
   assert.equal(jobBrief(s.ont.view(P032), "WO-NOPE", {}), null);
 });
+
+test("walk: a correction's line is a whole sentence on its own; the brief folds it after the sister tag", () => {
+  const s = createSystem();
+  assert.equal(s.ont.get("COR-H03").line, "Loss of prime was the suction ball. Check it first.");
+  assert.match(brief(s).lines[4], /On DP-1, loss of prime was the suction ball\. Check it first\.$/);
+});

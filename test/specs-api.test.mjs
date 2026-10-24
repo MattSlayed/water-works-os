@@ -81,3 +81,17 @@ test("screens: brief panel, specs tab, spec changes with wrong-source ticks", ()
   const app = readFileSync(new URL("../web/app.js", import.meta.url), "utf8");
   for (const s of ["/brief", "/specs", "recheck-specs", "record_correction", "Read these yourself", "this make and model", "Spec changes waiting", "this source is wrong", "Corrections"]) assert.ok(app.includes(s), s);
 });
+
+test("walk: the asset side panel's tabs wrap instead of scrolling it sideways, and the band inputs are dark", () => {
+  const css = readFileSync(new URL("../web/styles.css", import.meta.url), "utf8");
+  assert.match(css, /\.tabs \{[^}]*flex-wrap: wrap/);
+  assert.match(css, /\.side \{[^}]*min-width: 0/);
+  assert.match(css, /\[data-lo\][^{]*\{[^}]*background: var\(--bg2\)/);
+});
+
+test("walk: a confirmed spec's own source is not listed again as an agreeing source", async () => withServer(async ({ s, call, dp2 }) => {
+  const p = s.ont.list("Proposal", (x) => x.action === "update_spec" && x.state === "open")[0];
+  s.actions.resolve(p.id, { verdict: "approve", by: { kind: "person", id: "P-001", clearance: "manager", role: "works_manager" } });
+  const sp = (await call(`/api/assets/${dp2.id}/specs`)).json.specs.find((x) => x.id === "SPC-DP-2-delivery");
+  assert.ok(!sp.sources.some((x) => x.sourceId === "M365-WRK-001"));
+}));

@@ -145,7 +145,7 @@ export function createServer(sys) {
       const c = p && ont.get(p.params.candidateId);
       return { ...sp, pending: p ? { proposalId: p.id, lo: p.params.lo, hi: p.params.hi, target: p.params.target, why: p.params.why, flag: p.params.flag || null,
           sourceTitle: c ? c.source.title : null, at: c ? c.source.at : null, text: c && readsSource(v, c.source) ? c.source.text : null } : null,
-        sources: ont.list("SpecCandidate", (x) => x.specId === sp.id && ["supports", "winner"].includes(x.verdict)).map((x) => cite(v, x)) };
+        sources: ont.list("SpecCandidate", (x) => x.specId === sp.id && ["supports", "winner"].includes(x.verdict) && !(sp.sourceRefs || []).some((r) => r.id === x.source.id)).map((x) => cite(v, x)) };
     });
     const open = view.list("WorkOrder", (w) => w.assetId === assetId && !["closed", "cancelled"].includes(w.state)).sort((a, b) => String(b.planned).localeCompare(String(a.planned)))[0];
     return { asset: { id: asset.id, positionTag: asset.positionTag, template: asset.template || null }, specs, corrections: withInherited(correctionsFor(view, asset), null), candidates: view.list("SpecCandidate", (x) => x.subject === assetId).map((x) => cite(v, x)), workOrderId: open ? open.id : null };
