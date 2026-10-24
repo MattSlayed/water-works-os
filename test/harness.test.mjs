@@ -151,10 +151,16 @@ test("demotion: a bounded agent that hits a hard constraint drops to assisted, w
   s.runtime.register(structuredClone(m), (ctx) => { ctx.act("record_reading", { targetId: permit.assetId, measure: "vibration", value: 3.1 }); });
   s.ont.upsert(specFromManifest(m));
   const other = s.ont.list("Person", (p) => p.clearance === "technician" && p.id !== permit.holderId)[0];
-  const run = s.runtime.run("Test Recorder", { actingUser: { id: other.id, kind: "person", clearance: "technician" } });
+  // a permit cap doing its job is not a breach (final review): the agent proposes and stays bounded
+  let run = s.runtime.run("Test Recorder", { actingUser: { id: other.id, kind: "person", clearance: "technician" } });
   assert.deepEqual(run.outputs.map((o) => o.status), ["proposed"]);
+  assert.equal(specFor(s.ont, "Test Recorder").mode, "bounded");
+  // a write a constraint refuses is one
+  ACTIONS.record_reading.control = true;
+  try { run = s.runtime.run("Test Recorder", { actingUser: SYS }); } finally { delete ACTIONS.record_reading.control; }
+  assert.match(run.refusals[0].reason, /control system/);
   assert.equal(specFor(s.ont, "Test Recorder").mode, "assisted");
-  assert.ok(s.audit.all().some((e) => e.action === "demote_agent" && e.ref === specId("Test Recorder") && /permit-holder/.test(e.reason)));
+  assert.ok(s.audit.all().some((e) => e.action === "demote_agent" && e.ref === specId("Test Recorder") && /no-control-write/.test(e.reason)));
 });
 
 const PW = { kind: "agent", id: "Process Watch", clearance: "manager", onBehalfOf: "SYSTEM" };
@@ -188,7 +194,7 @@ test("permit-holder: an agent acting for someone other than the holder only prop
   const copilot = (who) => s.actions.invoke({ action: "record_reading", params: { targetId: hlpb.id, measure: "vibration", value: 3.2 }, actor: { kind: "agent", id: "Technician Copilot", clearance: "technician", onBehalfOf: who }, autonomy: "act" });
   const r = copilot("P-030");
   assert.equal(r.status, "proposed");
-  assert.deepEqual(r.hits, ["permit-holder"]);
+  assert.deepEqual(r.hits, [], "a cap is not a breach");
   assert.equal(copilot("P-028").status, "done");
   const spec = specFor(s.ont, "Technician Copilot");
   s.ont.upsert({ id: spec.id, type: "AgentSpec", constraints: [] });

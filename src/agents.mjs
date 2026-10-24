@@ -5,7 +5,7 @@
 import { LEVELS } from "./actions.mjs";
 import * as F from "./functions.mjs";
 import { baseline } from "./scenes.mjs";
-import { specFor, shadowId, demoteIfNeeded, objectTime } from "./harness.mjs";
+import { specFor, demoteIfNeeded, objectTime } from "./harness.mjs";
 import { rootCause, rcaSummary } from "./rca.mjs";
 
 const v = (s) => ({ version: "1.0.0", owner: "P-002", ...s }); // P-002, a reliability engineer, owns the default agents (agents design §4.1)
@@ -133,6 +133,7 @@ const LOGIC = {
         if (!wos.length) { say(f.workOrderId ? `${f.workOrderId} is not an open job assigned to you.` : "No open job is assigned to you."); return outcome("asked"); }
         if (wos.length > 1) { say(`You have ${wos.length} open jobs: ${wos.map((w) => `${w.id} (${w.title})`).join("; ")}. Reply "start <WO id>".`); return outcome("asked"); }
         const r = ctx.act("start_execution", { workOrderId: wos[0].id, personId: me });
+        if (r.status === "proposed") { say(`Starting ${wos[0].id} waits for a person's approval (${r.ref}).`); return outcome("asked"); }
         if (r.status !== "done") { say(`Could not start ${wos[0].id}: ${r.reason}`); return outcome("asked"); }
         const e = ctx.get(r.objects[0]);
         say(`${wos[0].id} ${wos[0].title} (${tagOf(e.assetId)}), ${ctx.get(e.procedureId).title} v${e.procedureVersion}. ${stepLine(e)}`);
@@ -143,7 +144,8 @@ const LOGIC = {
         const next = ex.steps.find((s) => s.state === "todo");
         if (f.step && f.step !== next.step) { say(`The next step is ${next.step}. ${stepLine(ex)}`); return outcome("asked"); }
         const r = ctx.act("complete_step", { executionId: ex.id, step: next.step, value: f.value });
-        if (r.status !== "done") { say(r.reason); return outcome("asked"); }
+        if (r.status === "proposed") { say(`Step ${next.step} waits for a person's approval (${r.ref}).`); return outcome("asked"); }
+        if (r.status !== "done") { say(r.reason || `Step ${next.step} was not recorded.`); return outcome("asked"); }
         const st = ctx.get(ex.procedureId).steps.find((s) => s.step === next.step);
         const need = st.requires && st.requires.reading;
         let lead = `Step ${next.step} done.`, out = "recorded";
@@ -628,21 +630,13 @@ export function createRuntime({ ont, tel, actions, audit }) {
       act: (action, params, meta = {}) => {
         const no = (reason) => { run.refusals.push({ action, reason }); return call(action, params, { status: "refused", reason }); };
         if (!spec.tools.includes(action)) return no(`${action} not in manifest`);
-        // the decision statement sets the mode and the off switches (agents design §4.2, §4.6)
-        const hs = specFor(ont, spec.name), tool = hs && hs.tools.find((t) => t.action === action);
-        if (tool && !tool.enabled) return no("tool turned off");
-        if (hs && hs.mode === "shadow") {
-          const sha = ont.upsert({ id: shadowId(), type: "ShadowAction", agent: spec.name, specVersion: hs.version, runId: run.id, action, params, at: now, status: "pending", minClearance: opts.actingUser.clearance });
-          run.outputs.push({ action, status: "shadowed", ref: sha.id });
-          return call(action, params, { status: "shadowed", ref: sha.id, objects: [] });
-        }
-        const level = spec.autonomy[action] || "propose";
-        const autonomy = hs && hs.mode === "assisted" && LEVELS.indexOf(level) > LEVELS.indexOf("propose") ? "propose" : level;
+        // the action service applies the decision statement's mode and switches (agents design §4.2, §4.6)
+        const autonomy = spec.autonomy[action] || "propose";
         const r = actions.invoke({ action, params, actor: { kind: "agent", id: spec.name, clearance: opts.actingUser.clearance, onBehalfOf: opts.actingUser.id }, autonomy, runId: run.id, ...meta });
         if (r.hits) run.constraintHits.push(...r.hits);
         if (r.status === "refused") run.refusals.push({ action, reason: r.reason });
-        else run.outputs.push({ action, status: r.status, ref: (r.decision || r.proposal).id });
-        return call(action, params, { status: r.status, ref: r.decision ? r.decision.id : r.proposal ? r.proposal.id : null, objects: r.decision ? r.decision.objects : [], reason: r.reason });
+        else run.outputs.push({ action, status: r.status, ref: (r.decision || r.proposal || r.shadow).id });
+        return call(action, params, { status: r.status, ref: (r.decision || r.proposal || r.shadow || {}).id || null, objects: r.decision ? r.decision.objects : [], reason: r.reason });
       },
       think: (t) => run.reasoning.push(t),
       output: (o) => run.outputs.push(o)

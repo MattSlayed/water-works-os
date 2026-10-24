@@ -71,9 +71,11 @@ export function createCopilot({ ont, tel, actions, runtime, llm = askClaude }) {
     if (num && part && part.band) {
       const value = Number(num[0]);
       const { lo, hi, measure, unit } = part.band;
-      actions.invoke({ action: "record_reading", params: { targetId: part.id, measure, value, unit, workOrderId: s.workOrderId }, actor: agentActor(s.user), autonomy: autonomy("record_reading") });
+      const rec = actions.invoke({ action: "record_reading", params: { targetId: part.id, measure, value, unit, workOrderId: s.workOrderId }, actor: agentActor(s.user), autonomy: autonomy("record_reading") });
       const { inBand, side, by, finding } = bandCheck(part, value);
-      if (!inBand) {
+      if (!["done", "proposed"].includes(rec.status)) {
+        res = { answer: `${measure} ${value} ${unit}: not recorded (${rec.reason || "Technician Copilot is in shadow mode"}).`, citations: [{ id: part.id, label: `${part.name} band` }], lookHere: [part.id] };
+      } else if (!inBand) {
         const dev = actions.invoke({ action: "raise_deviation", params: { targetId: part.id, finding, disposition: "re-sleeve or replace; engineer to decide", assetId: part.assetId }, actor: agentActor(s.user), autonomy: autonomy("raise_deviation") });
         res = { answer: `${measure} ${value} ${unit} is ${by} ${unit} ${side} the limit (band ${lo}–${hi} ${unit}). Do not reuse it as it is. I have recorded the reading and proposed a deviation for the engineer${dev.proposal ? ` (${dev.proposal.id})` : ""}.`, citations: [{ id: part.id, label: `${part.name} band` }], lookHere: [part.id] };
       } else {

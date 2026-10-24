@@ -15,7 +15,7 @@ import { siteBounds, toLocal, toLonLat } from "./layout.mjs";
 import { regionPayload, sinceYouLeft, supplyRisks, focusOf, projectPanel } from "./regionview.mjs";
 import { sceneGrid } from "./scenes.mjs";
 import { liveStats } from "./geolive.mjs";
-import { applyTimeouts, specFor, statementSentences, shadowRecord, promotionGap, MODES } from "./harness.mjs";
+import { applyTimeouts, matchShadow, specFor, statementSentences, shadowRecord, promotionGap, MODES } from "./harness.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const WEB = path.resolve(here, "..", "web");
@@ -431,6 +431,7 @@ export function createServer(sys) {
     tel.tick(minutes);
     sys.trackers.syncTo(ont, tel.cursor(), audit); // pings and geofence events reach viewers as pruned ontology updates
     applyTimeouts(ont, tel.now()); // unanswered proposals are dropped or held, never applied (agents design §4.5)
+    matchShadow(ont, tel.now()); // shadow actions against what people did (agents design §4.2)
     if (dueScenes() > before) runtime.run("Geo Watch", { actingUser: SYSTEM_USER, trigger: { kind: "event", on: "Scene ingested" } });
     if (tel.now().slice(0, 13) !== hour) { hour = tel.now().slice(0, 13); runtime.run("Project Watch", { actingUser: SYSTEM_USER, trigger: { kind: "schedule" } }); }
     if (tel.now().slice(0, 10) !== day) { day = tel.now().slice(0, 10); runtime.run("Procedure Steward", { actingUser: SYSTEM_USER, trigger: { kind: "schedule" } }); }

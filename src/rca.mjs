@@ -22,10 +22,20 @@ function seriesTo(ctx, id, at, lookback = LOOKBACK_MIN) {
 }
 // Filters back-wash every 30 h, so each sample is compared with one a filter run earlier; raw water swings daily.
 const optsFor = (id, filter) => (filter ? { baseline: 2 * DAY, period: 1800 } : id === RAW ? { baseline: DAY, period: DAY } : { baseline: 2 * DAY });
+// The first change before `at`: the lookback doubles until the onset stops moving, so a change that began before the
+// window is found where it began, not invented at the window's edge. If the record runs out first, it is unknown.
 function onsetAt(ctx, id, at, filter = false) {
-  const s = seriesTo(ctx, id, at);
-  const i = s ? onsetMinute(s.values, optsFor(id, filter)) : null;
-  return i === null ? null : plus(s.t0, i);
+  const o = optsFor(id, filter), first = Math.max(o.baseline, o.period || 0);
+  let prev;
+  for (let lookback = LOOKBACK_MIN; lookback <= 64 * DAY; lookback *= 2) {
+    const s = seriesTo(ctx, id, at, lookback), i = s ? onsetMinute(s.values, o) : null;
+    if (i === null) return null;
+    const on = plus(s.t0, i);
+    if (on === prev) return on;
+    if (s.values.length <= lookback) return i >= first + 60 ? on : null; // the whole record searched
+    prev = on;
+  }
+  return null;
 }
 
 function symptomOf(ctx, targetId, at) {
@@ -78,7 +88,9 @@ export function rootCause(ctx, { targetId, at } = {}) {
       if (rawOn) {
         const lag = minutesBetween(rawOn, sym.onsetAt), late = timing(lag, window, tag);
         const ev = { id: RAW, ageMin: age(rawOn), note: `raw-water turbidity rose ${lag} min before ${tag}; travel window ${window.onsetH}–${window.tailH} h` };
-        const det = ctx.list("GeoDetection", (d) => d.kind === "plume" && d.status !== "rejected").sort((a, b) => (b.status === "confirmed") - (a.status === "confirmed"))[0];
+        // a plume seen in the 5 days before the raw-water rise, or the day after it
+        const seenNear = (d) => { const sc = ctx.get(d.sceneId), t = sc ? Date.parse(sc.acquiredAt) : NaN, r = Date.parse(rawOn); return t >= r - 5 * DAY * 60000 && t <= r + DAY * 60000; };
+        const det = ctx.list("GeoDetection", (d) => d.kind === "plume" && d.status !== "rejected" && seenNear(d)).sort((a, b) => (b.status === "confirmed") - (a.status === "confirmed"))[0];
         if (late) rejected.push({ id: RAW, label: "Raw-water turbidity", reason: late });
         else if (det) causes.push({ id: det.id, label: `Storm plume in the ${((ctx.get(det.aoiId) || {}).name || det.aoiId).toLowerCase()} (${det.status})`, kind: "contributing", status: det.status, weight: det.status === "confirmed" ? 0.7 : 0.5, onsetAt: rawOn,
           evidence: [{ id: det.id, ageMin: age(det.at), note: `${det.status} plume, confidence ${det.confidence}, scene ${det.sceneId}` }, ev], showMe: `#/region/focus=detection:${det.id}` });
@@ -102,8 +114,12 @@ export function rootCause(ctx, { targetId, at } = {}) {
 
   // breadth: one unit alone points to a local cause; several siblings to a common one
   const suffix = sym.sensorId.slice(`SEN-${tag}`.length);
-  const siblings = ctx.list("Asset", (a) => a.assetClass === asset.assetClass && a.id !== asset.id && a.positionTag);
-  const alike = siblings.filter((a) => onsetAt(ctx, `SEN-${a.positionTag}${suffix}`, sym.at, sym.filter)).map((a) => a.positionTag);
+  // peers as Maintenance Triage counts them (same template, same stage), with an onset within 6 h of the symptom's
+  const stageOf = (a) => (ctx.get(a.positionId) || {}).stage;
+  const kindOf = (a) => a.template || a.assetClass; // filters carry a class, not a template
+  const siblings = ctx.list("Asset", (a) => kindOf(a) === kindOf(asset) && a.id !== asset.id && a.positionTag && stageOf(a) === stageOf(asset));
+  const near = (on) => on && Math.abs(minutesBetween(on, sym.onsetAt)) <= 6 * 60;
+  const alike = siblings.filter((a) => near(onsetAt(ctx, `SEN-${a.positionTag}${suffix}`, sym.at, sym.filter))).map((a) => a.positionTag);
   if (alike.length < 2) {
     const history = [...ctx.list("Finding", (f) => f.assetId === asset.id && f.verified), ...ctx.list("WorkOrder", (w) => w.assetId === asset.id)].slice(-3);
     causes.push({ id: asset.id, label: `${tag} ${String(asset.assetClass || "").toLowerCase()}`.trim(), kind: "local", weight: 1, onsetAt: sym.onsetAt, showMe: `#/plant/${asset.positionId || asset.id}`,

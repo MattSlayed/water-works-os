@@ -82,8 +82,12 @@ export function matchShadow(ont, nowIso) {
   }
 }
 
+// The record promotion reads: shadow actions matched to people, and proposals people answered (approved = agreed,
+// edited or rejected = differed), so an agent in assisted mode can earn its way back to bounded.
 export function shadowRecord(ont, agent) {
-  const done = ont.list("ShadowAction", (x) => x.agent === agent && ["agreed", "differed", "missed"].includes(x.status));
+  const answered = { approved: "agreed", edited: "differed", rejected: "differed" };
+  const done = [...ont.list("ShadowAction", (x) => x.agent === agent && ["agreed", "differed", "missed"].includes(x.status)),
+    ...ont.list("Proposal", (p) => p.actorId === agent && answered[p.state]).map((p) => ({ status: answered[p.state] }))];
   const n = (s) => done.filter((x) => x.status === s).length;
   const cases = done.length, agreed = n("agreed");
   return { cases, agreed, differed: n("differed"), missed: n("missed"), agreePct: cases ? Math.round((agreed / cases) * 100) : 0 };

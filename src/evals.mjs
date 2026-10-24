@@ -49,7 +49,8 @@ export const EVALS = {
     { name: "alerts on F07", grader: "rule", check: (r, s) => s.ont.list("Alert").some((a) => a.title.startsWith("F07")) },
     { name: "does not alert on F03", grader: "rule", check: (r, s) => !s.ont.list("Alert").some((a) => a.title.startsWith("F03")) },
     { name: "backwash is a proposal, not an action", grader: "rule", check: (r, s) => s.ont.list("Proposal", (p) => p.action === "request_setpoint_change").length === 1 && s.ont.list("SetpointRequest").length === 0 },
-    { name: "flags DP-2 dose loss", prep: (s) => s.tel.tick(1e9), grader: "rule", check: (r, s) => s.ont.list("Alert").some((a) => a.title.startsWith("DP-2")) }
+    // to the end of the data, not past it: past it the telemetry is frozen and too stale to cite (agents design §4.3)
+    { name: "flags DP-2 dose loss", prep: (s) => s.tel.tick(18 * 60), grader: "rule", check: (r, s) => s.ont.list("Alert").some((a) => a.title.startsWith("DP-2")) }
   ],
   "Asset Watch": [
     { name: "alerts on HLP-B", grader: "rule", check: (r, s) => assetAlerts(s).some((a) => s.ont.get(a.assetId).positionTag === "HLP-B") },

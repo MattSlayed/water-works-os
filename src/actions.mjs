@@ -3,7 +3,7 @@
 import { rank } from "./ontology.mjs";
 import { currentProcedure, stepLock, bandCheck, partNamesIn, stepRequires } from "./functions.mjs";
 import { packageHash, currentPlantModel, writePlant } from "./plant.mjs";
-import { specFor, promotionGap, MODES, checkWrite, approvalTerms, expectedEffect } from "./harness.mjs";
+import { specFor, promotionGap, MODES, checkWrite, approvalTerms, expectedEffect, shadowId } from "./harness.mjs";
 
 export const LEVELS = ["read", "draft", "notify", "propose", "act"];
 const lv = (l) => LEVELS.indexOf(l);
@@ -141,8 +141,10 @@ export const ACTIONS = {
   record_isolation: def("act", "human", ["permitId", "point"], (ont, p, ctx) => {
     const pt = ont.get(p.permitId);
     if (!pt) throw new Error(`permit not found: ${p.permitId}`);
-    const isolations = [...(pt.isolations || []), { point: p.point, state: "applied", appliedBy: p.by || null, verifiedBy: p.verifiedBy || null }];
-    return { objects: [p.permitId], revert: setProps(ont, p.permitId, { isolations }) };
+    const isoId = nextId("ISO");
+    ont.upsert({ id: pt.id, type: "Permit", isolations: [...(pt.isolations || []), { isoId, point: p.point, state: "applied", appliedBy: p.by || null, verifiedBy: p.verifiedBy || null }] });
+    // relative: the revert removes this isolation only, whatever was recorded after it
+    return { objects: [p.permitId], revert: () => ont.upsert({ id: pt.id, type: "Permit", isolations: (ont.get(pt.id).isolations || []).filter((i) => i.isoId !== isoId) }) };
   }, "supervisor"),
   raise_alert: def("act", "act", ["targetId", "title"], (ont, p, ctx) => {
     const t = ont.get(p.targetId);
@@ -507,13 +509,23 @@ export function createActionService({ ont, audit, clock = wallClock, tel = null 
       if (actor.kind === "person") return apply(action, params, actor);
       if (a.ceiling === "human") return refuse(action, actor, `${action} is human-only`);
       // the harness: evidence freshness and the inherited hard constraints (agents design §4.3, §4.4)
-      const spec = specFor(ont, actor.id);
-      const chk = checkWrite({ ont, tel, actor, action, params, evidence, spec, now: now() });
-      let eff = LEVELS[Math.min(lv(autonomy || "propose"), lv(a.ceiling))];
-      const capped = chk.level && lv(eff) > lv(chk.level);
-      const hits = [...chk.hits, ...(capped ? chk.caps : [])];
+      // the decision statement's switches and mode bind every agent call, from a run or not (agents design §4.2, §4.6)
+      const spec = specFor(ont, actor.id), tool = spec && spec.tools.find((t) => t.action === action);
+      if (spec && ["paused", "retired"].includes(spec.state)) return refuse(action, actor, `${actor.id} is ${spec.state}`);
+      if (tool && !tool.enabled) return refuse(action, actor, "tool turned off");
+      if (spec && spec.mode === "shadow") {
+        const sha = ont.upsert({ id: shadowId(), type: "ShadowAction", agent: actor.id, specVersion: spec.version, runId: runId || null, action, params, at: now(), status: "pending", minClearance: actor.clearance });
+        log({ actor: actor.id, actorKind: actor.kind, action, outcome: "shadowed", ref: sha.id });
+        return { status: "shadowed", shadow: sha };
+      }
+      // the telemetry an alert names in its own evidence is cited too
+      const cited = [...[].concat(evidence || []), ...[].concat(params.evidence || []).filter((x) => typeof x === "string" && x.startsWith("SEN-"))];
+      const chk = checkWrite({ ont, tel, actor, action, params, evidence: cited, spec, now: now() });
+      let eff = LEVELS[Math.min(lv(autonomy || "propose"), lv(a.ceiling), spec && spec.mode === "assisted" ? lv("propose") : Infinity)];
+      // a breach is a write a constraint refused; a cap doing its job (a proposal instead of an act) is not one
+      const hits = chk.hits;
       if (chk.refuse) return { ...refuse(action, actor, chk.refuse), hits };
-      if (capped) eff = chk.level;
+      if (chk.level && lv(eff) > lv(chk.level)) eff = chk.level;
       const stamp = { constraintsChecked: chk.checked, evidenceAges: chk.ages };
       if (lv(eff) >= lv(a.needs)) return { ...apply(action, params, actor, { autonomy: eff, runId, ...stamp }), hits };
       if (lv(eff) >= lv("propose")) {
@@ -584,7 +596,7 @@ export function createActionService({ ont, audit, clock = wallClock, tel = null 
     reverts.delete(decisionId);
     ont.upsert({ id: decisionId, type: "Decision", reversed: true, reversedBy: by && by.id, reversedAt: now(), ...(kept.length ? { kept } : {}) });
     log({ actor: by && by.id, actorKind: by && by.kind, action: "reverse", outcome: "done", ref: decisionId, ...(kept.length ? { kept } : {}) });
-    return { status: "done" };
+    return { status: "done", kept };
   }
 
   return {

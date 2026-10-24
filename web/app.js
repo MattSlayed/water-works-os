@@ -611,6 +611,9 @@ const views = {
     view.innerHTML = `<h2>06 / agents propose, people decide</h2><h1>Proposals</h1>
       ${open.map((p) => `<section class="panel" style="margin-bottom:12px"><div class="row"><b>${esc(p.action)}</b><span class="meta">${esc(p.id)} · ${esc(p.actorId)}${p.runId ? ` · <a href="#/run/${esc(p.runId)}">${esc(p.runId)}</a>` : ""}</span></div>
         <pre>${esc(JSON.stringify(p.params, null, 2))}</pre>${p.evidence?.length ? `<p class="meta">Evidence: ${p.evidence.map((e) => esc(typeof e === "string" ? e : JSON.stringify(e))).join(" · ")}</p>` : ""}
+        ${p.card ? `<dl class="kv"><dt>Expected effect</dt><dd>${esc(p.card.expectedEffect)}</dd><dt>Evidence age</dt><dd>${p.card.evidence.map((e) => `${esc(e.id)} ${e.ageMin == null ? "" : `(${esc(e.ageMin)} min old)`}`).join(" · ") || "none cited"}</dd>
+          <dt>Constraints checked</dt><dd>${esc(p.card.constraintsChecked.join(", "))}</dd><dt>Alternatives</dt><dd>${p.card.alternatives.length ? esc(p.card.alternatives.map((x) => (typeof x === "string" ? x : JSON.stringify(x))).join("; ")) : "none given"}</dd>
+          <dt>Approver</dt><dd>${p.approver && p.approver.clearanceOf ? "anyone with the action's clearance" : esc(p.approver)}${p.escalateAt ? ` · ${esc(p.backup)} may answer from ${time(p.escalateAt)}` : ""}${p.timedOut ? " · timed out, held" : ""}</dd></dl>` : ""}
         <label class="field">Reason (needed to edit or reject)<textarea rows="2" data-reason="${esc(p.id)}"></textarea></label>
         <label class="field">Edited parameters (JSON, for Edit and approve)<textarea rows="2" data-params="${esc(p.id)}">${esc(JSON.stringify(p.params))}</textarea></label>
         <div class="btns"><button class="btn decide" data-verdict="approve" data-id="${esc(p.id)}">Approve</button><button class="btn decide" data-verdict="edit" data-id="${esc(p.id)}">Edit and approve</button><button class="btn decide" data-verdict="reject" data-id="${esc(p.id)}">Reject</button></div></section>`).join("") || `<p class="empty">Nothing is waiting for you.</p>`}
@@ -663,7 +666,7 @@ const views = {
       ${o.runs.length ? `<section class="panel"><h2>Agents that read this</h2><ul class="list">${o.runs.map((r) => `<li><a href="#/run/${r.id}">${esc(r.agent)}</a> <span class="meta">${time(r.plantTime)}</span></li>`).join("")}</ul></section>` : ""}
       ${o.related.decisions.length ? `<section class="panel"><h2>Decisions</h2><ul class="list">${o.related.decisions.map((d) => `<li class="row"><span>${esc(d.action)} by ${esc(d.actorId)}${d.approvedBy ? ` · approved by ${esc(d.approvedBy)}` : ""}</span>${d.reversed ? pill("reversed", "rejected") : d.reversible ? `<button class="btn" data-reverse="${esc(d.id)}">Reverse</button>` : ""}</li>`).join("")}</ul></section>` : ""}
       </div></div>`;
-    view.querySelectorAll("[data-reverse]").forEach((b) => b.addEventListener("click", async () => { try { await api(`/api/decisions/${encodeURIComponent(b.dataset.reverse)}/reverse`, { method: "POST" }); toast("Reversed."); views.object(id); } catch (e) { toast(e.message); } }));
+    view.querySelectorAll("[data-reverse]").forEach((b) => b.addEventListener("click", async () => { try { const r = await api(`/api/decisions/${encodeURIComponent(b.dataset.reverse)}/reverse`, { method: "POST" }); toast(r.kept && r.kept.length ? `Reversed; kept later changes to ${r.kept.join(", ")}.` : "Reversed."); views.object(id); } catch (e) { toast(e.message); } }));
   },
 
   // ---------- workforce intelligence (Phase 2) ----------
