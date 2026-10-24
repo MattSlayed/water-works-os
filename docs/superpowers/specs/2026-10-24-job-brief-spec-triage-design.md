@@ -1,6 +1,6 @@
 # Design: Job briefs and spec triage (Phase 3, project 4)
 
-Status: **draft for Matthew's approval.** The builder check is answered in §15.
+Status: **approved by Matthew 2026-10-24.** The builder check is answered in §15.
 
 ## Where this sits
 
