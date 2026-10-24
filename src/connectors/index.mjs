@@ -3,6 +3,7 @@
 // deterministically and in memory. The CMMS is the ontology itself. Nothing here touches the network.
 // shortcut: in-memory stores; a real tenant swaps each store for its API client behind the same functions.
 import { seedAccounts } from "./seed.mjs";
+import { seedEngineering, WORKS_MAILBOX } from "./engineering.mjs";
 
 export const CONNECTOR_KINDS = ["m365.mail", "m365.files", "m365.teams", "google.mail", "google.drive", "google.sheets", "erp", "cmms"];
 const copy = (x) => structuredClone(x);
@@ -10,13 +11,14 @@ const copy = (x) => structuredClone(x);
 export function createConnectors({ seed = 7, nowIso = () => new Date().toISOString() } = {}) {
   const now = typeof nowIso === "function" ? nowIso : () => nowIso;
   const s = seedAccounts(seed, now());
-  const files = s.files, moves = s.moves, invoices = s.invoices, teams = [];
-  let fileSeq = files.length, invSeq = invoices.length;
+  const eng = seedEngineering();
+  const files = [...s.files, ...eng.files], moves = s.moves, invoices = s.invoices, teams = [];
+  let fileSeq = s.files.length, invSeq = invoices.length;
   const under = (item, path) => item.parentReference.path === `/drive/root:/${path}` || item.parentReference.path.startsWith(`/drive/root:/${path}/`);
 
   return {
     m365: {
-      mail: { list: (mailbox, { since } = {}) => (mailbox === "accounts@riverbend.example" ? s.messages.filter((m) => !since || m.receivedDateTime >= since).map(copy) : []) },
+      mail: { list: (mailbox, { since } = {}) => (mailbox === "accounts@riverbend.example" ? s.messages : mailbox === WORKS_MAILBOX ? eng.messages : []).filter((m) => !since || m.receivedDateTime >= since).map(copy) },
       files: {
         list: (path = "") => files.filter((f) => !path || under(f, path)).map(copy),
         copy(attachmentId, path, { by, at = now() } = {}) {
@@ -40,7 +42,7 @@ export function createConnectors({ seed = 7, nowIso = () => new Date().toISOStri
     google: {
       mail: { list: () => [] }, // Gmail users.messages: { id, threadId, snippet, payload: { headers } }; nothing seeded
       drive: { list: () => [] }, // Drive files: { id, name, mimeType, parents }; nothing seeded
-      sheets: { values: (range) => ({ range, majorDimension: "ROWS", values: [] }) }
+      sheets: { values: (range) => ({ range, majorDimension: "ROWS", values: copy(eng.sheets[range] || []) }) }
     },
     erp: {
       suppliers: () => s.suppliers.map(copy),
@@ -54,7 +56,7 @@ export function createConnectors({ seed = 7, nowIso = () => new Date().toISOStri
       },
       unpost(id) { const i = invoices.findIndex((x) => x.id === id); if (i >= 0) invoices.splice(i, 1); }
     },
-    attachment: (id) => (s.attachments.has(id) ? copy(s.attachments.get(id)) : null),
+    attachment: (id) => { const a = s.attachments.get(id) || eng.attachments.get(id); return a ? copy(a) : null; },
     traps: { ...s.traps },
     chatPhoto: { ...s.chatPhoto }
   };
