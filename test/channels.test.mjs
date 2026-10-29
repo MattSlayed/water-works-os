@@ -106,22 +106,22 @@ test("a contractor's post becomes a claim with photo evidence; a contractor's 'd
   const t = setup();
   const claims = () => t.sys.ont.list("ProgressClaim").length;
   const n = claims();
-  const r = await t.say("Bearings out and slewing ring replaced", { ch: "CHN-GRP-CL3", from: "PAR-001", media: ["photo:cl3-ring.jpg"] });
+  const r = await t.say("Bearings out and slewing ring replaced", { ch: "CHN-GRP-CL4", from: "PAR-001", media: ["photo:cl3-ring.jpg"] });
   assert.equal(r.replies.length, 0);
   assert.equal(claims(), n + 1);
   const c = t.sys.ont.list("ProgressClaim").pop();
   assert.equal(c.by, "PAR-001");
   assert.equal(c.milestoneId, "M3");
   assert.deepEqual(c.evidence, ["photo:cl3-ring.jpg"]);
-  assert.equal(t.sys.ont.get("PRJ-CL3").milestones.find((m) => m.id === "M3").confirmedAt, null);
+  assert.equal(t.sys.ont.get("PRJ-CL4").milestones.find((m) => m.id === "M3").confirmedAt, null);
   const decisions = t.sys.ont.list("Decision").length;
-  const d = await t.say("done with the welds, HLP-B is running fine", { ch: "CHN-GRP-CL3", from: "PAR-002" });
+  const d = await t.say("done with the welds, HLP-B is running fine", { ch: "CHN-GRP-CL4", from: "PAR-002" });
   assert.equal(d.outcome, "dropped"); // a group keeps only claims and issues (review #25)
   assert.equal(d.message, null);
   assert.equal(t.sys.ont.list("Decision").length, decisions);
-  const i = await t.say("issue: gearbox breather missing", { ch: "CHN-GRP-CL3", from: "PAR-003" });
+  const i = await t.say("issue: gearbox breather missing", { ch: "CHN-GRP-CL4", from: "PAR-003" });
   assert.equal(i.outcome, "recorded");
-  assert.equal(t.sys.ont.list("Issue").pop().projectId, "PRJ-CL3");
+  assert.equal(t.sys.ont.list("Issue").pop().projectId, "PRJ-CL4");
 });
 
 test("a sender who is not in the channel is refused; off-topic chat is not stored", async () => {
@@ -129,7 +129,7 @@ test("a sender who is not in the channel is refused; off-topic chat is not store
   await assert.rejects(t.sys.channels.inbound("CHN-P-028", "P-029", { text: "start" }), /not a member/);
   await assert.rejects(t.sys.channels.inbound("CHN-NOPE", "P-028", { text: "start" }), /channel not found/);
   const n = t.sys.ont.list("Message").length;
-  const r = await t.say("Braai at mine on Saturday", { ch: "CHN-GRP-CL3", from: "P-004" });
+  const r = await t.say("Braai at mine on Saturday", { ch: "CHN-GRP-CL4", from: "P-004" });
   assert.equal(r.outcome, "dropped");
   assert.equal(r.message, null);
   assert.equal(t.sys.ont.list("Message").length, n);

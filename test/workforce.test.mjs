@@ -49,7 +49,7 @@ test("an out-of-band reading on a job counts against first-time-right", () => {
 
 test("projectStatus of the seeded contract: quiet, two claimed, one confirmed, one open issue", () => {
   const sys = createSystem({ seed: 7 });
-  const st = projectStatus(sys.ont.get("PRJ-CL3"), sys.ont.list("ProgressClaim"), sys.ont.list("Issue"), sys.tel.now());
+  const st = projectStatus(sys.ont.get("PRJ-CL4"), sys.ont.list("ProgressClaim"), sys.ont.list("Issue"), sys.tel.now());
   assert.equal(st.lastReportAt, "2026-10-10T16:40:00Z");
   assert.equal(st.daysSinceReport, 3);
   assert.equal(st.quiet, true);
@@ -103,7 +103,7 @@ test("Scribe: an issue close-out is drafted and never submitted; a project repor
   const c = sys.ont.list("Draft", (d) => d.kind === "issue-closeout").pop();
   assert.equal(c.state, "draft");
   assert.match(c.body, /gasket/);
-  sys.runtime.run("Scribe", { actingUser: SYS, scope: { projectId: "PRJ-CL3" } });
+  sys.runtime.run("Scribe", { actingUser: SYS, scope: { projectId: "PRJ-CL4" } });
   const w = sys.ont.list("Draft", (d) => d.kind === "weekly-report").pop();
   assert.equal(w.state, "draft");
   assert.match(w.body, /2 of 6 milestones claimed, 1 confirmed/);
@@ -114,19 +114,19 @@ test("Project Watch: one quiet-project notice per plant day; the weekly status p
   const sys = createSystem({ seed: 7 });
   const run = () => sys.runtime.run("Project Watch", { actingUser: SYS });
   run(); run();
-  const quiet = sys.ont.list("Notification", (n) => n.aboutId === "PRJ-CL3" && /quiet/i.test(n.message));
+  const quiet = sys.ont.list("Notification", (n) => n.aboutId === "PRJ-CL4" && /quiet/i.test(n.message));
   assert.equal(quiet.length, 1);
   assert.deepEqual([...quiet[0].to].sort(), ["P-001", "P-004"]);
   assert.ok(sys.ont.view({ id: "P-004", clearance: "supervisor" }).get(quiet[0].id), "the planner sees a notice addressed to them");
   assert.equal(sys.ont.view({ id: "P-028", clearance: "technician" }).get(quiet[0].id), null);
-  const posts = () => sys.ont.list("Message", (m) => m.channelId === "CHN-GRP-CL3" && m.direction === "out");
+  const posts = () => sys.ont.list("Message", (m) => m.channelId === "CHN-GRP-CL4" && m.direction === "out");
   assert.equal(posts().length, 0);
   sys.tel.tick(57 * 60); // Friday 2026-10-16 15:00
   run(); run();
   assert.equal(posts().length, 1);
-  assert.match(posts()[0].text, /CL-3|Clarifier 3/);
+  assert.match(posts()[0].text, /CL-4|Clarifier 4/);
   assert.match(posts()[0].text, /2 of 6 milestones claimed/);
-  assert.equal(sys.ont.list("Notification", (n) => n.aboutId === "PRJ-CL3" && /quiet/i.test(n.message)).length, 2);
+  assert.equal(sys.ont.list("Notification", (n) => n.aboutId === "PRJ-CL4" && /quiet/i.test(n.message)).length, 2);
 });
 
 test("Procedure Steward flags steps, not people, once a week", () => {
@@ -143,10 +143,10 @@ test("Procedure Steward flags steps, not people, once a week", () => {
 
 test("Ask answers where a project stands", () => {
   const sys = createSystem({ seed: 7 });
-  const r = sys.runtime.run("Ask", { actingUser: SYS, mission: "Where is the CL-3 refurb?" });
+  const r = sys.runtime.run("Ask", { actingUser: SYS, mission: "Where is the CL-4 refurb?" });
   const a = r.outputs[0];
-  assert.match(a.text, /Clarifier 3 scraper drive refurbishment/);
+  assert.match(a.text, /Clarifier 4 scraper drive refurbishment/);
   assert.match(a.text, /2026-11-06/);
   assert.match(a.text, /3 days/);
-  assert.ok(a.cites.includes("PRJ-CL3"));
+  assert.ok(a.cites.includes("PRJ-CL4"));
 });

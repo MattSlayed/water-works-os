@@ -115,7 +115,7 @@ export const EVALS = {
   "Chat Intake": [
     { name: "start begins the assigned job and replies with its brief before step 1", prep: (s) => inbound(s, "CHN-P-028", "P-028", "start"), grader: "rule", check: (r, s) => s.ont.list("Execution", (e) => e.personId === "P-028" && e.state === "running").length === 1 && outbound(s, "CHN-P-028").length === 1 && /Before you start:[\s\S]*Reply "brief" for the full brief, "start step 1" to begin\./.test(outbound(s, "CHN-P-028")[0].text) },
     { name: "done without a job asks once and writes nothing else", prep: (s) => inbound(s, "CHN-P-030", "P-030", "done"), grader: "rule", check: (r, s) => outbound(s, "CHN-P-030").length === 1 && r.outputs.filter((o) => o.action && o.action !== "send_message").length === 0 },
-    { name: "a contractor's progress is a claim, never a confirmation", prep: (s) => inbound(s, "CHN-GRP-CL3", "PAR-001", "Bearings out and slewing ring replaced"), grader: "rule", check: (r, s) => s.ont.list("ProgressClaim", (c) => c.milestoneId === "M3" && c.by === "PAR-001").length === 1 && !s.ont.get("PRJ-CL3").milestones.find((m) => m.id === "M3").confirmedAt && outbound(s, "CHN-GRP-CL3").length === 0 }
+    { name: "a contractor's progress is a claim, never a confirmation", prep: (s) => inbound(s, "CHN-GRP-CL4", "PAR-001", "Bearings out and slewing ring replaced"), grader: "rule", check: (r, s) => s.ont.list("ProgressClaim", (c) => c.milestoneId === "M3" && c.by === "PAR-001").length === 1 && !s.ont.get("PRJ-CL4").milestones.find((m) => m.id === "M3").confirmedAt && outbound(s, "CHN-GRP-CL4").length === 0 }
   ],
   "Scribe": [
     { name: "drafts a job card for a finished job", prep: () => ({ scope: { executionId: "EXE-H01" } }), grader: "exact", value: (r, s) => drafts(s, "job-card").length, expect: 1 },
@@ -123,9 +123,9 @@ export const EVALS = {
     { name: "an issue close-out stays a draft", prep: () => ({ scope: { issueId: "ISS-H06" } }), grader: "exact", value: (r, s) => drafts(s, "issue-closeout")[0].state, expect: "draft" }
   ],
   "Project Watch": [
-    { name: "tells the owner about a quiet project", grader: "rule", check: (r, s) => s.ont.list("Notification", (n) => n.aboutId === "PRJ-CL3" && n.to.includes("P-004")).length === 1 },
-    { name: "does not post to the group mid-week", grader: "exact", value: (r, s) => s.ont.list("Message", (m) => m.channelId === "CHN-GRP-CL3" && m.direction === "out").length, expect: 0 },
-    { name: "posts the weekly status on Friday afternoon", prep: (s) => s.tel.tick(57 * 60), grader: "exact", value: (r, s) => s.ont.list("Message", (m) => m.channelId === "CHN-GRP-CL3" && m.direction === "out").length, expect: 1 }
+    { name: "tells the owner about a quiet project", grader: "rule", check: (r, s) => s.ont.list("Notification", (n) => n.aboutId === "PRJ-CL4" && n.to.includes("P-004")).length === 1 },
+    { name: "does not post to the group mid-week", grader: "exact", value: (r, s) => s.ont.list("Message", (m) => m.channelId === "CHN-GRP-CL4" && m.direction === "out").length, expect: 0 },
+    { name: "posts the weekly status on Friday afternoon", prep: (s) => s.tel.tick(57 * 60), grader: "exact", value: (r, s) => s.ont.list("Message", (m) => m.channelId === "CHN-GRP-CL4" && m.direction === "out").length, expect: 1 }
   ],
   "Procedure Steward": [
     { name: "flags the pump procedure", grader: "rule", check: (r, s) => s.ont.list("Notification", (n) => n.aboutId === "PRC-CENTRIFUGAL_PUMP-v3").length === 1 },

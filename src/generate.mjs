@@ -207,7 +207,7 @@ export function generateWorks(seed = 7) {
     link(zoneId, "CONTAINS", id);
     for (const [key, sname, unit, alarmLo, alarmHi, sz] of sensors) {
       const sid = `SEN-${k}-${key}`;
-      add({ id: sid, type: "Sensor", processUnitId: id, zoneId: sz || zoneId, key, name: `${name.split(" ")[0]} ${sname.toLowerCase()}`, unit, alarmLo, alarmHi, historianTag: `BULK.${k}.${key.toUpperCase()}` }, "SYNTH-HIST");
+      add({ id: sid, type: "Sensor", processUnitId: id, zoneId: sz || zoneId, key, name: `${name.match(/^.*?\d+/)[0]} ${sname.toLowerCase()}`, unit, alarmLo, alarmHi, historianTag: `BULK.${k}.${key.toUpperCase()}` }, "SYNTH-HIST");
       link(sid, "MEASURES", id);
     }
   }
@@ -451,22 +451,22 @@ export function generateWorks(seed = 7) {
   ]) add({ id, type: "Requirement", framework, criterion }, "CONFIG");
 
 
-  // ---- Workforce intelligence (Phase 2): chat channels, the CL-3 contract, past jobs, issues and field notes ----
+  // ---- Workforce intelligence (Phase 2): chat channels, the CL-4 contract, past jobs, issues and field notes ----
   const byId = (id) => objects.find((o) => o.id === id);
   const hashNo = (s) => createHash("sha256").update(s).digest("hex");
   people.forEach((p, i) => {
     add({ id: `CHN-${p.id}`, type: "Channel", kind: "whatsapp", address: `+27 60 000 ${1000 + i}`, personId: p.id, members: [p.id], audience: [p.id], noticePosted: true }, "CHANNEL-STUB");
     link(`CHN-${p.id}`, "CHANNEL_OF", p.id);
   });
-  const cl3 = assets.find((a) => a.positionTag === "CL-3");
+  const cl4 = assets.find((a) => a.positionTag === "CL-4");
   [["PAR-001", "Contractor site agent"], ["PAR-002", "Contractor fitter"], ["PAR-003", "Contractor fitter"]].forEach(([id, label], i) =>
-    add({ id, type: "Participant", label, employer: "Synthetic Contractor (Pty) Ltd", numberHash: hashNo(`+27 82 555 010${i}`), channelIds: ["CHN-GRP-CL3"] }, "CHANNEL-STUB"));
+    add({ id, type: "Participant", label, employer: "Synthetic Contractor (Pty) Ltd", numberHash: hashNo(`+27 82 555 010${i}`), channelIds: ["CHN-GRP-CL4"] }, "CHANNEL-STUB"));
   const grp = ["PAR-001", "PAR-002", "PAR-003", "P-004", sups[1].id];
-  add({ id: "CHN-GRP-CL3", type: "Channel", kind: "whatsapp", address: "group:cl3-refurb", groupName: "CL-3 refurb", projectId: "PRJ-CL3", members: grp, audience: grp, noticePosted: true }, "CHANNEL-STUB");
+  add({ id: "CHN-GRP-CL4", type: "Channel", kind: "whatsapp", address: "group:cl4-refurb", groupName: "CL-4 refurb", projectId: "PRJ-CL4", members: grp, audience: grp, noticePosted: true }, "CHANNEL-STUB");
   const ms = (id, title, due, keywords, extra = {}) => ({ id, title, due, keywords, claimedAt: null, confirmedAt: null, confirmedBy: null, ...extra });
   add({
-    id: "PRJ-CL3", type: "Project", title: "Clarifier 3 scraper drive refurbishment", kind: "contract", contractorEmployer: "Synthetic Contractor (Pty) Ltd",
-    assetIds: [cl3.id], assetId: cl3.id, start: "2026-09-28", end: "2026-11-06", ownerId: "P-004", channelId: "CHN-GRP-CL3", autoSubmit: false,
+    id: "PRJ-CL4", type: "Project", title: "Clarifier 4 scraper drive refurbishment", kind: "contract", contractorEmployer: "Synthetic Contractor (Pty) Ltd",
+    assetIds: [cl4.id], assetId: cl4.id, start: "2026-09-28", end: "2026-11-06", ownerId: "P-004", channelId: "CHN-GRP-CL4", autoSubmit: false,
     milestones: [
       ms("M1", "Isolation and access scaffold", "2026-10-02", ["isolation", "scaffold"], { claimedAt: "2026-10-01T15:10:00Z", confirmedAt: "2026-10-02T08:05:00Z", confirmedBy: sups[1].id }),
       ms("M2", "Scraper arms and drive removed", "2026-10-09", ["scraper"], { claimedAt: "2026-10-08T16:20:00Z" }),
@@ -476,30 +476,31 @@ export function generateWorks(seed = 7) {
       ms("M6", "Commissioning and handover", "2026-11-06", ["commission", "handover"])
     ]
   }, "SYNTH-ERP");
-  link("PRJ-CL3", "TARGETS", cl3.id);
-  // Region design §4.4: CL-3 gains a footprint and money; six more projects, run by the works (no contractor group yet).
+  link("PRJ-CL4", "TARGETS", cl4.id);
+  cl4.state = "out of service"; // drained for the refurbishment (Region design §4.4)
+  // Region design §4.4: CL-4 gains a footprint and money; six more projects, run by the works (no contractor group yet).
   for (const [id, f] of PROJECTS) {
-    if (id === "PRJ-CL3") { Object.assign(byId(id), f, { takesOutOfService: f.takesOutOfService.map((t) => ({ ...t, id: cl3.id })) }); continue; }
+    if (id === "PRJ-CL4") { Object.assign(byId(id), f, { takesOutOfService: f.takesOutOfService.map((t) => ({ ...t, id: cl4.id })) }); continue; }
     add({ id, type: "Project", contractorEmployer: "Synthetic Contractor (Pty) Ltd", assetIds: [], assetId: null, channelId: null, autoSubmit: false, ...f }, "SYNTH-ERP");
   }
   // Tags on vehicles and portable plant (Region design §4.3); their pings come from src/trackers.mjs
   // a year of Sentinel scene statistics, grids for the telemetry window (Region design §5)
   for (const sc of makeScenes({ seed })) add(sc, "SYNTH-EO");
   for (const t of TRACKERS) add({ id: t.id, type: "Tracker", kind: t.kind, name: t.name, boundTo: t.boundTo, projectId: t.projectId || null, geofences: t.geofences }, "SYNTH-AVL");
-  link("CHN-GRP-CL3", "CHANNEL_OF", "PRJ-CL3");
+  link("CHN-GRP-CL4", "CHANNEL_OF", "PRJ-CL4");
   const msg = (id, channelId, from, at, text, extra = {}) => add({ id, type: "Message", channelId, direction: from === "WORKS" ? "out" : "in", from, at, text, media: [], audience: byId(channelId).audience, ...extra }, "CHANNEL-STUB");
   const progress = { parsed: { kind: "progress", confidence: 0.7 }, outcome: "recorded" };
-  msg("MSG-H01", "CHN-GRP-CL3", "PAR-001", "2026-10-01T15:10:00Z", "Scaffold up and isolation confirmed with your supervisor, ready to start.", { ...progress, media: ["photo:cl3-scaffold.jpg"] });
-  msg("MSG-H02", "CHN-GRP-CL3", "PAR-002", "2026-10-06T07:30:00Z", "Crew on site today, unbolting the drive cover.", progress);
-  msg("MSG-H03", "CHN-GRP-CL3", "PAR-001", "2026-10-08T16:20:00Z", "Scraper arms off and drive removed, pics attached.", { ...progress, media: ["photo:cl3-arms-1.jpg", "photo:cl3-arms-2.jpg"] });
-  msg("MSG-H04", "CHN-GRP-CL3", "PAR-002", "2026-10-08T17:00:00Z", "Issue: gearbox oil seal leaking on removal", { parsed: { kind: "issue", confidence: 0.9 }, outcome: "recorded" });
-  msg("MSG-H05", "CHN-GRP-CL3", "PAR-001", "2026-10-10T16:40:00Z", "Parts delivered today, fitting next week.", progress);
+  msg("MSG-H01", "CHN-GRP-CL4", "PAR-001", "2026-10-01T15:10:00Z", "Scaffold up and isolation confirmed with your supervisor, ready to start.", { ...progress, media: ["photo:cl4-scaffold.jpg"] });
+  msg("MSG-H02", "CHN-GRP-CL4", "PAR-002", "2026-10-06T07:30:00Z", "Crew on site today, unbolting the drive cover.", progress);
+  msg("MSG-H03", "CHN-GRP-CL4", "PAR-001", "2026-10-08T16:20:00Z", "Scraper arms off and drive removed, pics attached.", { ...progress, media: ["photo:cl4-arms-1.jpg", "photo:cl4-arms-2.jpg"] });
+  msg("MSG-H04", "CHN-GRP-CL4", "PAR-002", "2026-10-08T17:00:00Z", "Issue: gearbox oil seal leaking on removal", { parsed: { kind: "issue", confidence: 0.9 }, outcome: "recorded" });
+  msg("MSG-H05", "CHN-GRP-CL4", "PAR-001", "2026-10-10T16:40:00Z", "Parts delivered today, fitting next week.", progress);
   msg("MSG-H11", `CHN-${millwrights[0].id}`, millwrights[0].id, "2026-10-13T15:30:00Z", "HLP-B DE bearing sounds worn, housing warm to touch.", { parsed: { kind: "observation", confidence: 0.7 }, outcome: "recorded" });
   msg("MSG-H12", `CHN-${millwrights[0].id}`, "WORKS", "2026-10-13T15:31:00Z", "Logged against HLP-B. Asset Watch has it on alert and the 6-monthly survey is assigned to you.", { inReplyTo: "MSG-H11" });
   [["PCL-H01", "M1", "MSG-H01"], ["PCL-H02", null, "MSG-H02"], ["PCL-H03", "M2", "MSG-H03"], ["PCL-H05", null, "MSG-H05"]].forEach(([id, milestoneId, messageId]) => {
     const m = byId(messageId);
-    add({ id, type: "ProgressClaim", projectId: "PRJ-CL3", milestoneId, messageId, by: m.from, at: m.at, text: m.text, evidence: m.media, confirmed: milestoneId === "M1" }, "CHANNEL-STUB");
-    link(id, "CLAIMS", "PRJ-CL3");
+    add({ id, type: "ProgressClaim", projectId: "PRJ-CL4", milestoneId, messageId, by: m.from, at: m.at, text: m.text, evidence: m.media, confirmed: milestoneId === "M1" }, "CHANNEL-STUB");
+    link(id, "CLAIMS", "PRJ-CL4");
   });
 
   // Past jobs, as executed against the released procedures: performance has something to read.
@@ -533,7 +534,7 @@ export function generateWorks(seed = 7) {
   const issue = (id, o) => { add({ id, type: "Issue", partId: null, workOrderId: null, projectId: null, procedureId: null, step: null, evidence: [], assigneeId: null, ...o }, "APP"); if (o.assetId) link(id, "ON", o.assetId); };
   issue("ISS-H01", { title: "Shaft sleeve scored, no spare sleeve in stores", state: "open", raisedBy: millwrights[2].id, assetId: astOf("HLP-C").id, partId: partOf("HLP-C", "Shaft sleeve").id, procedureId: "PRC-CENTRIFUGAL_PUMP-v3", step: 8, at: "2026-09-22T10:00:00Z" });
   issue("ISS-H02", { title: "SOP step 6 does not say to rig the lifting beam first", state: "triaged", raisedBy: millwrights[1].id, assetId: astOf("RWP-B").id, procedureId: "PRC-CENTRIFUGAL_PUMP-v3", step: 6, at: "2026-08-14T09:00:00Z" });
-  issue("ISS-H03", { title: "Gearbox oil seal leaking on removal", state: "in_work", raisedBy: "PAR-002", assetId: cl3.id, projectId: "PRJ-CL3", assigneeId: "P-004", at: "2026-10-08T17:00:00Z" });
+  issue("ISS-H03", { title: "Gearbox oil seal leaking on removal", state: "in_work", raisedBy: "PAR-002", assetId: cl4.id, projectId: "PRJ-CL4", assigneeId: "P-004", at: "2026-10-08T17:00:00Z" });
   issue("ISS-H04", { title: "DP-2 suction line has no air-release valve", state: "open", raisedBy: fitter.id, assetId: astOf("DP-2").id, procedureId: "PRC-DOSING_PUMP-v3", step: 2, at: "2026-10-12T11:00:00Z" });
   issue("ISS-H05", { title: "Belt guard bolts seized on BLW-A", state: "done", raisedBy: millwrights[3].id, assetId: astOf("BLW-A").id, procedureId: "PRC-BLOWER-v3", step: 3, at: "2026-07-03T08:30:00Z" });
   issue("ISS-H06", { title: "Wrong gasket size on the HLP-A drawing", state: "done", raisedBy: millwrights[0].id, assetId: astOf("HLP-A").id, at: "2026-06-18T13:00:00Z" });

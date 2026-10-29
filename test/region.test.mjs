@@ -90,7 +90,7 @@ test("remote sites: seven, on the bulk line, PS-2's yard in Z14 with its MCC sen
 
 test("remote sites: 18 sensors, each with a live reading", () => {
   const ids = ["PS1", "PS2"].flatMap((k) => ["flow", "press", "state"].map((m) => `SEN-${k}-${m}`))
-    .concat(["RES1", "RES2"].flatMap((k) => ["level", "in", "out"].map((m) => `SEN-${k}-${m}`)))
+    .concat(["CR1", "CR2"].flatMap((k) => ["level", "in", "out"].map((m) => `SEN-${k}-${m}`)))
     .concat(["VC1", "VC2", "VC3"].flatMap((k) => ["press", "pos"].map((m) => `SEN-${k}-${m}`)));
   assert.equal(ids.length, 18);
   for (const id of ids) {
@@ -100,7 +100,7 @@ test("remote sites: 18 sensors, each with a live reading", () => {
 });
 
 test("remote sites: RES-2 holds 8 to 10 hours at today's outflow with cell B out of service", () => {
-  const res2 = sys.ont.get("RS-RES2"), level = sys.tel.latest("SEN-RES2-level").value, out = sys.tel.latest("SEN-RES2-out").value;
+  const res2 = sys.ont.get("RS-CR2"), level = sys.tel.latest("SEN-CR2-level").value, out = sys.tel.latest("SEN-CR2-out").value;
   const hours = ((level / 100) * (res2.capacityMl / 2)) / out * 24; // PRJ-RES2 takes cell B (half) out
   assert.ok(hours >= 8 && hours <= 10, `${hours} h`);
 });

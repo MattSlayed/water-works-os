@@ -120,13 +120,17 @@ export function supplyRisks(sys, v) {
   if (plumes.length && WORST.indexOf(band) < WORST.indexOf("raised")) band = "raised";
   const cap = treatmentCapacity(sys.ont, day), demand = view.get("SEN-OUT-flow") ? sys.tel.latest("SEN-OUT-flow") : null;
   const impacts = supplyImpacts(sys.ont, day);
-  const sites = view.list("RemoteSite", (s) => s.kind === "reservoir").map((s) => {
-    const k = s.id.slice(3), lv = sys.tel.latest(`SEN-${k}-level`), out = sys.tel.latest(`SEN-${k}-out`);
-    const cut = impacts.find((x) => sys.ont.get(x.projectId).takesOutOfService.some((t) => t.id === s.id) && x.storagePct);
-    const usableMl = s.capacityMl * (1 + (cut ? cut.storagePct : 0) / 100);
+  const cutOf = (id) => impacts.find((x) => sys.ont.get(x.projectId).takesOutOfService.some((t) => t.id === id) && x.storagePct);
+  const site = (id, name, capacityMl, lv, out, extra = {}) => {
+    const cut = cutOf(id), usableMl = capacityMl * (1 + (cut ? cut.storagePct : 0) / 100);
     const storageHours = lv && out && out.value ? Math.round((((lv.value / 100) * usableMl) / out.value) * 24 * 10) / 10 : null;
-    return { id: s.id, name: s.name, levelPct: lv && lv.value, outflowMlD: out && out.value, usableMl, storageHours, flagged: storageHours !== null && storageHours < 12, project: cut ? cut.projectId : null };
-  });
+    return { id, name, levelPct: lv && lv.value, outflowMlD: out && out.value, usableMl, storageHours, flagged: storageHours !== null && storageHours < 12, project: cut ? cut.projectId : null, ...extra };
+  };
+  const remote = view.list("RemoteSite", (s) => s.kind === "reservoir").map((s) => { const k = s.id.slice(3); return site(s.id, s.name, s.capacityMl, sys.tel.latest(`SEN-${k}-level`), sys.tel.latest(`SEN-${k}-out`)); });
+  // on-site clear-water reservoirs share the works outflow equally (no per-reservoir outflow sensor)
+  const onSite = view.list("Asset", (a) => a.assetClass === "Reservoir" && a.state === "in service");
+  const shared = demand && onSite.length ? { value: demand.value / onSite.length } : null;
+  const sites = [...remote, ...onSite.map((a) => site(a.id, `${a.positionTag} ${a.name.replace(/ \d+$/, "").toLowerCase()}`, a.capacityMl, sys.tel.latest(a.levelSensor), shared, { onSite: true }))];
   return {
     rawWater: { band, note: "index, not calibrated", inputs: [
       { name: "NDTI band, dam inflow arm", band: inflow.band, sceneId: inflow.sceneId }, { name: "NDTI band, intake approach", band: intake.band, sceneId: intake.sceneId },

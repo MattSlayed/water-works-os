@@ -23,10 +23,10 @@ Phase 2, Workforce Intelligence (design: `docs/superpowers/specs/2026-10-23-work
   isolation on HLP-B (Assets & twin → HLP-B → **Open permit and isolate**), then back to P-028 and send `done` per step,
   `done 110.065` at step 7 (out of band: a deviation is proposed), and a sentence ending in `?` to ask the Copilot.
   After the last step, answer the question: it becomes a field note, and the Scribe sends the job card for a yes/no.
-- **P-004, Projects:** the CL-3 contract, read from its WhatsApp group. Confirm the claimed milestone.
+- **P-004, Projects:** the CL-4 contract, read from its WhatsApp group. Confirm the claimed milestone.
 - **P-002, Procedures:** edit a step of the pump SOP and propose v4; **P-001** releases it.
 - **P-028, My work:** your own time per step against the procedure; turn on agent submission. **P-030** has it on.
-- The contractor's side of the group: `curl -X POST localhost:8830/api/channels/CHN-GRP-CL3/inbound -H "x-channel-sender: PAR-001" -H "content-type: application/json" -d '{"text":"Bearings out and slewing ring replaced"}'`
+- The contractor's side of the group: `curl -X POST localhost:8830/api/channels/CHN-GRP-CL4/inbound -H "x-channel-sender: PAR-001" -H "content-type: application/json" -d '{"text":"Bearings out and slewing ring replaced"}'`
 
 ## What is in it
 

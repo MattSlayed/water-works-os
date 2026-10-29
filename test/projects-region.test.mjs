@@ -5,7 +5,7 @@ import { projectStatus } from "../src/functions.mjs";
 import { treatmentCapacity, supplyImpacts, spendAt } from "../src/regionview.mjs";
 
 const sys = createSystem();
-const ids = ["PRJ-CL3", "PRJ-RWM", "PRJ-RES2", "PRJ-FMR", "PRJ-INT", "PRJ-SLG", "PRJ-PS2"];
+const ids = ["PRJ-CL4", "PRJ-RWM", "PRJ-RES2", "PRJ-FMR", "PRJ-INT", "PRJ-SLG", "PRJ-PS2"];
 
 test("projects: seven live ones (the closed 2025 dosing project is history), each with a footprint, money, impact, milestones and an owner", () => {
   assert.deepEqual(sys.ont.list("Project", (p) => p.state !== "closed").map((p) => p.id).sort(), [...ids].sort());

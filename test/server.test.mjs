@@ -122,7 +122,7 @@ test("inbound chat: a member gets one reply; a non-member, a missing sender or a
   assert.equal((await send("CHN-P-028", "P-029", "start")).status, 403);
   assert.equal((await send("CHN-P-028", null, "start")).status, 401);
   assert.equal((await send("CHN-NOPE", "P-028", "start")).status, 404);
-  assert.equal((await send("CHN-GRP-CL3", "PAR-001", "Bearings out and slewing ring replaced")).status, 200);
+  assert.equal((await send("CHN-GRP-CL4", "PAR-001", "Bearings out and slewing ring replaced")).status, 200);
 });
 
 test("channels and messages are private to their members (and the manager)", async () => {
@@ -151,7 +151,7 @@ test("performance: the person, their supervisor, engineers and the manager; nobo
 });
 
 test("projects carry their status and claims; executions, issues and procedures list through the viewer", async () => {
-  const p = await call("/api/projects/PRJ-CL3", { as: "P-004" });
+  const p = await call("/api/projects/PRJ-CL4", { as: "P-004" });
   assert.equal(p.status, 200);
   assert.equal(p.json.status.daysSinceReport, 0); // the contractor post in the inbound test above resets the quiet clock
   assert.equal(p.json.status.milestones.claimed, 3);

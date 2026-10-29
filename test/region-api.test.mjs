@@ -33,13 +33,19 @@ test("J17: since you left lists the plume, PP-2 off its site and the slipped raw
   assert.ok(items.some((i) => i.kind === "project" && i.id === "PRJ-RWM" && /slipped|overdue/i.test(i.text)));
 });
 
-test("J17: today's supply risks — raised raw water, 10 ML/d out, RES-2 at about 9 hours", async () => {
+test("J17: today's supply risks — raised raw water, 10 ML/d out, on-site RES-2 at about 2.6 hours", async () => {
   const r = (await call("/api/region/risks")).json;
   assert.equal(r.capacity.outOfServiceMlD, 10);
   assert.ok(["raised", "high"].includes(r.rawWater.band), r.rawWater.band);
   assert.ok(r.rawWater.inputs.length && r.capacity.inputs.length && r.storage.inputs.length);
-  const res2 = r.storage.sites.find((s) => s.id === "RS-RES2");
-  assert.ok(res2.storageHours >= 8 && res2.storageHours <= 10 && res2.flagged, JSON.stringify(res2));
+  const res2 = r.storage.sites.find((s) => s.id === "AST-RES-2");
+  assert.ok(Math.abs(res2.storageHours - 2.6) <= 1.5 && res2.flagged && res2.project === "PRJ-RES2", JSON.stringify(res2));
+});
+
+test("on-site RES-2 has half the usable volume of RES-1 while PRJ-RES2 relines cell B", async () => {
+  const sites = (await call("/api/region/risks")).json.storage.sites, [r1, r2] = ["AST-RES-1", "AST-RES-2"].map((id) => sites.find((s) => s.id === id));
+  assert.ok(r1.onSite && r2.onSite && r1.project === null);
+  assert.equal(r2.usableMl, r1.usableMl / 2);
 });
 
 test("J19: the RES-2 panel — contractor on site, R1.9m of R2.4m, storage halved, an issue with its log entry", async () => {

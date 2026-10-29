@@ -87,10 +87,10 @@ test("#4: only the latest step can be reversed, and reversing a claim leaves lat
   assert.equal(t.sys.actions.reverse(d2, as(t.sys, "P-009")).status, "done");
   assert.equal(t.sys.ont.get(ex).steps[1].state, "todo");
   assert.equal(t.sys.ont.get(ex).steps[0].state, "done");
-  const claim = t.sys.actions.invoke({ action: "record_progress_claim", params: { projectId: "PRJ-CL3", milestoneId: "M3", messageId: "MSG-H05", text: "x" }, actor: { kind: "agent", id: "Chat Intake", clearance: "technician", onBehalfOf: "PAR-001" }, autonomy: "act" }).decision.id;
-  t.act("confirm_milestone", { projectId: "PRJ-CL3", milestoneId: "M2" }, "P-009");
+  const claim = t.sys.actions.invoke({ action: "record_progress_claim", params: { projectId: "PRJ-CL4", milestoneId: "M3", messageId: "MSG-H05", text: "x" }, actor: { kind: "agent", id: "Chat Intake", clearance: "technician", onBehalfOf: "PAR-001" }, autonomy: "act" }).decision.id;
+  t.act("confirm_milestone", { projectId: "PRJ-CL4", milestoneId: "M2" }, "P-009");
   assert.equal(t.sys.actions.reverse(claim, as(t.sys, "P-001")).status, "done");
-  const ms = t.sys.ont.get("PRJ-CL3").milestones;
+  const ms = t.sys.ont.get("PRJ-CL4").milestones;
   assert.equal(ms.find((m) => m.id === "M2").confirmedBy, "P-009");
   assert.equal(ms.find((m) => m.id === "M3").claimedAt, null);
 });
@@ -113,8 +113,8 @@ test("#6: Ask still answers an asset question that shares a word with a project 
 
 test("#11: asking the works number where a project stands gets the project status", async () => {
   const t = setup();
-  const r = await t.say("Where is the CL-3 refurb?", "CHN-P-001", "P-001");
-  assert.match(r.replies[0].text, /Clarifier 3 scraper drive refurbishment/);
+  const r = await t.say("Where is the CL-4 refurb?", "CHN-P-001", "P-001");
+  assert.match(r.replies[0].text, /Clarifier 4 scraper drive refurbishment/);
   assert.match(r.replies[0].text, /milestones claimed/);
 });
 
@@ -155,7 +155,7 @@ test("#24: submission is checked against the draft's owner, not a claimed one; n
 test("#25: group messages that are not progress or an issue are not stored", async () => {
   const t = setup();
   const n = t.sys.ont.list("Message").length;
-  const r = await t.say("Is anyone coming to the braai, or is the gearbox still broken?", "CHN-GRP-CL3", "PAR-002");
+  const r = await t.say("Is anyone coming to the braai, or is the gearbox still broken?", "CHN-GRP-CL4", "PAR-002");
   assert.equal(r.outcome, "dropped");
   assert.equal(r.message, null);
   assert.equal(t.sys.ont.list("Message").length, n);

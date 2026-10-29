@@ -6,21 +6,21 @@ const as = (sys, id) => ({ kind: "person", id, clearance: sys.ont.get(id).cleara
 const agentFor = (name, id, clearance = "technician") => ({ kind: "agent", id: name, clearance, onBehalfOf: id });
 const sees = (sys, who, id) => !!sys.ont.view({ id: who, clearance: sys.ont.get(who).clearance }).get(id);
 
-test("seed: channels, the CL-3 contract, chat history, past jobs, issues and field notes", () => {
+test("seed: channels, the CL-4 contract, chat history, past jobs, issues and field notes", () => {
   const { ont } = createSystem({ seed: 7 });
-  assert.equal(ont.list("Channel").length, 46); // 45 people and the CL-3 group
+  assert.equal(ont.list("Channel").length, 46); // 45 people and the CL-4 group
   assert.equal(ont.list("Participant").length, 3);
   assert.ok(!JSON.stringify(ont.list("Participant")).includes("+27"));
-  const grp = ont.get("CHN-GRP-CL3");
+  const grp = ont.get("CHN-GRP-CL4");
   assert.deepEqual(grp.members, ["PAR-001", "PAR-002", "PAR-003", "P-004", "P-009"]);
-  const prj = ont.get("PRJ-CL3");
+  const prj = ont.get("PRJ-CL4");
   assert.equal(prj.milestones.length, 6);
   assert.equal(prj.milestones.filter((m) => m.claimedAt).length, 2);
   assert.equal(prj.milestones.filter((m) => m.confirmedAt).length, 1);
   const msgs = ont.list("Message");
   assert.ok(msgs.length >= 7);
   assert.ok(msgs.every((m) => m.prov.source === "CHANNEL-STUB" && Array.isArray(m.audience)));
-  const lastContractor = msgs.filter((m) => m.channelId === "CHN-GRP-CL3" && m.from.startsWith("PAR-")).map((m) => m.at).sort().pop();
+  const lastContractor = msgs.filter((m) => m.channelId === "CHN-GRP-CL4" && m.from.startsWith("PAR-")).map((m) => m.at).sort().pop();
   assert.equal(lastContractor, "2026-10-10T16:40:00Z");
   assert.equal(ont.list("ProgressClaim").length, 4);
   const ex = ont.list("Execution");
@@ -47,32 +47,32 @@ test("a person's channel and messages are theirs (and the manager's); the group 
   assert.ok(sees(sys, "P-001", "CHN-P-028"));
   const m = sys.ont.list("Message", (x) => x.channelId === "CHN-P-028")[0];
   assert.ok(sees(sys, "P-028", m.id) && !sees(sys, "P-029", m.id));
-  assert.ok(sees(sys, "P-004", "CHN-GRP-CL3") && sees(sys, "P-009", "CHN-GRP-CL3"));
-  assert.ok(!sees(sys, "P-008", "CHN-GRP-CL3"));
+  assert.ok(sees(sys, "P-004", "CHN-GRP-CL4") && sees(sys, "P-009", "CHN-GRP-CL4"));
+  assert.ok(!sees(sys, "P-008", "CHN-GRP-CL4"));
 });
 
 test("a contractor's progress claim is recorded against a milestone, as a claim", () => {
   const sys = createSystem({ seed: 7 });
-  const r = sys.actions.invoke({ action: "record_progress_claim", params: { projectId: "PRJ-CL3", milestoneId: "M3", messageId: "MSG-H05", text: "Bearings in", evidence: ["photo:x.jpg"] }, actor: agentFor("Chat Intake", "PAR-001"), autonomy: "act" });
+  const r = sys.actions.invoke({ action: "record_progress_claim", params: { projectId: "PRJ-CL4", milestoneId: "M3", messageId: "MSG-H05", text: "Bearings in", evidence: ["photo:x.jpg"] }, actor: agentFor("Chat Intake", "PAR-001"), autonomy: "act" });
   assert.equal(r.status, "done", r.reason);
   const c = sys.ont.get(r.decision.objects[0]);
   assert.equal(c.type, "ProgressClaim");
   assert.equal(c.by, "PAR-001");
   assert.equal(c.confirmed, false);
-  const m3 = sys.ont.get("PRJ-CL3").milestones.find((m) => m.id === "M3");
+  const m3 = sys.ont.get("PRJ-CL4").milestones.find((m) => m.id === "M3");
   assert.equal(m3.claimedAt, sys.tel.now());
   assert.equal(m3.confirmedAt, null);
-  assert.match(sys.actions.invoke({ action: "record_progress_claim", params: { projectId: "PRJ-CL3", milestoneId: "M9", messageId: "MSG-H05", text: "x" }, actor: agentFor("Chat Intake", "PAR-001"), autonomy: "act" }).reason, /milestone/);
+  assert.match(sys.actions.invoke({ action: "record_progress_claim", params: { projectId: "PRJ-CL4", milestoneId: "M9", messageId: "MSG-H05", text: "x" }, actor: agentFor("Chat Intake", "PAR-001"), autonomy: "act" }).reason, /milestone/);
 });
 
 test("only a person at supervisor clearance confirms a milestone; its claims are confirmed with it", () => {
   const sys = createSystem({ seed: 7 });
-  const params = { projectId: "PRJ-CL3", milestoneId: "M2" };
+  const params = { projectId: "PRJ-CL4", milestoneId: "M2" };
   assert.match(sys.actions.invoke({ action: "confirm_milestone", params, actor: agentFor("Project Watch", "SYSTEM", "manager") }).reason, /human-only/);
   assert.equal(sys.actions.invoke({ action: "confirm_milestone", params, actor: as(sys, "P-028") }).status, "refused");
   const r = sys.actions.invoke({ action: "confirm_milestone", params, actor: as(sys, "P-009") });
   assert.equal(r.status, "done", r.reason);
-  const m2 = sys.ont.get("PRJ-CL3").milestones.find((m) => m.id === "M2");
+  const m2 = sys.ont.get("PRJ-CL4").milestones.find((m) => m.id === "M2");
   assert.equal(m2.confirmedBy, "P-009");
   assert.ok(sys.ont.list("ProgressClaim", (c) => c.milestoneId === "M2").every((c) => c.confirmed));
 });
@@ -102,6 +102,6 @@ test("send_message: one reply per inbound, private channels stay private, only P
   assert.equal(m.at, sys.tel.now());
   assert.match(send({ channelId: "CHN-P-028", text: "again", inReplyTo: "MSG-X1" }, agentFor("Chat Intake", "P-028")).reason, /one reply/);
   assert.equal(send({ channelId: "CHN-P-028", text: "x" }, agentFor("Chat Intake", "P-029")).status, "refused");
-  assert.match(send({ channelId: "CHN-GRP-CL3", text: "hello group" }, agentFor("Chat Intake", "P-004")).reason, /Project Watch/);
-  assert.equal(send({ channelId: "CHN-GRP-CL3", text: "Weekly status" }, agentFor("Project Watch", "SYSTEM", "manager")).status, "done");
+  assert.match(send({ channelId: "CHN-GRP-CL4", text: "hello group" }, agentFor("Chat Intake", "P-004")).reason, /Project Watch/);
+  assert.equal(send({ channelId: "CHN-GRP-CL4", text: "Weekly status" }, agentFor("Project Watch", "SYSTEM", "manager")).status, "done");
 });
