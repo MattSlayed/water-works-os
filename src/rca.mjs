@@ -1,6 +1,7 @@
 // Root cause (agents design §5): deterministic, over the released plant model's process graph, the region's raw-water
 // inputs and the telemetry history. Claude never decides a cause; at most it words the summary.
 import { graphFrom, upstreamOf, processPaths, travelWindow, onsetMinute } from "./functions.mjs";
+import { CAPACITY_MLD } from "./layout.mjs";
 
 const DAY = 1440;
 // shortcut: a fixed 78 h of history before the symptom's alert (or `at`); an older symptom needs `at`
@@ -83,7 +84,7 @@ export function rootCause(ctx, { targetId, at } = {}) {
     const intake = [...g.nodes.values()].find((n) => n.type === "Structure" && n.zoneId === zone && !(g.in.get(n.id) || []).some((e) => e.kind === "flow"));
     const path = intake && processPaths(intake.id, node, g, { limit: 1 })[0];
     if (path) {
-      window = travelWindow(path, g, { flowMlD: 120 });
+      window = travelWindow(path, g, { flowMlD: CAPACITY_MLD });
       const rawOn = onsetAt(ctx, RAW, sym.at);
       if (rawOn) {
         const lag = minutesBetween(rawOn, sym.onsetAt), late = timing(lag, window, tag);
@@ -105,7 +106,7 @@ export function rootCause(ctx, { targetId, at } = {}) {
       const on = ctx.sensorsFor(a.id).map((s) => ({ id: s.id, at: onsetAt(ctx, s.id, sym.at) })).filter((x) => x.at).sort((x, y) => x.at.localeCompare(y.at))[0];
       const p = on && processPaths(u.id, node, g, { limit: 1 })[0];
       if (!p) continue;
-      const w = travelWindow(p, g, { flowMlD: 120 }), lag = minutesBetween(on.at, sym.onsetAt), late = timing(lag, w, tag);
+      const w = travelWindow(p, g, { flowMlD: CAPACITY_MLD }), lag = minutesBetween(on.at, sym.onsetAt), late = timing(lag, w, tag);
       const label = `${a.positionTag} ${String(a.template || a.assetClass || "").replace(/_/g, " ")}`.trim();
       if (late) rejected.push({ id: a.id, label, reason: late });
       else causes.push({ id: a.id, label, kind: "contributing", weight: 0.5, onsetAt: on.at, evidence: [{ id: on.id, ageMin: age(on.at), note: `onset ${lag} min before ${tag}, inside ${w.onsetH}–${w.tailH} h` }], showMe: `#/plant/${a.positionId || a.id}` });

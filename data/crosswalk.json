@@ -1,5 +1,186 @@
 {
-  "assets": [],
+  "assets": [
+    {
+      "canonical": "ADM-1",
+      "old": "40UYA01",
+      "note": "admin"
+    },
+    {
+      "canonical": "BWR-1",
+      "old": "17UGW01",
+      "note": "washwater_tank"
+    },
+    {
+      "canonical": "CCT-1",
+      "old": "16UGH01",
+      "note": "contact_tank"
+    },
+    {
+      "canonical": "CCT-2",
+      "old": "16UGH02",
+      "note": "contact_tank"
+    },
+    {
+      "canonical": "CL-1",
+      "old": "14UGE01",
+      "note": "clarifier_circular"
+    },
+    {
+      "canonical": "CL-2",
+      "old": "14UGE02",
+      "note": "clarifier_circular"
+    },
+    {
+      "canonical": "CL-3",
+      "old": "14UGE03",
+      "note": "clarifier_circular"
+    },
+    {
+      "canonical": "CL-4",
+      "old": "14UGE04",
+      "note": "clarifier_circular"
+    },
+    {
+      "canonical": "CLB-1",
+      "old": "16UHC01",
+      "note": "chlorine_house"
+    },
+    {
+      "canonical": "DB-1",
+      "old": "13UGD01",
+      "note": "splitter"
+    },
+    {
+      "canonical": "DOS-1",
+      "old": "13UHA01",
+      "note": "dosing_house"
+    },
+    {
+      "canonical": "ELB-1",
+      "old": "30UBE01",
+      "note": "mcc"
+    },
+    {
+      "canonical": "F01",
+      "old": "15HFA01",
+      "note": "filter_bed"
+    },
+    {
+      "canonical": "F02",
+      "old": "15HFA02",
+      "note": "filter_bed"
+    },
+    {
+      "canonical": "F03",
+      "old": "15HFA03",
+      "note": "filter_bed"
+    },
+    {
+      "canonical": "F04",
+      "old": "15HFA04",
+      "note": "filter_bed"
+    },
+    {
+      "canonical": "F05",
+      "old": "15HFA05",
+      "note": "filter_bed"
+    },
+    {
+      "canonical": "F06",
+      "old": "15HFA06",
+      "note": "filter_bed"
+    },
+    {
+      "canonical": "F07",
+      "old": "15HFA07",
+      "note": "filter_bed"
+    },
+    {
+      "canonical": "F08",
+      "old": "15HFA08",
+      "note": "filter_bed"
+    },
+    {
+      "canonical": "FB-1",
+      "old": "15UFB01",
+      "note": "filter_building"
+    },
+    {
+      "canonical": "FB-2",
+      "old": "15UFB02",
+      "note": "filter_building"
+    },
+    {
+      "canonical": "FPR-1",
+      "old": "15UMB01",
+      "note": "pump_house"
+    },
+    {
+      "canonical": "HLP-H",
+      "old": "20UMC01",
+      "note": "pump_house"
+    },
+    {
+      "canonical": "MIX",
+      "old": "11UGA01",
+      "note": "inlet_works"
+    },
+    {
+      "canonical": "RES-1",
+      "old": "20UBA01",
+      "note": "reservoir_covered"
+    },
+    {
+      "canonical": "RES-2",
+      "old": "20UBA02",
+      "note": "reservoir_covered"
+    },
+    {
+      "canonical": "RWP-1",
+      "old": "10UPA01",
+      "note": "pump_house"
+    },
+    {
+      "canonical": "RWR-1",
+      "old": "10UBA01",
+      "note": "reservoir_covered"
+    },
+    {
+      "canonical": "RWR-2",
+      "old": "10UBA02",
+      "note": "reservoir_covered"
+    },
+    {
+      "canonical": "SLD-1",
+      "old": "17UGT01",
+      "note": "thickener"
+    },
+    {
+      "canonical": "T-201",
+      "old": "12UHB01",
+      "note": "chemical_tank"
+    },
+    {
+      "canonical": "T-202",
+      "old": "12UHB02",
+      "note": "chemical_tank"
+    },
+    {
+      "canonical": "T-203",
+      "old": "12UHB03",
+      "note": "chemical_tank"
+    },
+    {
+      "canonical": "T-204",
+      "old": "12UHB04",
+      "note": "chemical_tank"
+    },
+    {
+      "canonical": "WKS-1",
+      "old": "40UYW01",
+      "note": "workshop"
+    }
+  ],
   "renames": [
     [
       "POS-F09",
@@ -173,8 +354,7 @@
     "SEN-CL-4-current": "IT-304",
     "SEN-CL-4-temp": "TT-304",
     "SEN-CL-4-torque": "WT-304",
-    "SEN-CWR1-level": "LIT-502",
-    "SEN-CWR2-level": "LIT-501",
+    "SEN-CLR-turb": "AIT-301",
     "SEN-DP-1-flow": "FIT-202",
     "SEN-DP-1-press": "PIT-201",
     "SEN-DP-1-stroke": "ZT-201",
@@ -216,7 +396,11 @@
     "SEN-HLP-D-flow": "FIT-604",
     "SEN-HLP-D-temp_de": "TT-603",
     "SEN-HLP-D-vib_de": "VT-604",
-    "SEN-OUT-flow": "FIT-605",
+    "SEN-HLP-E-current": "IT-605",
+    "SEN-HLP-E-flow": "FIT-605",
+    "SEN-HLP-E-temp_de": "TT-604",
+    "SEN-HLP-E-vib_de": "VT-605",
+    "SEN-OUT-flow": "FIT-606",
     "SEN-PS1-flow": "FIT-801",
     "SEN-PS1-press": "PIT-801",
     "SEN-PS1-state": "YS-801",
@@ -225,6 +409,8 @@
     "SEN-PS2-state": "YS-802",
     "SEN-RAW-flow": "FIT-102",
     "SEN-RAW-turb": "AIT-101",
+    "SEN-RES-1-level": "LIT-502",
+    "SEN-RES-2-level": "LIT-501",
     "SEN-RES1-in": "FIT-803",
     "SEN-RES1-level": "LIT-801",
     "SEN-RES1-out": "FIT-804",

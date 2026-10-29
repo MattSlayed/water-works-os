@@ -135,7 +135,7 @@ export const EVALS = {
   "Root Cause": [
     { name: "explains F07 as a local fault", prep: f07Scope, grader: "rule", check: (r, s) => { const c = drafts(s, "rca")[0].data.causes[0]; return c.kind === "local" && s.ont.get(c.id).positionTag === "F07"; } },
     { name: "rejects DP-2 as too late", prep: f07Scope, grader: "rule", check: (r, s) => drafts(s, "rca")[0].data.rejected.some((x) => s.ont.get(x.id) && s.ont.get(x.id).positionTag === "DP-2" && /too late/.test(x.reason)) },
-    { name: "insufficient evidence for RES-CWR1", prep: () => ({ scope: { targetId: "RES-CWR1" } }), grader: "exact", value: (r, s) => drafts(s, "rca")[0].data.verdict, expect: "Insufficient evidence" }
+    { name: "insufficient evidence for AST-RES-1", prep: () => ({ scope: { targetId: "AST-RES-1" } }), grader: "exact", value: (r, s) => drafts(s, "rca")[0].data.verdict, expect: "Insufficient evidence" }
   ],
   Recommender: [
     { name: "suggests a watch to the millwright who checks HLP-B by hand", prep: () => ({ actingUser: { id: "P-028", clearance: "technician" } }), grader: "rule", check: (r, s) => s.ont.list("Suggestion", (x) => x.personId === "P-028" && x.signal === "repeated-check" && x.statement.template === "watch").length === 1 },

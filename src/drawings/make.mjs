@@ -51,8 +51,8 @@ const FTW = ["01", "02", "03", "04"].map((f) => L(`RB-L-6${f}`, "filter-to-waste
 export const INSTRUMENTS = [
   ["10CQ01", "PROC.RAW-turb", "RB-L-001", "raw", 4], ["11CF01", "PROC.RAW-flow", "11UGA01", "inline", 0],
   ["15CQ00", "PROC.FW-turb", "16UGH01", "before dose", 5], ["16CQ01", "PROC.FIN-cl", "RB-L-301", "after dose", 6],
-  ["16CQ02", "PROC.FIN-ph", "RB-L-301", "after dose", 6], ["20CL01", "PROC.CWR1-level", "20UBA01", "inline", 0],
-  ["20CL02", "PROC.CWR2-level", "20UBA02", "inline", 0], ["20CF01", "PROC.OUT-flow", "20UMC01", "inline", 0],
+  ["16CQ02", "PROC.FIN-ph", "RB-L-301", "after dose", 6], ["20CL01", "PROC.RES-1-level", "20UBA01", "inline", 0],
+  ["20CL02", "PROC.RES-2-level", "20UBA02", "inline", 0], ["20CF01", "PROC.OUT-flow", "20UMC01", "inline", 0],
   ...FILTERS.flatMap((f) => [[`15CQ${f}`, `15HFA${f}.TURB`, `RB-L-2${f}`, "outlet", 3], [`15CP${f}`, `15HFA${f}.HEADLOSS`, `15HFA${f}`, "inline", 0]]),
   ["15CQ13", "15HFA13.TURB", "RB-L-213", "outlet", 3]
 ];

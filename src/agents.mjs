@@ -329,7 +329,7 @@ const LOGIC = {
     const shifts = ctx.list("Shift").sort((a, b) => a.start.localeCompare(b.start));
     const next = shifts.find((s) => s.start >= ctx.now) || shifts[shifts.length - 1];
     lines.push(`Handover for shift ${next.id} (crew ${next.crew}), prepared ${ctx.now}.`);
-    for (const id of ["SEN-RAW-flow", "SEN-FW-turb", "SEN-FIN-cl", "SEN-CWR1-level", "SEN-CWR2-level"]) {
+    for (const id of ["SEN-RAW-flow", "SEN-FW-turb", "SEN-FIN-cl", "SEN-RES-1-level", "SEN-RES-2-level"]) {
       const s = ctx.get(id), l = ctx.latest(id);
       if (s && l) lines.push(`Process: ${s.name} ${l.value} ${s.unit}.`);
     }

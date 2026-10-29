@@ -1,6 +1,6 @@
 // Function tools: models and logic exposed to people and agents alike (PRD §6.4).
 // shortcut: transparent heuristics over the synthetic data; upgrade to trained models with a registry and backtests (FR-ANL-006).
-import { toLocal, toLonLat } from "./layout.mjs";
+import { toLocal, toLonLat, CAPACITY_MLD } from "./layout.mjs";
 
 const clamp01 = (x) => Math.max(0, Math.min(1, Number.isFinite(x) ? x : 0));
 const mean = (a) => (a.length ? a.reduce((s, x) => s + x, 0) / a.length : 0);
@@ -232,8 +232,8 @@ export function processPaths(from, to, g, { limit = 10, depth = 20, mode = "norm
 // (clarifier 0.4, contact tank 0.5), a mixed flash-mix tank, staged flocculation, a filter's supernatant over a plug-flow
 // bed, and the reservoir's exponential response (onset 0.1·t, tail 3·t). Unlisted structures are treated as plug flow.
 const RTD = { flash_mix: [0.1, 2.3], flocculator: [0.3, 1.7], clarifier_circular: [0.4, 1.8], filter_bed: [0.2, 1.6], contact_tank: [0.5, 1.5], reservoir_covered: [0.1, 3] };
-export function travelWindow(path, g, { flowMlD = 120, lagMin = 0 } = {}) {
-  const Q = (flowMlD * 1000) / 24, speed = flowMlD / 120; // line velocity 1.0 m/s gravity, 2.0 m/s pumped, at 120 ML/d
+export function travelWindow(path, g, { flowMlD = CAPACITY_MLD, lagMin = 0 } = {}) {
+  const Q = (flowMlD * 1000) / 24, speed = flowMlD / CAPACITY_MLD; // line velocity 1.0 m/s gravity, 2.0 m/s pumped, at design flow
   let on = 0, mean = 0, tl = 0;
   path.forEach((id, i) => {
     const e = i > 0 && (g.out.get(path[i - 1]) || []).find((x) => x.to === id);

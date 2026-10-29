@@ -15,7 +15,7 @@ import { llmEnabled } from "./llm.mjs";
 import { dueStudioAgents, screen, planFromText, composeWithClaude, validateStatement, statementFromSentences, replay } from "./studio.mjs";
 import { currentProcedure, performanceFor, projectStatus, graphFrom, upstreamOf, downstreamOf, processPaths, travelWindow } from "./functions.mjs";
 import { currentPlantModel } from "./plant.mjs";
-import { siteBounds, toLocal, toLonLat } from "./layout.mjs";
+import { siteBounds, toLocal, toLonLat, CAPACITY_MLD } from "./layout.mjs";
 import { regionPayload, sinceYouLeft, supplyRisks, focusOf, projectPanel } from "./regionview.mjs";
 import { sceneGrid } from "./scenes.mjs";
 import { liveStats } from "./geolive.mjs";
@@ -303,7 +303,7 @@ export function createServer(sys) {
       const [path] = processPaths(from, to, g);
       if (!path) throw new HttpError(404, "no process path between them");
       const given = Number(url.searchParams.get("flow")), meas = (tel.latest("SEN-RAW-flow") || {}).value;
-      const flowMlD = given || Math.round(meas * 10) / 10 || 120;
+      const flowMlD = given || Math.round(meas * 10) / 10 || CAPACITY_MLD;
       return { path, flowMlD, measured: !given && !!meas, window: travelWindow(path, g, { flowMlD, lagMin: Number(url.searchParams.get("lag")) || 0 }) };
     }],
     ["GET", /^\/api\/objects$/, (v, m, url) => { const view = ont.view(v); const q = url.searchParams.get("q"); const type = url.searchParams.get("type"); return (q ? view.search(q, 50) : view.list(type || null)).filter((o) => !type || o.type === type).slice(0, 500).map(shown); }],

@@ -4,11 +4,12 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { assignTags, RENAMES, RETIRED } from "../src/crosswalk.mjs";
 import { generateWorks } from "../src/generate.mjs";
+import { PLAN } from "../src/layout.mjs";
 
 export function buildCrosswalk(works) {
   const tags = assignTags(works.objects.filter((o) => o.type === "Sensor"));
   return {
-    assets: [], // filled in Task 5 from Task 3's PLAN
+    assets: Object.entries(PLAN).map(([canonical, p]) => ({ canonical, old: p.tag, note: p.kind })).sort((a, b) => (a.canonical < b.canonical ? -1 : 1)),
     renames: RENAMES,
     retired: RETIRED,
     sensors: Object.fromEntries([...tags].sort(([a], [b]) => (a < b ? -1 : 1)))

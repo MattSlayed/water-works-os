@@ -51,7 +51,7 @@ test("tags are unique and well-formed", () => {
   assert.deepEqual(tags.filter((x) => FIX.some((s) => s.id === x)), []);
 });
 
-test("crosswalk file is current", { skip: "until Task 5 rebuilds generateWorks on the new plant" }, () => {
+test("crosswalk file is current", () => {
   const file = JSON.parse(fs.readFileSync(new URL("../data/crosswalk.json", import.meta.url), "utf8"));
   assert.deepEqual(file, buildCrosswalk(generateWorks()));
 });

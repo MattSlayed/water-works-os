@@ -68,7 +68,7 @@ test("root cause: a pump's vibration is local, with no upstream water cause", ()
 
 test("root cause: no onset, or no released plant model, is Insufficient evidence — never a guess", () => {
   const s = createSystem();
-  const none = rca(s, { targetId: "RES-CWR1" });
+  const none = rca(s, { targetId: "AST-RES-1" });
   assert.deepEqual([none.verdict, none.causes], ["Insufficient evidence", []]);
   const alert = f07Alert(s);
   for (const m of s.ont.list("PlantModel", (x) => x.status === "released")) s.ont.upsert({ id: m.id, type: "PlantModel", status: "superseded" });

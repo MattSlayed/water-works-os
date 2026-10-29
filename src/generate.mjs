@@ -2,7 +2,8 @@
 // generateWorks(seed) -> { objects, links, clock } — deterministic for a given seed.
 import { createHash } from "node:crypto";
 import { stepRequires } from "./functions.mjs";
-import { ZONES, toLonLat } from "./layout.mjs";
+import { ZONES, toLonLat, CAPACITY_MLD } from "./layout.mjs";
+import { assignTags } from "./crosswalk.mjs";
 import { makeScenes } from "./scenes.mjs";
 import { REGION, REMOTE_ZONES, REMOTE_SITES, SITE_XY, PROJECTS, TRACKERS, zoneGeo, zoneAtLocal } from "./region.mjs";
 import { AGENT_SPECS } from "./agents.mjs";
@@ -164,6 +165,7 @@ const ASSETS = [
   ["HLP-B", "centrifugal_pump", "Z07", "20PAC10AP002", "pumping", true, "High-lift pump B"],
   ["HLP-C", "centrifugal_pump", "Z07", "20PAC10AP003", "pumping", true, "High-lift pump C"],
   ["HLP-D", "centrifugal_pump", "Z07", "20PAC10AP004", "pumping", true, "High-lift pump D"],
+  ["HLP-E", "centrifugal_pump", "Z07", "20PAC10AP005", "pumping", true, "High-lift pump E"],
   ["SLP-A", "centrifugal_pump", "Z08", "17PAC10AP001", "sludge", false, "Sludge pump A"],
   ["GEN-1", null, "Z10", "30XKA10", null, false, "Standby generator"]
 ];
@@ -187,7 +189,7 @@ export function generateWorks(seed = 7) {
   const add = (o, src = "SYNTH-ERP") => { o.prov = prov(src, `synth://${src.toLowerCase()}/${o.id}`); objects.push(o); return o; };
   const link = (from, rel, to, props) => links.push({ from, rel, to, ...(props ? { props } : {}), prov: prov("SYNTH", `synth://link/${from}/${rel}/${to}`) });
 
-  add({ id: "SITE-RB", type: "Site", name: "Riverbend Water Treatment Works", capacityMlD: 120, works: "potable", note: "Synthetic site" }, "CONFIG");
+  add({ id: "SITE-RB", type: "Site", name: "Riverbend Water Treatment Works", capacityMlD: CAPACITY_MLD, works: "potable", note: "Synthetic site" }, "CONFIG");
 
   for (const [id, name, x, y, w, h, clearance, hazard] of ZONES) {
     add({ id, type: "Zone", code: id, name, clearance, hazard, rect: [x, y, w, h] }, "SYNTH-GIS");
@@ -229,19 +231,20 @@ export function generateWorks(seed = 7) {
   }
 
   for (const [tag, tpl, zoneId, kks, stage, hero, label] of ASSETS) {
+    const q = tag === "HLP-E" ? rng(seed + 5) : r; // HLP-E draws from its own stream so every later draw (people, work orders) is unchanged
     const posId = `POS-${tag}`;
     add({ id: posId, type: "Position", tag, kks, name: label, zoneId, stage }, "SYNTH-ERP");
     if (stage) link(`PU-${stage}`, "HAS_POSITION", posId);
     else link(zoneId, "CONTAINS", posId);
-    const serial = String(30000 + Math.floor(r() * 69999));
+    const serial = String(30000 + Math.floor(q() * 69999));
     const t = tpl ? T[tpl] : null;
     const assetId = `AST-${serial}`;
-    const installed = `20${10 + Math.floor(r() * 14)}-0${1 + Math.floor(r() * 8)}-1${Math.floor(r() * 9)}`;
+    const installed = `20${10 + Math.floor(q() * 14)}-0${1 + Math.floor(q() * 8)}-1${Math.floor(q() * 9)}`;
     add({
       id: assetId, type: "Asset", name: label, positionTag: tag, positionId: posId, zoneId, serial, template: tpl,
       assetClass: tag.startsWith("CHL") ? "Chlorinator" : t ? t.label : "Diesel generator", make: t ? t.make : "Genpro", model: t ? t.model : "G500", hero,
       criticality: tag.startsWith("HLP") || tag.startsWith("RWP") || tag.startsWith("CHL") ? "A" : "B",
-      state: tag === "HLP-D" ? "standby" : tag === "RWP-C" ? "isolated" : "running", installed, runHours: Math.floor(8000 + r() * 40000)
+      state: tag === "HLP-D" ? "standby" : tag === "RWP-C" ? "isolated" : "running", installed, runHours: Math.floor(8000 + q() * 40000)
     });
     link(assetId, "INSTALLED_AT", posId, { from: installed, to: null });
     if (!t) continue;
@@ -253,7 +256,7 @@ export function generateWorks(seed = 7) {
       const band = t.bands[name];
       add({
         id: pid, type: "Part", assetId, zoneId, name, din, group, material, qty: name === "Drive-end bearing" ? 1 : 1,
-        erpNo: `STK-${stockNo + i}`, stock: name.includes("bearing") ? (tag === "HLP-B" ? 1 : 2) : Math.floor(r() * 4),
+        erpNo: `STK-${stockNo + i}`, stock: name.includes("bearing") ? (tag === "HLP-B" ? 1 : 2) : Math.floor(q() * 4),
         geom: { shape, ...dims, pos }, explode: { dir, dist: 0.6 + i * 0.03, group, order: i },
         band: band ? { measure: band[0], lo: band[1], hi: band[2], unit: band[3] } : null
       });
@@ -293,7 +296,7 @@ export function generateWorks(seed = 7) {
   }
 
   // Filters and process sensors
-  for (let f = 1; f <= 12; f++) {
+  for (let f = 1; f <= 8; f++) {
     const tag = `F${String(f).padStart(2, "0")}`;
     add({ id: `POS-${tag}`, type: "Position", tag, kks: `15HFA${String(f).padStart(2, "0")}`, name: `Rapid gravity filter ${f}`, zoneId: "Z05", stage: "filt" });
     link("PU-filt", "HAS_POSITION", `POS-${tag}`);
@@ -307,18 +310,19 @@ export function generateWorks(seed = 7) {
   for (const [id, puId, zoneId, name, unit, lo, hi, alarmLo, alarmHi] of [
     ["SEN-RAW-turb", "PU-intake", "Z01", "Raw-water turbidity", "NTU", 0, 400, null, 200],
     ["SEN-RAW-flow", "PU-inlet", "Z02", "Inlet flow", "ML/d", 0, 140, null, 130],
+    ["SEN-CLR-turb", "PU-clar", "Z04", "Clarified turbidity", "NTU", 0, 20, null, 3],
     ["SEN-FW-turb", "PU-filt", "Z05", "Combined filtered turbidity", "NTU", 0, 5, null, 1.0],
     ["SEN-FIN-cl", "PU-disinf", "Z06", "Final chlorine residual", "mg/L", 0, 3, 0.3, 2.0],
     ["SEN-FIN-ph", "PU-disinf", "Z06", "Final pH", "pH", 5, 10, 6.5, 9.5],
-    ["SEN-CWR1-level", "PU-storage", "Z07", "Clear-water reservoir 1 level", "%", 0, 100, 30, null],
-    ["SEN-CWR2-level", "PU-storage", "Z07", "Clear-water reservoir 2 level", "%", 0, 100, 30, null],
+    ["SEN-RES-1-level", "PU-storage", "Z07", "Clear-water reservoir 1 level", "%", 0, 100, 30, null],
+    ["SEN-RES-2-level", "PU-storage", "Z07", "Clear-water reservoir 2 level", "%", 0, 100, 30, null],
     ["SEN-OUT-flow", "PU-pumping", "Z07", "Outgoing flow", "ML/d", 0, 140, null, null]
   ]) {
     add({ id, type: "Sensor", processUnitId: puId, zoneId, key: id.split("-").pop(), name, unit, range: [lo, hi], alarmLo, alarmHi, historianTag: id.replace("SEN-", "PROC.") }, "SYNTH-HIST");
     link(id, "MEASURES", puId);
   }
-  for (const [id, name, cap] of [["RES-CWR1", "Clear-water reservoir 1", 20], ["RES-CWR2", "Clear-water reservoir 2", 20]]) {
-    add({ id, type: "Asset", name, assetClass: "Reservoir", zoneId: "Z07", capacityMl: cap, hero: false, criticality: "A", state: "in service", levelSensor: id === "RES-CWR1" ? "SEN-CWR1-level" : "SEN-CWR2-level" });
+  for (const [id, name, cap] of [[1, "Clear-water reservoir 1", 20], [2, "Clear-water reservoir 2", 20]]) {
+    add({ id: `AST-RES-${id}`, type: "Asset", name, positionTag: `RES-${id}`, assetClass: "Reservoir", zoneId: "Z07", capacityMl: cap, hero: false, criticality: "A", state: "in service", levelSensor: `SEN-RES-${id}-level` });
   }
 
   // Chemicals
@@ -634,5 +638,8 @@ export function generateWorks(seed = 7) {
     "Loss of prime was the suction check-valve ball. Check the ball before the diaphragm.");
   // source f: the C-shift supervisor's word on the works chat after the storm
   msg("MSG-H-SPEC1", `CHN-${cSup.id}`, cSup.id, "2026-10-13T23:15:00Z", "we've had DP-2 delivering 125 L/h since the storm");
+  const sensors = objects.filter((o) => o.type === "Sensor");
+  const tags = assignTags(sensors);
+  for (const s of sensors) s.tag = tags.get(s.id);
   return { objects, links, clock: CLOCK };
 }

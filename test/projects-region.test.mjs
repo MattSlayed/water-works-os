@@ -17,13 +17,13 @@ test("projects: seven live ones (the closed 2025 dosing project is history), eac
   }
 });
 
-test("capacity on 14 October: the clarifiers limit the works to 90 ML/d, so 30 ML/d is out of service", () => {
+test("capacity on 14 October: the clarifiers limit the works to 90 ML/d, so 10 ML/d is out of service", () => {
   const c = treatmentCapacity(sys.ont, "2026-10-14");
-  assert.deepEqual([c.capacityMlD, c.limiting, c.outOfServiceMlD], [90, "clar", 30]);
+  assert.deepEqual([c.capacityMlD, c.limiting, c.outOfServiceMlD], [90, "clar", 10]);
   assert.equal(c.byStage.main, 100);
   assert.equal(c.byStage.filt, 110);
   const after = treatmentCapacity(sys.ont, "2026-12-15"); // after every project has ended
-  assert.deepEqual([after.capacityMlD, after.outOfServiceMlD], [120, 0]);
+  assert.deepEqual([after.capacityMlD, after.outOfServiceMlD], [100, 0]);
 });
 
 test("money and progress: RES-2 has R1.9m committed of R2.4m; the raw-water main has a slipped milestone", () => {

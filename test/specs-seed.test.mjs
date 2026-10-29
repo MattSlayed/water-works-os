@@ -57,6 +57,6 @@ test("Drop Pack's calibration gap is unchanged by isAnalyser", async () => {
   await new Promise((r) => srv.listen(0, r));
   try {
     const j = await (await fetch(`http://127.0.0.1:${srv.address().port}/api/compliance`, { headers: { "x-acting-user": "P-001" } })).json();
-    assert.equal(j.items.find((i) => i.requirementId === "REQ-BD-CAL").detail, "No current calibration certificate for: Final chlorine residual, Final pH.");
+    assert.equal(j.items.find((i) => i.requirementId === "REQ-BD-CAL").detail, "No current calibration certificate for: Clarified turbidity, Final chlorine residual, Final pH.");
   } finally { srv.close(); }
 });

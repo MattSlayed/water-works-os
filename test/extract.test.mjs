@@ -20,7 +20,7 @@ test("sources: one per sheet with number, rev, kind and sha256", () => {
 
 test("rev A has exactly the three seeded AMBIGUOUS cells, each naming its sheets", () => {
   const amb = A.cells.filter((c) => c.grade === "AMBIGUOUS");
-  assert.deepEqual(amb.map((c) => c.key).sort(), ["15CQ13|binding", "17BBB01|presence", "HLP-E|binding", "RB-L-210|dn"]); // Task 5 adds POS-HLP-E; restore EXTRACTED then
+  assert.deepEqual(amb.map((c) => c.key).sort(), ["15CQ13|binding", "17BBB01|presence", "RB-L-210|dn"]);
   assert.match(cell(A, "RB-L-210|dn").reasoning, /RB-LL-001.*RB-PID-05|RB-PID-05.*RB-LL-001/);
   assert.match(cell(A, "17BBB01|presence").reasoning, /RB-GA-001/);
 });
@@ -74,7 +74,7 @@ test("rev B: filter-to-waste lines and the GA-only old washwater outlet", () => 
   const B = extractPlant(drawingSet("B"), ont);
   assert.deepEqual(B.items.filter((i) => i.kind === "line" && i.fields.service === "filter-to-waste").map((i) => i.tag).sort(), ["RB-L-601", "RB-L-602", "RB-L-603", "RB-L-604"]);
   assert.equal(cell(B, "RB-L-421X|presence").grade, "AMBIGUOUS");
-  assert.equal(B.cells.filter((c) => c.grade === "AMBIGUOUS").length, 5); // Task 5 adds POS-HLP-E; restore EXTRACTED then
+  assert.equal(B.cells.filter((c) => c.grade === "AMBIGUOUS").length, 4);
 });
 
 test("regenerated GA round-trips: every layout structure has an EXTRACTED cell from RB-GA-001", () => {

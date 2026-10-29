@@ -1,7 +1,7 @@
 // The region around the synthetic Riverbend works (Region design §4): catchment, dam, river, raw-water main, bulk line,
 // roads, areas of interest and the remote zones. Laid out in site metres (x east, y south) and converted to WGS84.
 // Synthetic works: none of this is a real place.
-import { STRUCTURES, toLonLat } from "./layout.mjs";
+import { STRUCTURES, toLonLat, CAPACITY_MLD } from "./layout.mjs";
 
 const DIR = [Math.SQRT1_2, Math.SQRT1_2]; // the dam's long axis, NW → SE
 const ACROSS = [-Math.SQRT1_2, Math.SQRT1_2];
@@ -68,7 +68,7 @@ export const REMOTE_SITES = [
 
 // ---------- Projects (Region design §4.4): footprints, money, what they take out of service ----------
 export const STAGE_CAPACITY = { intake: 130, main: 130, clar: 120, filt: 120 }; // ML/d per treatment stage, in series
-export const DESIGN_ML_D = 120;
+export const DESIGN_ML_D = CAPACITY_MLD;
 const rectXY = (x, y, w, h) => [[x, y], [x + w, y], [x + w, y + h], [x, y + h], [x, y]];
 // a strip either side of a pipe segment, from fraction f0 to f1 along it
 const strip = ([a, b], f0, f1, half) => {

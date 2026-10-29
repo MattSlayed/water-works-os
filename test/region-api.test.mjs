@@ -33,9 +33,9 @@ test("J17: since you left lists the plume, PP-2 off its site and the slipped raw
   assert.ok(items.some((i) => i.kind === "project" && i.id === "PRJ-RWM" && /slipped|overdue/i.test(i.text)));
 });
 
-test("J17: today's supply risks — raised raw water, 30 ML/d out, RES-2 at about 9 hours", async () => {
+test("J17: today's supply risks — raised raw water, 10 ML/d out, RES-2 at about 9 hours", async () => {
   const r = (await call("/api/region/risks")).json;
-  assert.equal(r.capacity.outOfServiceMlD, 30);
+  assert.equal(r.capacity.outOfServiceMlD, 10);
   assert.ok(["raised", "high"].includes(r.rawWater.band), r.rawWater.band);
   assert.ok(r.rawWater.inputs.length && r.capacity.inputs.length && r.storage.inputs.length);
   const res2 = r.storage.sites.find((s) => s.id === "RS-RES2");

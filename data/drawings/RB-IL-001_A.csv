@@ -4,8 +4,8 @@ Tag,HistorianTag,MeasuredAt,SamplePosition,LagMin
 15CQ00,PROC.FW-turb,16UGH01,before dose,5
 16CQ01,PROC.FIN-cl,RB-L-301,after dose,6
 16CQ02,PROC.FIN-ph,RB-L-301,after dose,6
-20CL01,PROC.CWR1-level,20UBA01,inline,0
-20CL02,PROC.CWR2-level,20UBA02,inline,0
+20CL01,PROC.RES-1-level,20UBA01,inline,0
+20CL02,PROC.RES-2-level,20UBA02,inline,0
 20CF01,PROC.OUT-flow,20UMC01,inline,0
 15CQ01,15HFA01.TURB,RB-L-201,outlet,3
 15CP01,15HFA01.HEADLOSS,15HFA01,inline,0

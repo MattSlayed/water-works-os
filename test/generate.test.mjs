@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { generateWorks } from "../src/generate.mjs";
+import fs from "node:fs";
 
 const w = generateWorks(7);
 const byId = new Map(w.objects.map((o) => [o.id, o]));
@@ -46,4 +47,40 @@ test("45 people, hero assets have sensors, an intrusive procedure step exists", 
     assert.ok(n >= 3, `${a.id} sensors ${n}`);
   }
   assert.ok(ofType("Procedure").some((p) => p.steps.some((s) => s.intrusive)));
+});
+
+test("canonical plant: 100 ML/d, F01..F08, HLP-A..E, AST-RES-1/2 and no CWR ids", () => {
+  assert.equal(byId.get("SITE-RB").capacityMlD, 100);
+  const tags = (re) => ofType("Position").map((p) => p.tag).filter((t) => re.test(t)).sort();
+  assert.deepEqual(tags(/^F\d\d$/), ["F01", "F02", "F03", "F04", "F05", "F06", "F07", "F08"]);
+  assert.deepEqual(tags(/^HLP-/), ["HLP-A", "HLP-B", "HLP-C", "HLP-D", "HLP-E"]);
+  const hlp = (t) => ofType("Asset").find((a) => a.positionTag === t);
+  assert.equal(hlp("HLP-D").state, "standby");
+  assert.equal(hlp("HLP-E").state, "running");
+  for (const n of [1, 2]) {
+    const a = byId.get(`AST-RES-${n}`);
+    assert.equal(a.positionTag, `RES-${n}`);
+    assert.equal(a.levelSensor, `SEN-RES-${n}-level`);
+    assert.ok(byId.has(`SEN-RES-${n}-level`));
+  }
+  assert.deepEqual(w.objects.filter((o) => /CWR/.test(o.id)).map((o) => o.id), []);
+});
+
+test("contract tags land on the right sensors", () => {
+  const contract = JSON.parse(fs.readFileSync(new URL("../data/riverbend/contract.json", import.meta.url), "utf8"));
+  const want = {
+    "AIT-101": "SEN-RAW-turb", "FIT-102": "SEN-RAW-flow", "FIT-201": "SEN-DP-2-flow", "AIT-301": "SEN-CLR-turb",
+    "AIT-157": "SEN-F07-turb", "PDT-157": "SEN-F07-headloss", "AIT-401": "SEN-FIN-cl",
+    "LIT-501": byId.get("AST-RES-2").levelSensor, "TT-612": "SEN-HLP-B-temp_de"
+  };
+  assert.deepEqual(Object.keys(contract.tags).sort(), Object.keys(want).sort());
+  for (const [tag, id] of Object.entries(want)) assert.equal(ofType("Sensor").find((s) => s.tag === tag)?.id, id, tag);
+  const tt = byId.get("SEN-HLP-B-temp_de");
+  assert.equal(byId.get(tt.assetId).positionTag, contract.tags["TT-612"].asset);
+});
+
+test("every sensor has a unique tag", () => {
+  const sensors = ofType("Sensor");
+  assert.deepEqual(sensors.filter((s) => !s.tag).map((s) => s.id), []);
+  assert.equal(new Set(sensors.map((s) => s.tag)).size, sensors.length);
 });
