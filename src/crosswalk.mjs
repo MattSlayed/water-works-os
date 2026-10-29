@@ -8,8 +8,7 @@ const OVERRIDES = {
   "SEN-RAW-turb": "AIT-101", "SEN-RAW-flow": "FIT-102", "SEN-DP-2-flow": "FIT-201", "SEN-CLR-turb": "AIT-301",
   "SEN-F07-turb": "AIT-157", "SEN-F07-headloss": "PDT-157", "SEN-FIN-cl": "AIT-401", "SEN-RES-2-level": "LIT-501", "SEN-HLP-B-temp_de": "TT-612"
 };
-// Z05 is not in the spec's area table (its filters take 15<bay>); the rest of the filter hall shares area 1 (assumption).
-const AREA = { Z01: 1, Z02: 2, Z03: 2, Z04: 3, Z05: 1, Z06: 4, Z08: 7, Z09: 2, Z10: 6 };
+const AREA = { Z01: 1, Z02: 2, Z03: 2, Z04: 3, Z06: 4, Z08: 7, Z09: 2, Z10: 6 };
 
 // Old ids in today's generateWorks()/region data, expanded from the spec's wildcard families.
 const FILTERS_GONE = ["09", "10", "11", "12"].flatMap((n) => [`POS-F${n}`, `AST-FLT-F${n}`, `SEN-F${n}-turb`, `SEN-F${n}-headloss`]);
@@ -27,13 +26,15 @@ const NEW_ID = new Map(RENAMES.filter(([, n]) => n));
 const isFilter = (s) => /^SEN-F\d\d-/.test(s.id);
 const canon = (s) => NEW_ID.get(s.id) ?? s.id;
 
-function area(s) {
+// First tag number for a sensor. Z05 filtration owns the 15x block (bays 151-158); other Z05 sensors number from 160.
+function firstNumber(s) {
   const z = /^Z(\d\d)$/.exec(s.zoneId ?? "");
   // remote = no zone, or a zone outside the on-site Z01-Z12 (bulk-line sites are Z13-Z15)
-  if (!z || +z[1] > 12) return 8;
-  if (s.zoneId === "Z07") return /^SEN-(HLP-|OUT-)/.test(s.id) || s.processUnitId === "PU-pumping" ? 6 : 5;
+  if (!z || +z[1] > 12) return 801;
+  if (s.zoneId === "Z05") return 160;
+  if (s.zoneId === "Z07") return /^SEN-(HLP-|OUT-)/.test(s.id) || s.processUnitId === "PU-pumping" ? 601 : 501;
   if (!AREA[s.zoneId]) throw new Error(`No area digit for zone ${s.zoneId} (sensor ${s.id})`);
-  return AREA[s.zoneId];
+  return AREA[s.zoneId] * 100 + 1;
 }
 
 export function isaTag(s, used) {
@@ -46,8 +47,7 @@ export function isaTag(s, used) {
     tag = `${letters}-15${bay}`;
   }
   if (!tag) {
-    const base = area(s) * 100;
-    for (let n = base + 1; used.has((tag = `${letters}-${n}`)); n++);
+    for (let n = firstNumber(s); used.has((tag = `${letters}-${n}`)); n++);
   }
   used.add(tag);
   return tag;
