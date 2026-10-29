@@ -1,0 +1,145 @@
+{
+ "now": "2026-10-28T07:00",
+ "floors": {
+  "F-INTAKE": [
+   "SRC",
+   "RWP-1",
+   "T-201",
+   "DP-2",
+   "MIX",
+   "AIT-101",
+   "FIT-201"
+  ],
+  "F-CLAR": [
+   "CL-1",
+   "CL-2",
+   "CL-3",
+   "CL-4",
+   "AIT-301"
+  ],
+  "F-FILT": [
+   "F01",
+   "F02",
+   "F03",
+   "F04",
+   "F05",
+   "F06",
+   "F07",
+   "F08",
+   "AIT-157"
+  ],
+  "F-DISINF": [
+   "CCT-1",
+   "RES-2",
+   "AIT-401",
+   "LIT-501"
+  ],
+  "F-HLP": [
+   "HLP-A",
+   "HLP-B",
+   "TT-612",
+   "DIST"
+  ]
+ },
+ "tags": {
+  "AIT-101": {
+   "asset": "SRC",
+   "floor": "F-INTAKE",
+   "meaning": "Raw water turbidity (NTU)"
+  },
+  "FIT-102": {
+   "asset": "RWP-1",
+   "floor": "F-INTAKE",
+   "meaning": "Raw water intake flow (ML/d)"
+  },
+  "FIT-201": {
+   "asset": "DP-2",
+   "floor": "F-INTAKE",
+   "meaning": "Coagulant dosing flow (L/h)"
+  },
+  "AIT-301": {
+   "asset": "AIT-301",
+   "floor": "F-CLAR",
+   "meaning": "Clarified water turbidity (NTU)"
+  },
+  "AIT-157": {
+   "asset": "F07",
+   "floor": "F-FILT",
+   "meaning": "F07 filtrate turbidity (NTU)"
+  },
+  "PDT-157": {
+   "asset": "F07",
+   "floor": "F-FILT",
+   "meaning": "F07 filter headloss (m)"
+  },
+  "AIT-401": {
+   "asset": "CCT-1",
+   "floor": "F-DISINF",
+   "meaning": "Free chlorine residual (mg/L)"
+  },
+  "LIT-501": {
+   "asset": "RES-2",
+   "floor": "F-DISINF",
+   "meaning": "RES-2 level (%)"
+  },
+  "TT-612": {
+   "asset": "HLP-B",
+   "floor": "F-HLP",
+   "meaning": "HLP-B drive-end bearing temperature (°C)"
+  }
+ },
+ "facts": [
+  {
+   "n": 1,
+   "text": "Storm: 48 mm in the catchment, 2026-10-27 14:00–20:00. Raw turbidity AIT-101 ~6 NTU until 27th 20:00, rising to ~38 NTU by 28th 02:00, ~38 since."
+  },
+  {
+   "n": 2,
+   "text": "Plume reached the intake ~01:30 on the 28th."
+  },
+  {
+   "n": 3,
+   "text": "F07 filtrate turbidity AIT-157: ~0.12 NTU, starts rising 04:10, crosses 0.3 at ~05:20, HH alarm 0.5 at 06:20, 0.62 at 07:00."
+  },
+  {
+   "n": 4,
+   "text": "F07 last backwashed 2026-10-25 18:00 → run time 61 h at 07:00. SOP-FLT-02 triggers a backwash at filtrate ≥ 0.3 NTU, headloss ≥ 2.0 m or run ≥ 48 h. F07 headloss (tag PDT-157) 2.3 m at 07:00. F07's 48 h backwash fell due 27th 18:00 and was **deferred by shift A** to protect RES-2 level (team decision memory DEC-OPS-1027, by S. Dlamini, approved by phone by J. van Wyk)."
+  },
+  {
+   "n": 5,
+   "text": "Field note FN-2026-031 (T. Khumalo, 2026-09-12): mud-balling seen in F07 media; media inspection WO-26051 planned, not done."
+  },
+  {
+   "n": 6,
+   "text": "Other filters F01–F06, F08: filtrate 0.10–0.16 NTU, runs 20–44 h."
+  },
+  {
+   "n": 7,
+   "text": "Clarified turbidity AIT-301 2.9 NTU (target < 3). CL-4 out of service since 2026-10-01 for refurbishment (PRJ-CL4); RES-2 cell B being relined (PRJ-RES2), so clarification limits the works to 90 ML/d although the intake brings 118 ML/d (FIT-102)."
+  },
+  {
+   "n": 8,
+   "text": "Coagulant DP-2 / FIT-201: flat at 127 L/h since a calibration drift on 2026-10-20 (confirmed spec band 128–142 L/h, spec v3). SOP-COAG-01 dose table at raw turbidity 30–40 NTU calls for **150–165 L/h** → under-dosing during the storm is a contributing cause."
+  },
+  {
+   "n": 9,
+   "text": "RES-2 level LIT-501: 38 % at 07:00, falling ~2.5 %/h, about 11 h of supply to zones Z13–Z15 (~41 000 people). Low limit 50 %. SOP-RES-01: below 6 h of supply, alert the works manager and open the outage-notice draft."
+  },
+  {
+   "n": 10,
+   "text": "HLP-B drive-end bearing TT-612: 64 °C on 21 Oct rising ~2 °C/day to 78 °C at 07:00. Band 40–70 °C; OEM alarm 85 °C, trip 95 °C. Last greased 2026-08-02; SOP-PMP-04 greasing interval 2 000 running hours (≈ 83 days) → overdue since 2026-10-24. Field note FN-2025-118 (R. Ndlovu, 2025-06-14): \"grease the drive end first; if it is still climbing after 24 h, check coupling alignment.\" WO-26058 HLP-B bearing inspection open, due 2026-10-30, assigned N. Mokoena, needs permit (PTW) and isolation per SOP-ISO-01."
+  },
+  {
+   "n": 11,
+   "text": "Free chlorine AIT-401 0.9 mg/L (band 0.5–1.5)."
+  },
+  {
+   "n": 12,
+   "text": "Lab final-water turbidity grab samples: 0.18 at 2026-10-27 22:00, 0.31 at 04:00, 0.44 at 06:00 on the 28th. SANS 241 limit 1 NTU; works operational target 0.5 NTU."
+  },
+  {
+   "n": 13,
+   "text": "Past incident INC-2024-07 (2024-02-11): a storm plume plus a long filter run caused breakthrough on F03; the fix was an early backwash plus a 20 % coagulant step-up; lesson: \"during storms, backwash early and jar-test before the plume arrives\"."
+  }
+ ]
+}

@@ -1,0 +1,1522 @@
+{
+ "frame": {
+  "dx": -573.2,
+  "dy": -808.7,
+  "flipY": true,
+  "levelShift": 1450,
+  "rotDeg": 21.2
+ },
+ "objects": {
+  "ADM-1": {
+   "asset": "ADM-1",
+   "collection": "RB_Buildings",
+   "site": {
+    "cx": 773.6,
+    "cy": 541.12,
+    "l": 15.0,
+    "w": 30.0,
+    "zMax": 1482.0,
+    "zMin": 1478.75
+   }
+  },
+  "BWR-1": {
+   "asset": "BWR-1",
+   "collection": "RB_Buildings",
+   "floor": "F-FILT",
+   "site": {
+    "cx": 834.56,
+    "cy": 412.36,
+    "l": 12.0,
+    "w": 24.0,
+    "zMax": 1474.03,
+    "zMin": 1468.5
+   }
+  },
+  "CL-1_Bridge": {
+   "asset": "CL-1",
+   "collection": "RB_Process",
+   "floor": "F-CLAR",
+   "site": {
+    "cx": 842.21,
+    "cy": 511.34,
+    "l": 10.99,
+    "w": 9.22,
+    "zMax": 1478.02,
+    "zMin": 1476.78
+   }
+  },
+  "CL-1_FeedWell": {
+   "asset": "CL-1",
+   "collection": "RB_Process",
+   "site": {
+    "cx": 838.13,
+    "cy": 516.41,
+    "l": 7.33,
+    "w": 7.33,
+    "zMax": 1476.6,
+    "zMin": 1472.6
+   }
+  },
+  "CL-1_Floor": {
+   "asset": "CL-1",
+   "collection": "RB_Process",
+   "site": {
+    "cx": 838.13,
+    "cy": 516.41,
+    "l": 24.99,
+    "w": 24.99,
+    "zMax": 1471.89,
+    "zMin": 1471.6
+   }
+  },
+  "CL-1_Launder": {
+   "asset": "CL-1",
+   "collection": "RB_Process",
+   "site": {
+    "cx": 838.13,
+    "cy": 516.41,
+    "l": 24.19,
+    "w": 24.19,
+    "zMax": 1476.73,
+    "zMin": 1475.9
+   }
+  },
+  "CL-1_Pivot": {
+   "asset": "CL-1",
+   "collection": "RB_Process",
+   "site": {
+    "cx": 838.13,
+    "cy": 516.41,
+    "l": 3.32,
+    "w": 3.32,
+    "zMax": 1476.71,
+    "zMin": 1476.41
+   }
+  },
+  "CL-1_Wall": {
+   "asset": "CL-1",
+   "collection": "RB_Process",
+   "floor": "F-CLAR",
+   "site": {
+    "cx": 838.13,
+    "cy": 516.41,
+    "l": 25.59,
+    "w": 25.59,
+    "zMax": 1476.73,
+    "zMin": 1471.89
+   }
+  },
+  "CL-1_Water": {
+   "asset": "CL-1",
+   "collection": "RB_Process",
+   "site": {
+    "cx": 838.13,
+    "cy": 516.41,
+    "l": 24.97,
+    "w": 24.97,
+    "zMax": 1476.48,
+    "zMin": 1471.89
+   }
+  },
+  "CL-2_Bridge": {
+   "asset": "CL-2",
+   "collection": "RB_Process",
+   "floor": "F-CLAR",
+   "site": {
+    "cx": 796.61,
+    "cy": 516.64,
+    "l": 1.65,
+    "w": 13.06,
+    "zMax": 1478.02,
+    "zMin": 1476.78
+   }
+  },
+  "CL-2_FeedWell": {
+   "asset": "CL-2",
+   "collection": "RB_Process",
+   "site": {
+    "cx": 803.09,
+    "cy": 516.49,
+    "l": 7.33,
+    "w": 7.33,
+    "zMax": 1476.6,
+    "zMin": 1472.6
+   }
+  },
+  "CL-2_Floor": {
+   "asset": "CL-2",
+   "collection": "RB_Process",
+   "site": {
+    "cx": 803.09,
+    "cy": 516.49,
+    "l": 24.99,
+    "w": 24.99,
+    "zMax": 1471.89,
+    "zMin": 1471.6
+   }
+  },
+  "CL-2_Launder": {
+   "asset": "CL-2",
+   "collection": "RB_Process",
+   "site": {
+    "cx": 803.09,
+    "cy": 516.49,
+    "l": 24.19,
+    "w": 24.19,
+    "zMax": 1476.73,
+    "zMin": 1475.9
+   }
+  },
+  "CL-2_Pivot": {
+   "asset": "CL-2",
+   "collection": "RB_Process",
+   "site": {
+    "cx": 803.09,
+    "cy": 516.49,
+    "l": 3.32,
+    "w": 3.32,
+    "zMax": 1476.71,
+    "zMin": 1476.41
+   }
+  },
+  "CL-2_Wall": {
+   "asset": "CL-2",
+   "collection": "RB_Process",
+   "floor": "F-CLAR",
+   "site": {
+    "cx": 803.09,
+    "cy": 516.49,
+    "l": 25.59,
+    "w": 25.59,
+    "zMax": 1476.73,
+    "zMin": 1471.89
+   }
+  },
+  "CL-2_Water": {
+   "asset": "CL-2",
+   "collection": "RB_Process",
+   "site": {
+    "cx": 803.09,
+    "cy": 516.49,
+    "l": 24.97,
+    "w": 24.97,
+    "zMax": 1476.48,
+    "zMin": 1471.89
+   }
+  },
+  "CL-3_Bridge": {
+   "asset": "CL-3",
+   "collection": "RB_Process",
+   "floor": "F-CLAR",
+   "site": {
+    "cx": 838.2,
+    "cy": 491.18,
+    "l": 13.06,
+    "w": 1.65,
+    "zMax": 1478.02,
+    "zMin": 1476.78
+   }
+  },
+  "CL-3_FeedWell": {
+   "asset": "CL-3",
+   "collection": "RB_Process",
+   "site": {
+    "cx": 838.06,
+    "cy": 484.69,
+    "l": 7.33,
+    "w": 7.33,
+    "zMax": 1476.6,
+    "zMin": 1472.6
+   }
+  },
+  "CL-3_Floor": {
+   "asset": "CL-3",
+   "collection": "RB_Process",
+   "site": {
+    "cx": 838.06,
+    "cy": 484.69,
+    "l": 24.99,
+    "w": 24.99,
+    "zMax": 1471.89,
+    "zMin": 1471.6
+   }
+  },
+  "CL-3_Launder": {
+   "asset": "CL-3",
+   "collection": "RB_Process",
+   "site": {
+    "cx": 838.06,
+    "cy": 484.69,
+    "l": 24.19,
+    "w": 24.19,
+    "zMax": 1476.73,
+    "zMin": 1475.9
+   }
+  },
+  "CL-3_Pivot": {
+   "asset": "CL-3",
+   "collection": "RB_Process",
+   "site": {
+    "cx": 838.06,
+    "cy": 484.69,
+    "l": 3.32,
+    "w": 3.32,
+    "zMax": 1476.71,
+    "zMin": 1476.41
+   }
+  },
+  "CL-3_Wall": {
+   "asset": "CL-3",
+   "collection": "RB_Process",
+   "floor": "F-CLAR",
+   "site": {
+    "cx": 838.06,
+    "cy": 484.69,
+    "l": 25.59,
+    "w": 25.59,
+    "zMax": 1476.73,
+    "zMin": 1471.89
+   }
+  },
+  "CL-3_Water": {
+   "asset": "CL-3",
+   "collection": "RB_Process",
+   "site": {
+    "cx": 838.06,
+    "cy": 484.69,
+    "l": 24.97,
+    "w": 24.97,
+    "zMax": 1476.48,
+    "zMin": 1471.89
+   }
+  },
+  "CL-4_Bridge": {
+   "asset": "CL-4",
+   "collection": "RB_Process",
+   "floor": "F-CLAR",
+   "site": {
+    "cx": 800.28,
+    "cy": 478.77,
+    "l": 12.28,
+    "w": 6.98,
+    "zMax": 1478.02,
+    "zMin": 1476.78
+   }
+  },
+  "CL-4_FeedWell": {
+   "asset": "CL-4",
+   "collection": "RB_Process",
+   "site": {
+    "cx": 803.16,
+    "cy": 484.61,
+    "l": 7.33,
+    "w": 7.33,
+    "zMax": 1476.6,
+    "zMin": 1472.6
+   }
+  },
+  "CL-4_Floor": {
+   "asset": "CL-4",
+   "collection": "RB_Process",
+   "site": {
+    "cx": 803.16,
+    "cy": 484.61,
+    "l": 24.99,
+    "w": 24.99,
+    "zMax": 1471.89,
+    "zMin": 1471.6
+   }
+  },
+  "CL-4_Launder": {
+   "asset": "CL-4",
+   "collection": "RB_Process",
+   "site": {
+    "cx": 803.16,
+    "cy": 484.61,
+    "l": 24.19,
+    "w": 24.19,
+    "zMax": 1476.73,
+    "zMin": 1475.9
+   }
+  },
+  "CL-4_Pivot": {
+   "asset": "CL-4",
+   "collection": "RB_Process",
+   "site": {
+    "cx": 803.16,
+    "cy": 484.61,
+    "l": 3.32,
+    "w": 3.32,
+    "zMax": 1476.71,
+    "zMin": 1476.41
+   }
+  },
+  "CL-4_Wall": {
+   "asset": "CL-4",
+   "collection": "RB_Process",
+   "floor": "F-CLAR",
+   "site": {
+    "cx": 803.16,
+    "cy": 484.61,
+    "l": 25.59,
+    "w": 25.59,
+    "zMax": 1476.73,
+    "zMin": 1471.89
+   }
+  },
+  "CLB-1": {
+   "asset": "CLB-1",
+   "collection": "RB_Buildings",
+   "floor": "F-DISINF",
+   "site": {
+    "cx": 781.12,
+    "cy": 434.7,
+    "l": 8.9,
+    "w": 13.55,
+    "zMax": 1475.27,
+    "zMin": 1470.15
+   }
+  },
+  "DB-1": {
+   "asset": "DB-1",
+   "collection": "RB_Process",
+   "floor": "F-CLAR",
+   "site": {
+    "cx": 820.62,
+    "cy": 500.57,
+    "l": 6.36,
+    "w": 6.36,
+    "zMax": 1477.5,
+    "zMin": 1472.4
+   }
+  },
+  "DOS-1": {
+   "asset": "DOS-1",
+   "collection": "RB_Buildings",
+   "floor": "F-INTAKE",
+   "site": {
+    "cx": 809.66,
+    "cy": 546.98,
+    "l": 9.6,
+    "w": 13.89,
+    "zMax": 1481.56,
+    "zMin": 1478.75
+   }
+  },
+  "ELB-1": {
+   "asset": "ELB-1",
+   "collection": "RB_Buildings",
+   "floor": "F-HLP",
+   "site": {
+    "cx": 843.69,
+    "cy": 313.16,
+    "l": 14.9,
+    "w": 27.7,
+    "zMax": 1466.0,
+    "zMin": 1461.55
+   }
+  },
+  "F01_Sand": {
+   "asset": "F01",
+   "collection": "RB_Process",
+   "floor": "F-FILT",
+   "site": {
+    "cx": 828.75,
+    "cy": 457.5,
+    "l": 11.4,
+    "w": 7.0,
+    "zMax": 1473.0,
+    "zMin": 1471.42
+   }
+  },
+  "F01_Trough": {
+   "asset": "F01",
+   "collection": "RB_Process",
+   "site": {
+    "cx": 828.75,
+    "cy": 457.5,
+    "l": 11.4,
+    "w": 0.62,
+    "zMax": 1473.8,
+    "zMin": 1473.0
+   }
+  },
+  "F01_Water": {
+   "asset": "F01",
+   "collection": "RB_Process",
+   "floor": "F-FILT",
+   "site": {
+    "cx": 828.75,
+    "cy": 457.5,
+    "l": 11.4,
+    "w": 7.0,
+    "zMax": 1475.0,
+    "zMin": 1473.0
+   }
+  },
+  "F02_Sand": {
+   "asset": "F02",
+   "collection": "RB_Process",
+   "floor": "F-FILT",
+   "site": {
+    "cx": 836.0,
+    "cy": 457.5,
+    "l": 11.4,
+    "w": 7.0,
+    "zMax": 1473.0,
+    "zMin": 1471.42
+   }
+  },
+  "F02_Trough": {
+   "asset": "F02",
+   "collection": "RB_Process",
+   "site": {
+    "cx": 836.0,
+    "cy": 457.5,
+    "l": 11.4,
+    "w": 0.62,
+    "zMax": 1473.8,
+    "zMin": 1473.0
+   }
+  },
+  "F02_Water": {
+   "asset": "F02",
+   "collection": "RB_Process",
+   "floor": "F-FILT",
+   "site": {
+    "cx": 836.0,
+    "cy": 457.5,
+    "l": 11.4,
+    "w": 7.0,
+    "zMax": 1475.0,
+    "zMin": 1473.0
+   }
+  },
+  "F03_Sand": {
+   "asset": "F03",
+   "collection": "RB_Process",
+   "floor": "F-FILT",
+   "site": {
+    "cx": 843.25,
+    "cy": 457.5,
+    "l": 11.4,
+    "w": 7.0,
+    "zMax": 1473.0,
+    "zMin": 1471.42
+   }
+  },
+  "F03_Trough": {
+   "asset": "F03",
+   "collection": "RB_Process",
+   "site": {
+    "cx": 843.25,
+    "cy": 457.5,
+    "l": 11.4,
+    "w": 0.62,
+    "zMax": 1473.8,
+    "zMin": 1473.0
+   }
+  },
+  "F03_Water": {
+   "asset": "F03",
+   "collection": "RB_Process",
+   "floor": "F-FILT",
+   "site": {
+    "cx": 843.25,
+    "cy": 457.5,
+    "l": 11.4,
+    "w": 7.0,
+    "zMax": 1475.0,
+    "zMin": 1473.0
+   }
+  },
+  "F04_Sand": {
+   "asset": "F04",
+   "collection": "RB_Process",
+   "floor": "F-FILT",
+   "site": {
+    "cx": 850.5,
+    "cy": 457.5,
+    "l": 11.4,
+    "w": 7.0,
+    "zMax": 1473.0,
+    "zMin": 1471.42
+   }
+  },
+  "F04_Trough": {
+   "asset": "F04",
+   "collection": "RB_Process",
+   "site": {
+    "cx": 850.5,
+    "cy": 457.5,
+    "l": 11.4,
+    "w": 0.62,
+    "zMax": 1473.8,
+    "zMin": 1473.0
+   }
+  },
+  "F04_Water": {
+   "asset": "F04",
+   "collection": "RB_Process",
+   "floor": "F-FILT",
+   "site": {
+    "cx": 850.5,
+    "cy": 457.5,
+    "l": 11.4,
+    "w": 7.0,
+    "zMax": 1475.0,
+    "zMin": 1473.0
+   }
+  },
+  "F05_Sand": {
+   "asset": "F05",
+   "collection": "RB_Process",
+   "floor": "F-FILT",
+   "site": {
+    "cx": 789.62,
+    "cy": 457.55,
+    "l": 11.4,
+    "w": 7.0,
+    "zMax": 1473.0,
+    "zMin": 1471.42
+   }
+  },
+  "F05_Trough": {
+   "asset": "F05",
+   "collection": "RB_Process",
+   "site": {
+    "cx": 789.62,
+    "cy": 457.55,
+    "l": 11.4,
+    "w": 0.62,
+    "zMax": 1473.8,
+    "zMin": 1473.0
+   }
+  },
+  "F05_Water": {
+   "asset": "F05",
+   "collection": "RB_Process",
+   "floor": "F-FILT",
+   "site": {
+    "cx": 789.62,
+    "cy": 457.55,
+    "l": 11.4,
+    "w": 7.0,
+    "zMax": 1475.0,
+    "zMin": 1473.0
+   }
+  },
+  "F06_Sand": {
+   "asset": "F06",
+   "collection": "RB_Process",
+   "floor": "F-FILT",
+   "site": {
+    "cx": 796.87,
+    "cy": 457.55,
+    "l": 11.4,
+    "w": 7.0,
+    "zMax": 1473.0,
+    "zMin": 1471.42
+   }
+  },
+  "F06_Trough": {
+   "asset": "F06",
+   "collection": "RB_Process",
+   "site": {
+    "cx": 796.87,
+    "cy": 457.55,
+    "l": 11.4,
+    "w": 0.62,
+    "zMax": 1473.8,
+    "zMin": 1473.0
+   }
+  },
+  "F06_Water": {
+   "asset": "F06",
+   "collection": "RB_Process",
+   "floor": "F-FILT",
+   "site": {
+    "cx": 796.87,
+    "cy": 457.55,
+    "l": 11.4,
+    "w": 7.0,
+    "zMax": 1475.0,
+    "zMin": 1473.0
+   }
+  },
+  "F07_Sand": {
+   "asset": "F07",
+   "collection": "RB_Process",
+   "floor": "F-FILT",
+   "site": {
+    "cx": 804.12,
+    "cy": 457.55,
+    "l": 11.4,
+    "w": 7.0,
+    "zMax": 1473.0,
+    "zMin": 1471.42
+   }
+  },
+  "F07_Trough": {
+   "asset": "F07",
+   "collection": "RB_Process",
+   "site": {
+    "cx": 804.12,
+    "cy": 457.55,
+    "l": 11.4,
+    "w": 0.62,
+    "zMax": 1473.8,
+    "zMin": 1473.0
+   }
+  },
+  "F07_Water": {
+   "asset": "F07",
+   "collection": "RB_Process",
+   "floor": "F-FILT",
+   "site": {
+    "cx": 804.12,
+    "cy": 457.55,
+    "l": 11.4,
+    "w": 7.0,
+    "zMax": 1475.0,
+    "zMin": 1473.0
+   }
+  },
+  "F08_Sand": {
+   "asset": "F08",
+   "collection": "RB_Process",
+   "floor": "F-FILT",
+   "site": {
+    "cx": 811.37,
+    "cy": 457.55,
+    "l": 11.4,
+    "w": 7.0,
+    "zMax": 1473.0,
+    "zMin": 1471.42
+   }
+  },
+  "F08_Trough": {
+   "asset": "F08",
+   "collection": "RB_Process",
+   "site": {
+    "cx": 811.37,
+    "cy": 457.55,
+    "l": 11.4,
+    "w": 0.62,
+    "zMax": 1473.8,
+    "zMin": 1473.0
+   }
+  },
+  "F08_Water": {
+   "asset": "F08",
+   "collection": "RB_Process",
+   "floor": "F-FILT",
+   "site": {
+    "cx": 811.37,
+    "cy": 457.55,
+    "l": 11.4,
+    "w": 7.0,
+    "zMax": 1475.0,
+    "zMin": 1473.0
+   }
+  },
+  "FB-1_CCT": {
+   "asset": "CCT-1",
+   "collection": "RB_Process",
+   "floor": "F-DISINF",
+   "site": {
+    "cx": 839.93,
+    "cy": 454.69,
+    "l": 17.62,
+    "w": 29.96,
+    "zMax": 1471.11,
+    "zMin": 1468.11
+   }
+  },
+  "FB-1_Gallery": {
+   "asset": "FB-1",
+   "collection": "RB_Buildings",
+   "site": {
+    "cx": 839.93,
+    "cy": 447.99,
+    "l": 4.22,
+    "w": 29.96,
+    "zMax": 1479.2,
+    "zMin": 1471.11
+   }
+  },
+  "FB-2_CCT": {
+   "asset": "CCT-2",
+   "collection": "RB_Process",
+   "floor": "F-DISINF",
+   "site": {
+    "cx": 800.8,
+    "cy": 454.74,
+    "l": 17.62,
+    "w": 29.96,
+    "zMax": 1471.11,
+    "zMin": 1468.11
+   }
+  },
+  "FB-2_Gallery": {
+   "asset": "FB-2",
+   "collection": "RB_Buildings",
+   "site": {
+    "cx": 800.8,
+    "cy": 448.04,
+    "l": 4.22,
+    "w": 29.96,
+    "zMax": 1479.2,
+    "zMin": 1471.11
+   }
+  },
+  "FPR-1": {
+   "asset": "FPR-1",
+   "collection": "RB_Buildings",
+   "floor": "F-FILT",
+   "site": {
+    "cx": 805.87,
+    "cy": 437.11,
+    "l": 6.9,
+    "w": 19.4,
+    "zMax": 1475.0,
+    "zMin": 1467.75
+   }
+  },
+  "GH-1": {
+   "asset": "GH-1",
+   "collection": "RB_Buildings",
+   "site": {
+    "cx": 562.77,
+    "cy": 599.3,
+    "l": 5.9,
+    "w": 7.04,
+    "zMax": 1483.92,
+    "zMin": 1480.92
+   }
+  },
+  "HLP-A_Base": {
+   "asset": "HLP-A",
+   "collection": "RB_PumpHall",
+   "site": {
+    "cx": 804.01,
+    "cy": 300.51,
+    "l": 4.6,
+    "w": 1.5,
+    "zMax": 1462.35,
+    "zMin": 1462.1
+   }
+  },
+  "HLP-A_Bearings": {
+   "asset": "HLP-A",
+   "collection": "RB_PumpHall",
+   "site": {
+    "cx": 804.01,
+    "cy": 301.29,
+    "l": 1.95,
+    "w": 0.44,
+    "zMax": 1463.27,
+    "zMin": 1462.83
+   }
+  },
+  "HLP-A_Casing": {
+   "asset": "HLP-A",
+   "collection": "RB_PumpHall",
+   "floor": "F-HLP",
+   "site": {
+    "cx": 804.01,
+    "cy": 301.26,
+    "l": 1.3,
+    "w": 1.75,
+    "zMax": 1463.77,
+    "zMin": 1462.33
+   }
+  },
+  "HLP-A_CouplingGuard": {
+   "asset": "HLP-A",
+   "collection": "RB_PumpHall",
+   "site": {
+    "cx": 804.01,
+    "cy": 299.96,
+    "l": 0.65,
+    "w": 0.75,
+    "zMax": 1463.4,
+    "zMin": 1462.7
+   }
+  },
+  "HLP-A_Motor": {
+   "asset": "HLP-A",
+   "collection": "RB_PumpHall",
+   "floor": "F-HLP",
+   "site": {
+    "cx": 804.05,
+    "cy": 298.59,
+    "l": 2.05,
+    "w": 1.42,
+    "zMax": 1463.72,
+    "zMin": 1462.38
+   }
+  },
+  "HLP-A_Pipework": {
+   "asset": "HLP-A",
+   "collection": "RB_PumpHall",
+   "site": {
+    "cx": 804.01,
+    "cy": 299.64,
+    "l": 4.77,
+    "w": 0.64,
+    "zMax": 1465.46,
+    "zMin": 1461.2
+   }
+  },
+  "HLP-A_Valves": {
+   "asset": "HLP-A",
+   "collection": "RB_PumpHall",
+   "site": {
+    "cx": 804.01,
+    "cy": 300.16,
+    "l": 2.91,
+    "w": 0.8,
+    "zMax": 1466.33,
+    "zMin": 1463.95
+   }
+  },
+  "HLP-B_Base": {
+   "asset": "HLP-B",
+   "collection": "RB_PumpHall",
+   "site": {
+    "cx": 808.49,
+    "cy": 300.51,
+    "l": 4.6,
+    "w": 1.5,
+    "zMax": 1462.35,
+    "zMin": 1462.1
+   }
+  },
+  "HLP-B_Bearing_DE": {
+   "asset": "HLP-B",
+   "collection": "RB_PumpHall",
+   "floor": "F-HLP",
+   "site": {
+    "cx": 808.59,
+    "cy": 300.48,
+    "l": 0.37,
+    "w": 0.65,
+    "zMax": 1463.28,
+    "zMin": 1462.82
+   },
+   "tag": "TT-612"
+  },
+  "HLP-B_Bearings": {
+   "asset": "HLP-B",
+   "collection": "RB_PumpHall",
+   "site": {
+    "cx": 808.49,
+    "cy": 301.29,
+    "l": 1.95,
+    "w": 0.44,
+    "zMax": 1463.27,
+    "zMin": 1462.83
+   }
+  },
+  "HLP-B_Casing": {
+   "asset": "HLP-B",
+   "collection": "RB_PumpHall",
+   "floor": "F-HLP",
+   "site": {
+    "cx": 808.49,
+    "cy": 301.26,
+    "l": 1.3,
+    "w": 1.75,
+    "zMax": 1463.77,
+    "zMin": 1462.33
+   }
+  },
+  "HLP-B_CouplingGuard": {
+   "asset": "HLP-B",
+   "collection": "RB_PumpHall",
+   "site": {
+    "cx": 808.49,
+    "cy": 299.96,
+    "l": 0.65,
+    "w": 0.75,
+    "zMax": 1463.4,
+    "zMin": 1462.7
+   }
+  },
+  "HLP-B_Motor": {
+   "asset": "HLP-B",
+   "collection": "RB_PumpHall",
+   "floor": "F-HLP",
+   "site": {
+    "cx": 808.53,
+    "cy": 298.59,
+    "l": 2.05,
+    "w": 1.42,
+    "zMax": 1463.72,
+    "zMin": 1462.38
+   }
+  },
+  "HLP-B_Pipework": {
+   "asset": "HLP-B",
+   "collection": "RB_PumpHall",
+   "site": {
+    "cx": 808.49,
+    "cy": 299.64,
+    "l": 4.77,
+    "w": 0.64,
+    "zMax": 1465.46,
+    "zMin": 1461.2
+   }
+  },
+  "HLP-B_Valves": {
+   "asset": "HLP-B",
+   "collection": "RB_PumpHall",
+   "site": {
+    "cx": 808.49,
+    "cy": 300.16,
+    "l": 2.91,
+    "w": 0.8,
+    "zMax": 1466.33,
+    "zMin": 1463.95
+   }
+  },
+  "HLP-C_Base": {
+   "asset": "HLP-C",
+   "collection": "RB_PumpHall",
+   "site": {
+    "cx": 812.97,
+    "cy": 300.51,
+    "l": 4.6,
+    "w": 1.5,
+    "zMax": 1462.35,
+    "zMin": 1462.1
+   }
+  },
+  "HLP-C_Bearings": {
+   "asset": "HLP-C",
+   "collection": "RB_PumpHall",
+   "site": {
+    "cx": 812.97,
+    "cy": 301.29,
+    "l": 1.95,
+    "w": 0.44,
+    "zMax": 1463.27,
+    "zMin": 1462.83
+   }
+  },
+  "HLP-C_Casing": {
+   "asset": "HLP-C",
+   "collection": "RB_PumpHall",
+   "floor": "F-HLP",
+   "site": {
+    "cx": 812.97,
+    "cy": 301.26,
+    "l": 1.3,
+    "w": 1.75,
+    "zMax": 1463.77,
+    "zMin": 1462.33
+   }
+  },
+  "HLP-C_CouplingGuard": {
+   "asset": "HLP-C",
+   "collection": "RB_PumpHall",
+   "site": {
+    "cx": 812.97,
+    "cy": 299.96,
+    "l": 0.65,
+    "w": 0.75,
+    "zMax": 1463.4,
+    "zMin": 1462.7
+   }
+  },
+  "HLP-C_Motor": {
+   "asset": "HLP-C",
+   "collection": "RB_PumpHall",
+   "floor": "F-HLP",
+   "site": {
+    "cx": 813.01,
+    "cy": 298.59,
+    "l": 2.05,
+    "w": 1.42,
+    "zMax": 1463.72,
+    "zMin": 1462.38
+   }
+  },
+  "HLP-C_Pipework": {
+   "asset": "HLP-C",
+   "collection": "RB_PumpHall",
+   "site": {
+    "cx": 812.97,
+    "cy": 299.64,
+    "l": 4.77,
+    "w": 0.64,
+    "zMax": 1465.46,
+    "zMin": 1461.2
+   }
+  },
+  "HLP-C_Valves": {
+   "asset": "HLP-C",
+   "collection": "RB_PumpHall",
+   "site": {
+    "cx": 812.97,
+    "cy": 300.16,
+    "l": 2.91,
+    "w": 0.8,
+    "zMax": 1466.33,
+    "zMin": 1463.95
+   }
+  },
+  "HLP-D_Base": {
+   "asset": "HLP-D",
+   "collection": "RB_PumpHall",
+   "site": {
+    "cx": 817.45,
+    "cy": 300.51,
+    "l": 3.45,
+    "w": 1.13,
+    "zMax": 1462.35,
+    "zMin": 1462.1
+   }
+  },
+  "HLP-D_Bearings": {
+   "asset": "HLP-D",
+   "collection": "RB_PumpHall",
+   "site": {
+    "cx": 817.45,
+    "cy": 301.17,
+    "l": 1.46,
+    "w": 0.33,
+    "zMax": 1462.98,
+    "zMin": 1462.65
+   }
+  },
+  "HLP-D_Casing": {
+   "asset": "HLP-D",
+   "collection": "RB_PumpHall",
+   "floor": "F-HLP",
+   "site": {
+    "cx": 817.45,
+    "cy": 301.15,
+    "l": 0.98,
+    "w": 1.31,
+    "zMax": 1463.35,
+    "zMin": 1462.28
+   }
+  },
+  "HLP-D_CouplingGuard": {
+   "asset": "HLP-D",
+   "collection": "RB_PumpHall",
+   "site": {
+    "cx": 817.45,
+    "cy": 300.17,
+    "l": 0.49,
+    "w": 0.56,
+    "zMax": 1463.07,
+    "zMin": 1462.55
+   }
+  },
+  "HLP-D_Motor": {
+   "asset": "HLP-D",
+   "collection": "RB_PumpHall",
+   "floor": "F-HLP",
+   "site": {
+    "cx": 817.48,
+    "cy": 299.14,
+    "l": 1.54,
+    "w": 1.06,
+    "zMax": 1463.31,
+    "zMin": 1462.31
+   }
+  },
+  "HLP-D_Pipework": {
+   "asset": "HLP-D",
+   "collection": "RB_PumpHall",
+   "site": {
+    "cx": 817.45,
+    "cy": 299.49,
+    "l": 4.47,
+    "w": 0.48,
+    "zMax": 1465.39,
+    "zMin": 1461.2
+   }
+  },
+  "HLP-D_Valves": {
+   "asset": "HLP-D",
+   "collection": "RB_PumpHall",
+   "site": {
+    "cx": 817.45,
+    "cy": 300.06,
+    "l": 2.71,
+    "w": 0.6,
+    "zMax": 1466.33,
+    "zMin": 1463.95
+   }
+  },
+  "HLP-E_Base": {
+   "asset": "HLP-E",
+   "collection": "RB_PumpHall",
+   "site": {
+    "cx": 821.93,
+    "cy": 300.51,
+    "l": 3.45,
+    "w": 1.13,
+    "zMax": 1462.35,
+    "zMin": 1462.1
+   }
+  },
+  "HLP-E_Bearings": {
+   "asset": "HLP-E",
+   "collection": "RB_PumpHall",
+   "site": {
+    "cx": 821.93,
+    "cy": 301.17,
+    "l": 1.46,
+    "w": 0.33,
+    "zMax": 1462.98,
+    "zMin": 1462.65
+   }
+  },
+  "HLP-E_Casing": {
+   "asset": "HLP-E",
+   "collection": "RB_PumpHall",
+   "floor": "F-HLP",
+   "site": {
+    "cx": 821.93,
+    "cy": 301.15,
+    "l": 0.98,
+    "w": 1.31,
+    "zMax": 1463.35,
+    "zMin": 1462.28
+   }
+  },
+  "HLP-E_CouplingGuard": {
+   "asset": "HLP-E",
+   "collection": "RB_PumpHall",
+   "site": {
+    "cx": 821.93,
+    "cy": 300.17,
+    "l": 0.49,
+    "w": 0.56,
+    "zMax": 1463.07,
+    "zMin": 1462.55
+   }
+  },
+  "HLP-E_Motor": {
+   "asset": "HLP-E",
+   "collection": "RB_PumpHall",
+   "floor": "F-HLP",
+   "site": {
+    "cx": 821.96,
+    "cy": 299.14,
+    "l": 1.54,
+    "w": 1.06,
+    "zMax": 1463.31,
+    "zMin": 1462.31
+   }
+  },
+  "HLP-E_Pipework": {
+   "asset": "HLP-E",
+   "collection": "RB_PumpHall",
+   "site": {
+    "cx": 821.93,
+    "cy": 299.49,
+    "l": 4.47,
+    "w": 0.48,
+    "zMax": 1465.39,
+    "zMin": 1461.2
+   }
+  },
+  "HLP-E_Valves": {
+   "asset": "HLP-E",
+   "collection": "RB_PumpHall",
+   "site": {
+    "cx": 821.93,
+    "cy": 300.06,
+    "l": 2.71,
+    "w": 0.6,
+    "zMax": 1466.33,
+    "zMin": 1463.95
+   }
+  },
+  "HLP-H_DeliveryHeader": {
+   "asset": "DIST",
+   "collection": "RB_PumpHall",
+   "floor": "F-HLP",
+   "site": {
+    "cx": 815.56,
+    "cy": 297.26,
+    "l": 0.91,
+    "w": 37.8,
+    "zMax": 1465.66,
+    "zMin": 1464.74
+   }
+  },
+  "HLP-H_Floor": {
+   "asset": "HLP-H",
+   "collection": "RB_PumpHall",
+   "floor": "F-HLP",
+   "site": {
+    "cx": 815.21,
+    "cy": 300.81,
+    "l": 8.91,
+    "w": 39.1,
+    "zMax": 1461.8,
+    "zMin": 1461.5
+   }
+  },
+  "HLP-H_Walls": {
+   "asset": "HLP-H",
+   "collection": "RB_Buildings",
+   "floor": "F-HLP",
+   "site": {
+    "cx": 815.21,
+    "cy": 300.81,
+    "l": 8.91,
+    "w": 39.1,
+    "zMax": 1468.95,
+    "zMin": 1461.8
+   }
+  },
+  "MFC-1_MIX": {
+   "asset": "MIX",
+   "collection": "RB_Process",
+   "floor": "F-INTAKE",
+   "site": {
+    "cx": 820.3,
+    "cy": 523.54,
+    "l": 15.3,
+    "w": 6.5,
+    "zMax": 1479.45,
+    "zMin": 1474.5
+   }
+  },
+  "RB_Pipes_Potable": {
+   "asset": "DIST",
+   "collection": "RB_Detail",
+   "floor": "F-HLP",
+   "site": {
+    "cx": 780.32,
+    "cy": 298.79,
+    "l": 2.06,
+    "w": 38.4,
+    "zMax": 1463.4,
+    "zMin": 1461.8
+   }
+  },
+  "RB_River": {
+   "asset": "SRC",
+   "collection": "RB_Detail",
+   "floor": "F-INTAKE",
+   "site": {
+    "cx": 668.06,
+    "cy": 278.97,
+    "l": 537.94,
+    "w": 1316.12,
+    "zMax": 1451.2,
+    "zMin": 1451.2
+   }
+  },
+  "RES-1_Roof": {
+   "asset": "RES-1",
+   "collection": "RB_Process",
+   "site": {
+    "cx": 830.04,
+    "cy": 379.69,
+    "l": 33.39,
+    "w": 33.39,
+    "zMax": 1472.46,
+    "zMin": 1472.16
+   }
+  },
+  "RES-1_Wall": {
+   "asset": "RES-1",
+   "collection": "RB_Process",
+   "floor": "F-DISINF",
+   "site": {
+    "cx": 830.04,
+    "cy": 379.69,
+    "l": 33.39,
+    "w": 33.39,
+    "zMax": 1472.39,
+    "zMin": 1465.69
+   }
+  },
+  "RES-2_Roof": {
+   "asset": "RES-2",
+   "collection": "RB_Process",
+   "site": {
+    "cx": 785.66,
+    "cy": 379.74,
+    "l": 33.39,
+    "w": 33.39,
+    "zMax": 1472.46,
+    "zMin": 1472.16
+   }
+  },
+  "RES-2_Wall": {
+   "asset": "RES-2",
+   "collection": "RB_Process",
+   "floor": "F-DISINF",
+   "site": {
+    "cx": 785.66,
+    "cy": 379.74,
+    "l": 33.39,
+    "w": 33.39,
+    "zMax": 1472.39,
+    "zMin": 1465.69
+   }
+  },
+  "RWP-1": {
+   "asset": "RWP-1",
+   "collection": "RB_Buildings",
+   "floor": "F-INTAKE",
+   "site": {
+    "cx": 847.25,
+    "cy": 229.39,
+    "l": 27.52,
+    "w": 42.36,
+    "zMax": 1461.5,
+    "zMin": 1452.5
+   }
+  },
+  "RWR-1_Wall": {
+   "asset": "RWR-1",
+   "collection": "RB_Process",
+   "floor": "F-INTAKE",
+   "site": {
+    "cx": 793.9,
+    "cy": 601.47,
+    "l": 45.39,
+    "w": 45.39,
+    "zMax": 1487.57,
+    "zMin": 1479.77
+   }
+  },
+  "RWR-1_Water": {
+   "asset": "RWR-1",
+   "collection": "RB_Process",
+   "site": {
+    "cx": 793.9,
+    "cy": 601.47,
+    "l": 44.67,
+    "w": 44.67,
+    "zMax": 1486.77,
+    "zMin": 1479.77
+   }
+  },
+  "RWR-2_Wall": {
+   "asset": "RWR-2",
+   "collection": "RB_Process",
+   "floor": "F-INTAKE",
+   "site": {
+    "cx": 736.89,
+    "cy": 601.05,
+    "l": 45.39,
+    "w": 45.39,
+    "zMax": 1487.62,
+    "zMin": 1479.82
+   }
+  },
+  "RWR-2_Water": {
+   "asset": "RWR-2",
+   "collection": "RB_Process",
+   "site": {
+    "cx": 736.89,
+    "cy": 601.05,
+    "l": 44.67,
+    "w": 44.67,
+    "zMax": 1486.82,
+    "zMin": 1479.82
+   }
+  },
+  "SLD-1_Sludge": {
+   "asset": "SLD-1",
+   "collection": "RB_Process",
+   "site": {
+    "cx": 896.93,
+    "cy": 406.41,
+    "l": 15.98,
+    "w": 15.98,
+    "zMax": 1468.2,
+    "zMin": 1464.85
+   }
+  },
+  "SLD-1_Wall": {
+   "asset": "SLD-1",
+   "collection": "RB_Process",
+   "site": {
+    "cx": 896.93,
+    "cy": 406.41,
+    "l": 16.8,
+    "w": 16.8,
+    "zMax": 1469.05,
+    "zMin": 1464.85
+   }
+  },
+  "T-201": {
+   "asset": "T-201",
+   "collection": "RB_Buildings",
+   "floor": "F-INTAKE",
+   "site": {
+    "cx": 805.16,
+    "cy": 553.68,
+    "l": 2.4,
+    "w": 2.4,
+    "zMax": 1481.75,
+    "zMin": 1478.75
+   }
+  },
+  "T-202": {
+   "asset": "T-202",
+   "collection": "RB_Buildings",
+   "floor": "F-INTAKE",
+   "site": {
+    "cx": 808.16,
+    "cy": 553.68,
+    "l": 2.4,
+    "w": 2.4,
+    "zMax": 1481.75,
+    "zMin": 1478.75
+   }
+  },
+  "T-203": {
+   "asset": "T-203",
+   "collection": "RB_Buildings",
+   "floor": "F-INTAKE",
+   "site": {
+    "cx": 811.16,
+    "cy": 553.68,
+    "l": 2.4,
+    "w": 2.4,
+    "zMax": 1481.75,
+    "zMin": 1478.75
+   }
+  },
+  "T-204": {
+   "asset": "T-204",
+   "collection": "RB_Buildings",
+   "floor": "F-INTAKE",
+   "site": {
+    "cx": 814.16,
+    "cy": 553.68,
+    "l": 2.4,
+    "w": 2.4,
+    "zMax": 1481.75,
+    "zMin": 1478.75
+   }
+  },
+  "WKS-1": {
+   "asset": "WKS-1",
+   "collection": "RB_Buildings",
+   "site": {
+    "cx": 873.4,
+    "cy": 310.63,
+    "l": 26.9,
+    "w": 11.5,
+    "zMax": 1466.3,
+    "zMin": 1461.8
+   }
+  }
+ }
+}
