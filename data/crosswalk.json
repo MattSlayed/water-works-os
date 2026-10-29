@@ -1,0 +1,257 @@
+{
+  "assets": [],
+  "renames": [
+    [
+      "POS-F09",
+      null
+    ],
+    [
+      "AST-FLT-F09",
+      null
+    ],
+    [
+      "SEN-F09-turb",
+      null
+    ],
+    [
+      "SEN-F09-headloss",
+      null
+    ],
+    [
+      "POS-F10",
+      null
+    ],
+    [
+      "AST-FLT-F10",
+      null
+    ],
+    [
+      "SEN-F10-turb",
+      null
+    ],
+    [
+      "SEN-F10-headloss",
+      null
+    ],
+    [
+      "POS-F11",
+      null
+    ],
+    [
+      "AST-FLT-F11",
+      null
+    ],
+    [
+      "SEN-F11-turb",
+      null
+    ],
+    [
+      "SEN-F11-headloss",
+      null
+    ],
+    [
+      "POS-F12",
+      null
+    ],
+    [
+      "AST-FLT-F12",
+      null
+    ],
+    [
+      "SEN-F12-turb",
+      null
+    ],
+    [
+      "SEN-F12-headloss",
+      null
+    ],
+    [
+      "RES-CWR1",
+      "AST-RES-1"
+    ],
+    [
+      "RES-CWR2",
+      "AST-RES-2"
+    ],
+    [
+      "SEN-CWR1-level",
+      "SEN-RES-1-level"
+    ],
+    [
+      "SEN-CWR2-level",
+      "SEN-RES-2-level"
+    ],
+    [
+      "RS-RES1",
+      "RS-CR1"
+    ],
+    [
+      "SEN-RES1-level",
+      "SEN-CR1-level"
+    ],
+    [
+      "SEN-RES1-in",
+      "SEN-CR1-in"
+    ],
+    [
+      "SEN-RES1-out",
+      "SEN-CR1-out"
+    ],
+    [
+      "RS-RES2",
+      "RS-CR2"
+    ],
+    [
+      "SEN-RES2-level",
+      "SEN-CR2-level"
+    ],
+    [
+      "SEN-RES2-in",
+      "SEN-CR2-in"
+    ],
+    [
+      "SEN-RES2-out",
+      "SEN-CR2-out"
+    ],
+    [
+      "PRJ-CL3",
+      "PRJ-CL4"
+    ],
+    [
+      "CHN-GRP-CL3",
+      "CHN-GRP-CL4"
+    ]
+  ],
+  "retired": [
+    "POS-F09",
+    "AST-FLT-F09",
+    "SEN-F09-turb",
+    "SEN-F09-headloss",
+    "POS-F10",
+    "AST-FLT-F10",
+    "SEN-F10-turb",
+    "SEN-F10-headloss",
+    "POS-F11",
+    "AST-FLT-F11",
+    "SEN-F11-turb",
+    "SEN-F11-headloss",
+    "POS-F12",
+    "AST-FLT-F12",
+    "SEN-F12-turb",
+    "SEN-F12-headloss"
+  ],
+  "sensors": {
+    "SEN-BLW-A-press": "PIT-101",
+    "SEN-BLW-A-temp_dis": "TT-101",
+    "SEN-BLW-A-vib": "VT-101",
+    "SEN-BLW-B-press": "PIT-102",
+    "SEN-BLW-B-temp_dis": "TT-102",
+    "SEN-BLW-B-vib": "VT-102",
+    "SEN-BWP-A-current": "IT-101",
+    "SEN-BWP-A-flow": "FIT-101",
+    "SEN-BWP-A-temp_de": "TT-103",
+    "SEN-BWP-A-vib_de": "VT-103",
+    "SEN-BWP-B-current": "IT-102",
+    "SEN-BWP-B-flow": "FIT-103",
+    "SEN-BWP-B-temp_de": "TT-104",
+    "SEN-BWP-B-vib_de": "VT-104",
+    "SEN-CHL-A-flow": "FIT-401",
+    "SEN-CHL-A-press": "PIT-401",
+    "SEN-CHL-A-stroke": "ZT-401",
+    "SEN-CHL-B-flow": "FIT-402",
+    "SEN-CHL-B-press": "PIT-402",
+    "SEN-CHL-B-stroke": "ZT-402",
+    "SEN-CL-1-current": "IT-301",
+    "SEN-CL-1-temp": "TT-301",
+    "SEN-CL-1-torque": "WT-301",
+    "SEN-CL-2-current": "IT-302",
+    "SEN-CL-2-temp": "TT-302",
+    "SEN-CL-2-torque": "WT-302",
+    "SEN-CL-3-current": "IT-303",
+    "SEN-CL-3-temp": "TT-303",
+    "SEN-CL-3-torque": "WT-303",
+    "SEN-CL-4-current": "IT-304",
+    "SEN-CL-4-temp": "TT-304",
+    "SEN-CL-4-torque": "WT-304",
+    "SEN-CWR1-level": "LIT-502",
+    "SEN-CWR2-level": "LIT-501",
+    "SEN-DP-1-flow": "FIT-202",
+    "SEN-DP-1-press": "PIT-201",
+    "SEN-DP-1-stroke": "ZT-201",
+    "SEN-DP-2-flow": "FIT-201",
+    "SEN-DP-2-press": "PIT-202",
+    "SEN-DP-2-stroke": "ZT-202",
+    "SEN-F01-headloss": "PDT-151",
+    "SEN-F01-turb": "AIT-151",
+    "SEN-F02-headloss": "PDT-152",
+    "SEN-F02-turb": "AIT-152",
+    "SEN-F03-headloss": "PDT-153",
+    "SEN-F03-turb": "AIT-153",
+    "SEN-F04-headloss": "PDT-154",
+    "SEN-F04-turb": "AIT-154",
+    "SEN-F05-headloss": "PDT-155",
+    "SEN-F05-turb": "AIT-155",
+    "SEN-F06-headloss": "PDT-156",
+    "SEN-F06-turb": "AIT-156",
+    "SEN-F07-headloss": "PDT-157",
+    "SEN-F07-turb": "AIT-157",
+    "SEN-F08-headloss": "PDT-158",
+    "SEN-F08-turb": "AIT-158",
+    "SEN-FIN-cl": "AIT-401",
+    "SEN-FIN-ph": "AIT-402",
+    "SEN-FW-turb": "AIT-102",
+    "SEN-HLP-A-current": "IT-601",
+    "SEN-HLP-A-flow": "FIT-601",
+    "SEN-HLP-A-temp_de": "TT-601",
+    "SEN-HLP-A-vib_de": "VT-601",
+    "SEN-HLP-B-current": "IT-602",
+    "SEN-HLP-B-flow": "FIT-602",
+    "SEN-HLP-B-temp_de": "TT-612",
+    "SEN-HLP-B-vib_de": "VT-602",
+    "SEN-HLP-C-current": "IT-603",
+    "SEN-HLP-C-flow": "FIT-603",
+    "SEN-HLP-C-temp_de": "TT-602",
+    "SEN-HLP-C-vib_de": "VT-603",
+    "SEN-HLP-D-current": "IT-604",
+    "SEN-HLP-D-flow": "FIT-604",
+    "SEN-HLP-D-temp_de": "TT-603",
+    "SEN-HLP-D-vib_de": "VT-604",
+    "SEN-OUT-flow": "FIT-605",
+    "SEN-PS1-flow": "FIT-801",
+    "SEN-PS1-press": "PIT-801",
+    "SEN-PS1-state": "YS-801",
+    "SEN-PS2-flow": "FIT-802",
+    "SEN-PS2-press": "PIT-802",
+    "SEN-PS2-state": "YS-802",
+    "SEN-RAW-flow": "FIT-102",
+    "SEN-RAW-turb": "AIT-101",
+    "SEN-RES1-in": "FIT-803",
+    "SEN-RES1-level": "LIT-801",
+    "SEN-RES1-out": "FIT-804",
+    "SEN-RES2-in": "FIT-805",
+    "SEN-RES2-level": "LIT-802",
+    "SEN-RES2-out": "FIT-806",
+    "SEN-RWP-A-current": "IT-103",
+    "SEN-RWP-A-flow": "FIT-104",
+    "SEN-RWP-A-temp_de": "TT-105",
+    "SEN-RWP-A-vib_de": "VT-105",
+    "SEN-RWP-B-current": "IT-104",
+    "SEN-RWP-B-flow": "FIT-105",
+    "SEN-RWP-B-temp_de": "TT-106",
+    "SEN-RWP-B-vib_de": "VT-106",
+    "SEN-RWP-C-current": "IT-105",
+    "SEN-RWP-C-flow": "FIT-106",
+    "SEN-RWP-C-temp_de": "TT-107",
+    "SEN-RWP-C-vib_de": "VT-107",
+    "SEN-SLP-A-current": "IT-701",
+    "SEN-SLP-A-flow": "FIT-701",
+    "SEN-SLP-A-temp_de": "TT-701",
+    "SEN-SLP-A-vib_de": "VT-701",
+    "SEN-VC1-pos": "ZT-801",
+    "SEN-VC1-press": "PIT-803",
+    "SEN-VC2-pos": "ZT-802",
+    "SEN-VC2-press": "PIT-804",
+    "SEN-VC3-pos": "ZT-803",
+    "SEN-VC3-press": "PIT-805"
+  }
+}
