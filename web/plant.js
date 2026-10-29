@@ -192,9 +192,10 @@ export function mountPlant(container, data, { mode = "physical", quality = "medi
     if (ROUND.has(s.kind)) round.push(s);
     else if (s.kind === "filter_bed") tintedFilters.push(s);
     else if (s.kind === "reservoir_covered") {
-      const slope = 1.6, emb = new THREE.CylinderGeometry(Math.SQRT1_2, Math.SQRT1_2 * (1 + (2 * slope * s.height) / s.w), 1, 4, 1).rotateY(Math.PI / 4);
-      add(emb.scale(s.w, s.height, s.l).translate(base.x, base.y + s.height / 2, base.z), M.grass);
-      for (const [dx, dz] of [[-0.25, -0.25], [0.25, 0.25], [-0.25, 0.25], [0.25, -0.25]]) windows.push({ kind: "vent", p: P(x + dx * s.w, y + dz * s.l, top + 0.5) });
+      // canonical reservoirs are round (diameter, no w/l); a square one keeps the 4-sided embankment
+      const slope = 1.6, rw = s.w ?? s.diameter, rl = s.l ?? s.diameter, emb = s.diameter ? new THREE.CylinderGeometry(s.diameter / 2, s.diameter / 2 + slope * s.height, 1, 40) : new THREE.CylinderGeometry(Math.SQRT1_2, Math.SQRT1_2 * (1 + (2 * slope * s.height) / s.w), 1, 4, 1).rotateY(Math.PI / 4);
+      add((s.diameter ? emb.scale(1, s.height, 1) : emb.scale(s.w, s.height, s.l)).translate(base.x, base.y + s.height / 2, base.z), M.grass);
+      for (const [dx, dz] of [[-0.25, -0.25], [0.25, 0.25], [-0.25, 0.25], [0.25, -0.25]]) windows.push({ kind: "vent", p: P(x + dx * rw, y + dz * rl, top + 0.5) });
     } else if (s.kind === "surge_vessel") {
       add(new THREE.CapsuleGeometry(s.diameter / 2, s.height - s.diameter, 6, 20).translate(base.x, base.y + s.height / 2, base.z), M.painted);
     } else if (BUILDING.has(s.kind)) {
@@ -211,11 +212,13 @@ export function mountPlant(container, data, { mode = "physical", quality = "medi
       }
     } else {
       // open concrete basins and channels; the contact tank and the old sump are covered
-      basinShells.push(shell(s.w, s.l, s.height, 0.35).translate(base.x, base.y, base.z));
+      // a round kind with no builder here (chemical tanks) shows as a generic block of its diameter
+      const bw = s.w ?? s.diameter, bl = s.l ?? s.diameter;
+      basinShells.push(shell(bw, bl, s.height, 0.35).translate(base.x, base.y, base.z));
       const covered = s.kind === "contact_tank" || s.kind === "sump";
-      if (covered) basinShells.push(new THREE.BoxGeometry(s.w, 0.3, s.l).translate(base.x, top - DATUM, base.z));
-      else if (s.twl != null) waterPlanes.push(new THREE.PlaneGeometry(s.w - 0.7, s.l - 0.7).rotateX(-Math.PI / 2).translate(base.x, s.twl - DATUM, base.z));
-      if (!covered) railRuns.push({ s, top });
+      if (covered) basinShells.push(new THREE.BoxGeometry(bw, 0.3, bl).translate(base.x, top - DATUM, base.z));
+      else if (s.twl != null) waterPlanes.push(new THREE.PlaneGeometry(bw - 0.7, bl - 0.7).rotateX(-Math.PI / 2).translate(base.x, s.twl - DATUM, base.z));
+      if (!covered && !s.diameter) railRuns.push({ s, top });
     }
     const size = s.diameter ? [s.diameter, s.height, s.diameter] : [s.w, s.height, s.l];
     proxy(s, "structure", { size, centre: new THREE.Vector3(base.x, base.y + s.height / 2, base.z) });

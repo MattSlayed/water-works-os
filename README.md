@@ -6,7 +6,7 @@ An ontology-driven operating system for a **synthetic** water treatment works (R
 ## Run it
 
 ```bash
-npm test          # 471 tests: generator, ontology, telemetry, functions, actions, agents + evals, copilot, chat, drawings, parsers, plant model, process graph, region, trackers, scenes, Geo Watch, live mode, agent harness, root cause, connectors, digester, studio, recommendations, spec triage, job briefs, API, web
+npm test          # 493 tests: generator, ontology, telemetry, functions, actions, agents + evals, copilot, chat, drawings, parsers, plant model, process graph, region, trackers, scenes, Geo Watch, live mode, agent harness, root cause, connectors, digester, studio, recommendations, spec triage, job briefs, API, web
 npm start         # http://localhost:8830  (plant clock advances 1 minute every 2 seconds)
 ```
 
@@ -45,7 +45,7 @@ Phase 2, Workforce Intelligence (design: `docs/superpowers/specs/2026-10-23-work
 | Scribe (job cards, close-outs, weekly reports; consent-gated submission), Project Watch, Procedure Steward; performance and project status | `src/agents.mjs`, `src/functions.mjs` | Phase 2 design §6.4, §7 |
 | Chat, Issues, Projects, Procedures and My work views | `web/app.js` | Phase 2 design §9 |
 | Web console (NOVATEK design system): console, site map + muster, asset workbench with three.js twin, agent hub, proposals, knowledge, compliance, ontology explorer, audit | `web/` | FR-CON, FR-GEO, FR-TWN, FR-AVZ |
-| Layout sized for 120 ML/d (structures, levels falling 5.9 m by gravity, machine placements, georeference) and a synthetic drawing set in real text formats: DXF R2000 GA and hydraulic profile, DEXPI 1.3-subset PFD and eight P&IDs, CSV line, equipment and instrument lists; rev A and rev B, with seeded disagreements | `src/layout.mjs`, `src/drawings/make.mjs`, `data/drawings/` | Phase 3 design §4.1–4.2 |
+| Canonical Riverbend plant sized for 100 ML/d: 8 filters (F01–F08, two filter buildings), clarifiers CL-1..4, high-lift pumps HLP-A..E, on-site reservoirs RES-1/2 and command reservoirs CR-1/2 on the bulk line (structures, levels falling 5.9 m by gravity, machine placements, georeference) and a synthetic drawing set in real text formats: DXF R2000 GA and hydraulic profile, DEXPI 1.3-subset PFD and eight P&IDs, CSV line, equipment and instrument lists; rev A and rev B, with seeded disagreements | `src/layout.mjs`, `src/drawings/make.mjs`, `data/drawings/` | Phase 3 design §4.1–4.2 |
 | Zero-dependency DXF, DEXPI-subset and CSV readers; extraction into graded cells (EXTRACTED / INFERRED / AMBIGUOUS) and whole-tag binding to Positions and Sensors | `src/ingest/` | Phase 3 design §4.3 |
 | Plant model revisions: seeded rev A, live ingest of newer sheets with review marks carried forward, cell review, four-eyes release with a content hash, revision-scoped plant objects, Issues for accepted disagreements | `src/plant.mjs`, `src/actions.mjs` | Phase 3 design §4.3–4.5 |
 | Process graph over the released model: upstream and downstream sets with split shares, all simple paths, travel windows (onset, mean, tail), change-onset detection | `src/functions.mjs` | Phase 3 design §4.6 |
@@ -88,8 +88,8 @@ Phase 3, project 1 — the plant from its drawings (design: `docs/superpowers/sp
 Phase 3, project 2 — the Region map and satellite layer (design: `docs/superpowers/specs/2026-10-23-region-map-satellite-design.md`):
 
 - **J17, the 07:00 view (P-001):** Region. *Since you left* lists the suggested plume, PP-2 off the raw-water main site
-  and the slipped main milestone; *Today's supply risks* shows raw water raised, 30 ML/d out of service (clarification
-  limits the works to 90) and RES-2 under 12 h.
+  and the slipped main milestone; *Today's supply risks* shows raw water raised, 10 ML/d out of service (CL-4 refurbishment
+  limits clarification to 90) and RES-1 and RES-2 under 12 h.
 - **J18, plume response (P-008, then P-005):** click the plume: the panel opens, the day-11 NDTI grid lights the inflow arm
   and focus shows the sample boat, the intake and the coagulant truck with its ETA. Approve Geo Watch's sampling round in
   Proposals. As **P-005**, Chat: reply `raw 88 NTU at intake jetty`; a Sample is recorded. Back on Region, **Confirm**.

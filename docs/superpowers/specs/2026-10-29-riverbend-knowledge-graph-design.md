@@ -334,8 +334,8 @@ These are exposed to the in-app agents and as an **MCP server**, which closes Wa
 - Scenario curve shapes, as long as the answer-key onsets and the `CONTRACT.md` facts hold
 
 ## 13. Build order
-0. **Inputs.** Copy the mock source to `novacore-mock/` and the contract and scene meta into `data/riverbend/`.
-1. **Crosswalk and canonical plant.** Update `layout.mjs`, the drawings and `generate.mjs`, and fix the tests that change.
+0. **Inputs.** *(Done.)* Copy the mock source to `novacore-mock/` and the contract and scene meta into `data/riverbend/`.
+1. **Crosswalk and canonical plant.** *(Done, plan `2026-10-29-riverbend-canonical-plant.md`: 8 filters, CL-1..4, HLP-A..E, RES-1/2, CR-1/2, 100 ML/d.)* Update `layout.mjs`, the drawings and `generate.mjs`, and fix the tests that change.
 2. **Physical layer from 3D.** Export glTF and the meta, generate GeometryRefs and sensor anchors, and write the Design Basis.
 3. **Generator.** Build the coupled 90-day model, S1–S7 and the answer key, and promote Alarm, Event and Anomaly to graph objects.
 4. **Documents.** Generate the document families, chunk them, add the planted imperfections and the one-time LLM pass.
