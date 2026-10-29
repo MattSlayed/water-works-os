@@ -223,6 +223,15 @@ test("graph routes run over the viewer's pruned model", async () => {
   assert.ok((await call("/api/plant/graph/downstream/POS-DP-2")).json.items.some((x) => x.id.endsWith("STR-11UGA01")));
 });
 
+test("a technician's graph keeps the treatment train: intake upstream of F07, both filtered inflows to 20UBA02", async () => {
+  const m = (await call("/api/plant")).json.model.id;
+  const up = await call(`/api/plant/graph/upstream/${encodeURIComponent("POS-F07")}`, { as: techId() });
+  assert.equal(up.status, 200);
+  assert.deepEqual(up.json.sources, [`${m}:STR-10UPA01`]);
+  const res = await call(`/api/plant/graph/upstream/${encodeURIComponent(`${m}:STR-20UBA02`)}`, { as: techId() });
+  for (const t of ["16UGH01", "16UGH02"]) assert.ok(res.json.items.some((x) => x.id === `${m}:STR-${t}`), t);
+});
+
 test("plant models: list, one with cells; technicians do not get Z06 cells", async () => {
   const list = await call("/api/plant/models");
   assert.deepEqual(list.json.map((m) => [m.id, m.status]), [["PM-RB-A", "released"]]);

@@ -17,6 +17,14 @@ test("every structure centre lies inside its zone and zones do not overlap", () 
   }
 });
 
+test("every structure footprint lies inside siteBounds(), so the GA road and fence clear it", () => {
+  const [minX, minY, maxX, maxY] = siteBounds();
+  for (const s of STRUCTURES) {
+    const [hw, hl] = s.diameter ? [s.diameter / 2, s.diameter / 2] : [s.w / 2, s.l / 2], [x, y] = s.centre;
+    assert.ok(x - hw >= minX && x + hw <= maxX && y - hl >= minY && y + hl <= maxY, `${s.tag} crosses the site bounds`);
+  }
+});
+
 test("canonical counts", () => {
   assert.equal(of("clarifier_circular").length, 4);
   assert.equal(of("filter_bed").length, 8);

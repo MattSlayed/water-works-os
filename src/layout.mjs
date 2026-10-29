@@ -7,19 +7,21 @@ export const GEOREF = { crs: "EPSG:4326", origin: [-25.86, 28.62], rotationDeg: 
 export const CAPACITY_MLD = 100;
 
 // [id, name, x, y, w, h, clearance, hazard], hand-drawn around the scene footprints. Only centres are guaranteed inside.
+// Z06 and Z09 are kept narrow so no process line between technician-visible structures crosses them; Z12 reaches far
+// enough west that siteBounds() (and so the GA road and fence) holds all of RWR-2.
 export const ZONES = [
   ["Z01", "Raw water intake and pump station", 820, 205, 65, 45, "technician", "none"],
   ["Z02", "Inlet works", 815, 520, 15, 15, "technician", "none"],
   ["Z03", "Coagulation and flocculation", 800, 535, 30, 15, "technician", "chemical"],
   ["Z04", "Clarification", 788, 470, 70, 50, "technician", "none"],
   ["Z05", "Filtration", 788, 425, 70, 45, "technician", "none"],
-  ["Z06", "Disinfection", 765, 400, 23, 45, "supervisor", "chlorine"],
+  ["Z06", "Disinfection", 765, 400, 19, 45, "supervisor", "chlorine"],
   ["Z07", "Clear water and high-lift", 765, 290, 71, 110, "technician", "none"],
   ["Z08", "Sludge handling", 820, 400, 90, 25, "technician", "confined-space"],
-  ["Z09", "Chemical store", 800, 550, 30, 10, "operator", "chemical"],
+  ["Z09", "Chemical store", 800, 550, 18, 10, "operator", "chemical"],
   ["Z10", "MCC and electrical", 836, 290, 50, 40, "supervisor", "electrical"],
   ["Z11", "Laboratory", 778.6, 520, 21.4, 21, "technician", "none"], // the northern half of ADM-1's east third
-  ["Z12", "Admin and control room", 730, 541, 70, 90, "technician", "none"]
+  ["Z12", "Admin and control room", 709, 541, 91, 90, "technician", "none"]
 ];
 
 // 3D asset id -> WaterOS structure. `from` takes one scene object instead of the union of the asset's objects.
