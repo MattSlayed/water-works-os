@@ -14,7 +14,7 @@ import { LineMaterial } from "three/addons/lines/LineMaterial.js";
 const DATUM = 1450; // level (m) drawn at y = 0
 const GROUND = 1448;
 const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
-const BUILDING = new Set(["pump_house", "dosing_house", "chlorine_house", "chemical_store", "mcc", "lab", "admin", "gen_set", "pipe_gallery"]);
+const BUILDING = new Set(["pump_house", "dosing_house", "chlorine_house", "chemical_store", "mcc", "lab", "admin", "gen_set", "pipe_gallery", "filter_building", "workshop"]);
 const OPENABLE = new Set(["pump_house", "dosing_house", "chlorine_house"]); // click-down: walls go translucent
 const ROUND = new Set(["clarifier_circular", "thickener"]);
 const STATE_COLOR = { running: 0x4ade80, standby: 0x60a5fa, isolated: 0x94a3b8, fault: 0xf87171, tripped: 0xf87171 };
@@ -163,17 +163,30 @@ export function mountPlant(container, data, { mode = "physical", quality = "medi
 
   // ---- terraces follow the hydraulic profile: each zone at its buildings' floor, else 2 m above its lowest base ----
   const zones = data.zones || [];
+  const own = (z) => data.structures.filter((s) => s.zoneId === z.id);
   const grade = new Map(zones.map((z) => {
-    const ss = data.structures.filter((s) => s.zoneId === z.id), b = ss.filter((s) => BUILDING.has(s.kind) && s.kind !== "pipe_gallery");
-    return [z.id, b.length ? Math.min(...b.map((s) => s.baseLevel)) : ss.length ? Math.min(...ss.map((s) => s.baseLevel)) + 2 : 1452];
+    const ss = own(z), b = ss.filter((s) => BUILDING.has(s.kind) && s.kind !== "pipe_gallery");
+    return [z.id, b.length ? Math.min(...b.map((s) => s.baseLevel)) : ss.length ? Math.min(...ss.map((s) => s.baseLevel)) + 2 : null];
   }));
+  // Z11 (the laboratory) holds no structure of its own: it is the north half of ADM-1's east third, so it takes Z12's grade.
+  for (const z of zones) if (grade.get(z.id) == null) grade.set(z.id, grade.get("Z12") ?? 1452);
+  // A terrace is its zone rect grown to the footprints of its structures (zone rects are hand-drawn; only centres are guaranteed inside).
+  // A covered reservoir also needs its embankment toe (1.6 m out per metre of height).
+  const terraceRect = (z) => {
+    let [x0, y0, x1, y1] = [z.rect[0], z.rect[1], z.rect[0] + z.rect[2], z.rect[1] + z.rect[3]];
+    for (const s of own(z)) {
+      const m = s.kind === "reservoir_covered" ? 1.6 * s.height : 0, hw = (s.diameter ?? s.w) / 2 + m, hl = (s.diameter ?? s.l) / 2 + m;
+      x0 = Math.min(x0, s.centre[0] - hw); x1 = Math.max(x1, s.centre[0] + hw); y0 = Math.min(y0, s.centre[1] - hl); y1 = Math.max(y1, s.centre[1] + hl);
+    }
+    return [x0, y0, x1 - x0, y1 - y0];
+  };
   const zoneAt = (x, y) => zones.find((z) => x >= z.rect[0] && x <= z.rect[0] + z.rect[2] && y >= z.rect[1] && y <= z.rect[1] + z.rect[3]);
   const gradeAt = (x, y) => { const z = zoneAt(x, y); return z ? grade.get(z.id) : GROUND; };
   add(new THREE.PlaneGeometry(4000, 4000).rotateX(-Math.PI / 2).translate(0, GROUND - DATUM, 0), M.grass, { cast: false });
   {
     const tops = [], sides = [];
     for (const z of zones) {
-      const [x, y, zw, zh] = z.rect, g = grade.get(z.id), hgt = g - GROUND + 0.01, c = P(x + zw / 2, y + zh / 2, GROUND);
+      const [x, y, zw, zh] = terraceRect(z), g = grade.get(z.id), hgt = g - GROUND + 0.01, c = P(x + zw / 2, y + zh / 2, GROUND);
       tops.push(new THREE.PlaneGeometry(zw, zh).rotateX(-Math.PI / 2).translate(c.x, g - DATUM, c.z));
       sides.push(shell(zw, zh, hgt, 0.5).translate(c.x, GROUND - DATUM, c.z));
     }

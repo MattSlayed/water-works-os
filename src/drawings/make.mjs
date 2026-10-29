@@ -60,12 +60,12 @@ export const INSTRUMENTS = [
 const SHEETS = {
   "01": { title: "Raw water intake and inlet works", tags: ["10UPA01", "10UBA01", "10UBA02", "11UGA01"] },
   "02": { title: "Coagulant, polymer and lime dosing", tags: ["13UHA01", "12UHB01", "12UHB02", "12UHB03", "12UHB04"] },
-  "03": { title: "Flash mix, flocculation and splitter", tags: ["13UGD01"] },
+  "03": { title: "Flow splitter", tags: ["13UGD01"] },
   "04": { title: "Typical clarifier and sludge draw", tags: ["14UGE01", "14UGE02", "14UGE03", "14UGE04", "17UGT01"] },
   "05": { title: "Typical rapid gravity filter (F01–F08)", tags: ["15UFB01", "15UFB02"] },
   "06": { title: "Backwash pumps, air-scour blowers, washwater recovery", tags: ["15UMB01", "17UGW01"] },
   "07": { title: "Gas chlorination, contact tank, clear-water reservoirs", tags: ["16UHC01", "16UGH01", "16UGH02", "20UBA01", "20UBA02"] },
-  "08": { title: "High-lift pumping, surge vessel, outgoing main", tags: ["20UMC01"] }
+  "08": { title: "High-lift pumping and outgoing main", tags: ["20UMC01"] }
 };
 export const sheetOf = (tag) => (/^15HFA/.test(tag) ? "05" : Object.keys(SHEETS).find((k) => SHEETS[k].tags.includes(tag)));
 

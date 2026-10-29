@@ -20,7 +20,9 @@ const [SITE_X0, SITE_Y0, , SITE_Y1] = siteBounds();
 const GATE = [SITE_X0, SITE_Y1]; // the works entrance, on the south-west corner of the fence
 const NW_CORNER = [SITE_X0, SITE_Y0]; // where the dam wall road leaves the fence
 export const BULK_LINE = [plantAt("20UMC01"), [3000, 300], [6000, 200], [9000, 600], [11500, 500]];
-export const SITE_XY = { "RS-PS1": [3000, 300], "RS-CR1": [6000, 200], "RS-PS2": [8000, 466.7], "RS-CR2": [11500, 500], "RS-VC1": [1800, 187.5], "RS-VC2": [4500, 250], "RS-VC3": [10200, 552] };
+// VC-1 sits on the first bulk-line segment (HLP-H to PS-1) at x = 1800.
+const [[bx0, by0], [bx1, by1]] = BULK_LINE, VC1_XY = [1800, by0 + ((1800 - bx0) / (bx1 - bx0)) * (by1 - by0)];
+export const SITE_XY = { "RS-PS1": [3000, 300], "RS-CR1": [6000, 200], "RS-PS2": [8000, 466.7], "RS-CR2": [11500, 500], "RS-VC1": VC1_XY, "RS-VC2": [4500, 250], "RS-VC3": [10200, 552] };
 
 export const REGION = [
   { id: "CAT-RB", kind: "catchment", name: "Riverbend catchment (synthetic)", geometry: poly([[-12300, -9400], [-11800, -9900], [-500, -9900], [0, -9400], [0, 2100], [-500, 2600], [-11800, 2600], [-12300, 2100], [-12300, -9400]]) },

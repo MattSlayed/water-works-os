@@ -17,6 +17,11 @@ test("every structure centre lies inside its zone and zones do not overlap", () 
   }
 });
 
+test("every structure has a finite size: a diameter, or a width and a length", () => {
+  const ok = (v) => Number.isFinite(v) && v > 0;
+  for (const s of STRUCTURES) assert.ok(ok(s.diameter) || (ok(s.w) && ok(s.l)), `${s.tag} has no usable diameter or w/l`);
+});
+
 test("every structure footprint lies inside siteBounds(), so the GA road and fence clear it", () => {
   const [minX, minY, maxX, maxY] = siteBounds();
   for (const s of STRUCTURES) {
