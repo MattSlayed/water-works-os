@@ -186,22 +186,22 @@ test("Review Focus 3: a technician's plant has nothing inside Z06, lines cut at 
   const r = await call("/api/plant", { as: techId() });
   assert.equal(r.status, 200);
   assert.match(r.json.model.disclosure, /^Generated from plant model rev A \(drawing set RB-DS rev A\)\. Template geometry, not survey or CAD\. Synthetic works\.$/);
-  assert.ok(r.json.structures.length > 30 && !r.json.structures.some((s) => s.zoneId === "Z06"));
+  assert.ok(r.json.structures.length > 25 && !r.json.structures.some((s) => s.zoneId === "Z06"));
   assert.ok(!r.json.machines.some((m) => m.zoneId === "Z06" || /CHL/.test(m.tag)));
   for (const l of r.json.lines) for (const part of l.parts) for (const p of part) assert.ok(!strictlyIn(p, Z06()), `${l.lineNumber} has ${p} inside Z06`);
-  const l207 = r.json.lines.find((l) => l.lineNumber === "RB-L-207");
-  assert.ok(l207 && l207.parts.length >= 1, "the filter outlet line is shown up to the zone edge");
-  assert.equal(l207.to, null);
-  assert.ok(!JSON.stringify(r.json).includes("16UGH01") && !JSON.stringify(r.json).includes('"Z06"'));
+  const l511 = r.json.lines.find((l) => l.lineNumber === "RB-L-511");
+  assert.ok(l511 && l511.parts.length >= 1, "the chlorine line is shown from the zone edge");
+  assert.equal(l511.from, null); // its Z06 end, the chlorine house, is withheld
+  assert.ok(!JSON.stringify(r.json).includes("16UHC01") && !JSON.stringify(r.json).includes('"Z06"'));
   assert.ok(r.json.bounds.length === 4);
 });
 
 test("manager's plant includes Z06, machine states and sample points", async () => {
   const r = await call("/api/plant");
-  assert.ok(r.json.structures.some((s) => s.tag === "16UGH01"));
+  assert.ok(r.json.structures.some((s) => s.tag === "16UHC01"));
   const hlpB = r.json.machines.find((m) => m.tag === "HLP-B");
   assert.ok(hlpB.assetId && hlpB.state);
-  assert.ok(r.json.samplePoints.length > 10 && r.json.valves.length === 72);
+  assert.ok(r.json.samplePoints.length > 10 && r.json.valves.length === 48);
   assert.ok(r.json.lines.find((l) => l.lineNumber === "RB-L-511"));
 });
 
@@ -210,7 +210,7 @@ test("graph routes run over the viewer's pruned model", async () => {
   assert.equal(up.status, 200);
   assert.equal(up.json.items.filter((x) => /STR-14UGE0\d$/.test(x.id)).length, 4);
   assert.deepEqual(up.json.sources, ["PM-RB-A:STR-10UPA01"]);
-  assert.equal((await call(`/api/plant/graph/upstream/${encodeURIComponent("PM-RB-A:STR-16UGH01")}`, { as: techId() })).status, 404);
+  assert.equal((await call(`/api/plant/graph/upstream/${encodeURIComponent("PM-RB-A:STR-16UHC01")}`, { as: techId() })).status, 404);
   const w = await call(`/api/plant/graph/window?from=${encodeURIComponent("PM-RB-A:STR-10UPA01")}&to=POS-F07&flow=120`);
   assert.equal(w.status, 200);
   assert.ok(w.json.window.meanH > 3 && w.json.path.length > 5);
@@ -218,9 +218,9 @@ test("graph routes run over the viewer's pruned model", async () => {
   const wm = await call(`/api/plant/graph/window?from=${encodeURIComponent("PM-RB-A:STR-10UPA01")}&to=POS-F07`);
   assert.equal(wm.json.measured, true);
   assert.ok(wm.json.flowMlD > 0 && wm.json.window.basis.includes(`Q=${wm.json.flowMlD} ML/d`));
-  const p = await call(`/api/plant/graph/paths?from=${encodeURIComponent("PM-RB-A:STR-13UGB01")}&to=POS-F07`);
+  const p = await call(`/api/plant/graph/paths?from=${encodeURIComponent("PM-RB-A:STR-11UGA01")}&to=POS-F07`);
   assert.equal(p.json.paths.length, 4);
-  assert.ok((await call("/api/plant/graph/downstream/POS-DP-2")).json.items.some((x) => x.id.endsWith("STR-13UGB01")));
+  assert.ok((await call("/api/plant/graph/downstream/POS-DP-2")).json.items.some((x) => x.id.endsWith("STR-11UGA01")));
 });
 
 test("plant models: list, one with cells; technicians do not get Z06 cells", async () => {
@@ -228,7 +228,7 @@ test("plant models: list, one with cells; technicians do not get Z06 cells", asy
   assert.deepEqual(list.json.map((m) => [m.id, m.status]), [["PM-RB-A", "released"]]);
   const one = await call("/api/plant/models/PM-RB-A", { as: techId() });
   assert.equal(one.status, 200);
-  assert.ok(one.json.cells.length > 500 && !one.json.cells.some((c) => c.key.startsWith("16UGH01|") || c.key.startsWith("RB-L-511|")));
+  assert.ok(one.json.cells.length > 500 && !one.json.cells.some((c) => c.key.startsWith("16UHC01|") || c.key.startsWith("RB-L-511|")));
   assert.equal((await call("/api/plant/models/NOPE")).status, 404);
 });
 
@@ -268,16 +268,22 @@ test("final: a technician gets no PlantModel cells or items through the generic 
   for (const m of list.json) assert.ok(!Array.isArray(m.cells) && !m.items && !m.bindings, `${m.id} carries raw cells`);
   const one = await call(`/api/objects/${encodeURIComponent(list.json[0].id)}`, { as: techId() });
   assert.equal(one.status, 200);
-  assert.ok(!JSON.stringify(one.json).includes("16UGH01"));
+  assert.ok(!JSON.stringify(one.json).includes("16UHC01"));
   const search = await call("/api/objects?q=PM-RB", { as: techId() });
-  assert.ok(!JSON.stringify(search.json).includes("16UGH01"));
+  assert.ok(!JSON.stringify(search.json).includes("16UHC01"));
 });
 
 test("final: filter-outlet sample points (Z05) are visible to a technician; after-dose points in Z06 are not", async () => {
   const r = await call("/api/plant", { as: techId() });
   const tags = r.json.samplePoints.map((s) => s.tag);
   assert.ok(tags.includes("SP-15CQ07"), tags.join(","));
-  assert.ok(!tags.includes("SP-16CQ01") && !tags.includes("SP-15CQ00"));
+  // the canonical plant has no sample point in Z06 (the contact tank moved to Z05), so the Z06 example is a fixture
+  const m = (await call("/api/plant")).json.model.id, sp = sys.ont.list("SamplePoint", (s) => s.modelId === m && s.tag === "SP-16CQ01")[0];
+  sys.ont.upsert({ ...sp, id: `${m}:SPT-SP-Z06-PROBE`, tag: "SP-Z06-PROBE", zoneId: "Z06" });
+  try {
+    assert.ok((await call("/api/plant")).json.samplePoints.some((s) => s.tag === "SP-Z06-PROBE"), "a manager sees it");
+    assert.ok(!(await call("/api/plant", { as: techId() })).json.samplePoints.some((s) => s.tag === "SP-Z06-PROBE"));
+  } finally { sys.ont.remove(`${m}:SPT-SP-Z06-PROBE`); }
 });
 
 test("final: Show upstream works for a machine by its plant id", async () => {

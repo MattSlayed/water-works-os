@@ -6,7 +6,7 @@ import { parseDxf } from "./dxf.mjs";
 import { parseDexpi } from "./dexpi.mjs";
 import { parseCsv } from "./csv.mjs";
 
-const NON_PROCESS = new Set(["mcc", "gen_set", "lab", "admin"]); // not expected on a P&ID
+const NON_PROCESS = new Set(["mcc", "gen_set", "lab", "admin", "workshop"]); // not expected on a P&ID
 const VALVE_STATE = { inlet: "open", outlet: "open" }; // all other filter valves rest closed
 const n = (v) => (v === undefined || v === "" ? undefined : Number(v));
 const tokens = (s) => new Set(String(s).toLowerCase().match(/\p{L}+|[0-9]+/gu) ?? []);

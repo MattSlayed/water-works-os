@@ -1,7 +1,7 @@
 // The region around the synthetic Riverbend works (Region design §4): catchment, dam, river, raw-water main, bulk line,
 // roads, areas of interest and the remote zones. Laid out in site metres (x east, y south) and converted to WGS84.
 // Synthetic works: none of this is a real place.
-import { toLonLat } from "./layout.mjs";
+import { STRUCTURES, toLonLat } from "./layout.mjs";
 
 const DIR = [Math.SQRT1_2, Math.SQRT1_2]; // the dam's long axis, NW → SE
 const ACROSS = [-Math.SQRT1_2, Math.SQRT1_2];
@@ -15,7 +15,8 @@ const line = (pts) => ({ type: "LineString", coordinates: ll(pts) });
 
 export const INTAKE_XY = at(DAM.a, 0); // the SE tip of the dam, by the wall
 export const SLIPWAY_XY = at(0, DAM.b);
-export const BULK_LINE = [[760, 90], [3000, 300], [6000, 200], [9000, 600], [11500, 500]];
+const plantAt = (tag) => STRUCTURES.find((s) => s.tag === tag).centre; // the mains end at the pump houses
+export const BULK_LINE = [plantAt("20UMC01"), [3000, 300], [6000, 200], [9000, 600], [11500, 500]];
 export const SITE_XY = { "RS-PS1": [3000, 300], "RS-RES1": [6000, 200], "RS-PS2": [8000, 466.7], "RS-RES2": [11500, 500], "RS-VC1": [1800, 187.5], "RS-VC2": [4500, 250], "RS-VC3": [10200, 552] };
 
 export const REGION = [
@@ -23,7 +24,7 @@ export const REGION = [
   { id: "WB-RB", kind: "waterbody", name: "Riverbend Dam (synthetic)", geometry: poly(ellipse(0, DAM.a, DAM.b, 48)) },
   { id: "RIV-RB", kind: "river", name: "Riverbend River", geometry: line([[-10500, -9000], [-8000, -7800], [-6500, -6900], [-5200, -5600], at(-DAM.a, 0)]) },
   { id: "INT-RB", kind: "intake", name: "Raw-water intake tower", geometry: { type: "Point", coordinates: toLonLat(INTAKE_XY) } },
-  { id: "RWM-RB", kind: "main", name: "Raw-water main", geometry: line([INTAKE_XY, [-400, -600], [35, 70]]) },
+  { id: "RWM-RB", kind: "main", name: "Raw-water main", geometry: line([INTAKE_XY, [-400, -600], plantAt("10UPA01")]) },
   { id: "BLK-RB", kind: "pipeline", name: "Bulk treated-water line", geometry: line(BULK_LINE) },
   { id: "RD-1", kind: "road", name: "Bulk-line service road", geometry: line([[600, 190], [600, 1200], [11000, 1200], [11500, 620]]) },
   { id: "RD-2", kind: "road", name: "Dam wall road", geometry: line([[0, 100], [-500, -700], [-900, -1350]]) },

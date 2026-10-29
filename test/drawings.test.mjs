@@ -19,7 +19,7 @@ test("rev A is 14 sheets; rev B changes exactly GA, LL and PID-05", () => {
 test("rev B adds filter-to-waste on F01–F04 only", () => {
   const b = drawingSet("B")["RB-PID-05_B.xml"];
   const rows = b.match(/<TagRow [^>]*>/g);
-  assert.equal(rows.length, 12);
+  assert.equal(rows.length, 8);
   const ftw = rows.filter((r) => /FilterToWaste="yes"/.test(r)).map((r) => r.match(/Filter="(F\d\d)"/)[1]);
   assert.deepEqual(ftw, ["F01", "F02", "F03", "F04"]);
   assert.match(b, /filter-to-waste/);

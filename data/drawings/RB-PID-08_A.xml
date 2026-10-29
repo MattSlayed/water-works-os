@@ -5,7 +5,6 @@
   <Equipment ID="EQ-HLP-B" TagName="HLP-B" ComponentClass="machine"><GenericAttributes><GenericAttribute Name="InStructure" Value="20UMC01"/></GenericAttributes></Equipment>
   <Equipment ID="EQ-HLP-C" TagName="HLP-C" ComponentClass="machine"><GenericAttributes><GenericAttribute Name="InStructure" Value="20UMC01"/></GenericAttributes></Equipment>
   <Equipment ID="EQ-HLP-D" TagName="HLP-D" ComponentClass="machine"><GenericAttributes><GenericAttribute Name="InStructure" Value="20UMC01"/></GenericAttributes></Equipment>
-  <Equipment ID="EQ-20UMD01" TagName="20UMD01" ComponentClass="surge_vessel"><GenericAttributes><GenericAttribute Name="KKS" Value="20UMD01"/></GenericAttributes><Nozzle ID="N-20UMD01-1"/></Equipment>
-  <PipingNetworkSegment ID="SEG-RB-L-321" LineNumber="RB-L-321"><GenericAttributes><GenericAttribute Name="Service" Value="final"/><GenericAttribute Name="NominalDiameter" Value="1000"/></GenericAttributes><Connection FromID="EQ-20UMC01" ToID="EQ-20UMD01"/></PipingNetworkSegment>
-  <ProcessInstrumentationFunction TagName="20CF01"><GenericAttributes><GenericAttribute Name="KKS" Value="20CF01"/><GenericAttribute Name="MeasuredAt" Value="RB-L-321"/></GenericAttributes></ProcessInstrumentationFunction>
+  <Equipment ID="EQ-HLP-E" TagName="HLP-E" ComponentClass="machine"><GenericAttributes><GenericAttribute Name="InStructure" Value="20UMC01"/></GenericAttributes></Equipment>
+  <ProcessInstrumentationFunction TagName="20CF01"><GenericAttributes><GenericAttribute Name="KKS" Value="20CF01"/><GenericAttribute Name="MeasuredAt" Value="20UMC01"/></GenericAttributes></ProcessInstrumentationFunction>
 </PlantModel>

@@ -26,7 +26,7 @@ test("parseDxf reads the GA: title block, structures, machines, tagged polylines
   assert.equal(l001.layer, "PIPE");
   assert.equal(l001.points.length, 3);
   assert.equal(typeof l001.elevation, "number");
-  assert.ok(d.entities.some((e) => e.type === "CIRCLE" && e.radius === 16));
+  assert.ok(d.entities.some((e) => e.type === "CIRCLE" && e.radius === 12.795));
 });
 
 test("parseDxf rev B carries RB-L-421X and filter-to-waste lines", () => {
@@ -38,7 +38,7 @@ test("parseDxf rev B carries RB-L-421X and filter-to-waste lines", () => {
 test("parseDexpi reads P&IDs, the PFD and the typical filter tag table", () => {
   const p5 = parseDexpi(sheet("RB-PID-05_A.xml"));
   assert.equal(p5.meta.Number, "RB-PID-05");
-  assert.equal(Object.keys(p5.tagTable).length, 12);
+  assert.equal(Object.keys(p5.tagTable).length, 8);
   assert.equal(p5.tagTable.F07.kks, "15HFA07");
   assert.equal(p5.tagTable.F07.inlet, "RB-L-107");
   assert.equal(p5.tagTable.F07.valves.length, 6);
@@ -58,7 +58,7 @@ test("parseDexpi reads P&IDs, the PFD and the typical filter tag table", () => {
   assert.equal(pfd.streams.length, LINES.filter((l) => l.causal && !l.injectionAt).length);
   const ret = pfd.streams.find((s) => s.id === "RB-L-431");
   assert.deepEqual([ret.from, ret.to, ret.recycle, ret.split, ret.mode], ["17UGW01", "11UGA01", true, 0.05, "continuous"]);
-  assert.equal(pfd.streams.find((s) => s.id === "RB-L-001").flow, 5000);
+  assert.equal(pfd.streams.find((s) => s.id === "RB-L-001").flow, 2083.333);
 });
 
 test("every instrument in the set appears on a P&ID or the PID-05 typical", () => {

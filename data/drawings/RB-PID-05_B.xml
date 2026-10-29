@@ -1,8 +1,9 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<PlantModel SchemaVersion="DEXPI-1.3-subset" Number="RB-PID-05" Revision="B" Title="Typical rapid gravity filter (F01–F12)">
-  <Equipment ID="EQ-15UGS01" TagName="15UGS01" ComponentClass="channel"><GenericAttributes><GenericAttribute Name="KKS" Value="15UGS01"/></GenericAttributes><Nozzle ID="N-15UGS01-1"/></Equipment>
+<PlantModel SchemaVersion="DEXPI-1.3-subset" Number="RB-PID-05" Revision="B" Title="Typical rapid gravity filter (F01–F08)">
+  <Equipment ID="EQ-15UFB01" TagName="15UFB01" ComponentClass="filter_building"><GenericAttributes><GenericAttribute Name="KKS" Value="15UFB01"/></GenericAttributes><Nozzle ID="N-15UFB01-1"/></Equipment>
+  <Equipment ID="EQ-15UFB02" TagName="15UFB02" ComponentClass="filter_building"><GenericAttributes><GenericAttribute Name="KKS" Value="15UFB02"/></GenericAttributes><Nozzle ID="N-15UFB02-1"/></Equipment>
   <Equipment ID="EQ-15HFA##" TagName="15HFA##" ComponentClass="filter_bed" Typical="yes"><Nozzle ID="N-15HFA##-1"/></Equipment>
-  <PipingNetworkSegment ID="SEG-RB-L-1##" LineNumber="RB-L-1##"><GenericAttributes><GenericAttribute Name="Service" Value="settled"/><GenericAttribute Name="NominalDiameter" Value="450"/></GenericAttributes><Connection FromID="EQ-15UGS01" ToID="EQ-15HFA##"/></PipingNetworkSegment>
+  <PipingNetworkSegment ID="SEG-RB-L-1##" LineNumber="RB-L-1##"><GenericAttributes><GenericAttribute Name="Service" Value="settled"/><GenericAttribute Name="NominalDiameter" Value="450"/></GenericAttributes><Connection FromID="EQ-15UFB01" ToID="EQ-15HFA##"/></PipingNetworkSegment>
   <PipingNetworkSegment ID="SEG-RB-L-2##" LineNumber="RB-L-2##"><GenericAttributes><GenericAttribute Name="Service" Value="filtered"/><GenericAttribute Name="NominalDiameter" Value="450"/></GenericAttributes><Connection FromID="EQ-15HFA##" ToID="EQ-16UGH01"/></PipingNetworkSegment>
   <PipingComponent ComponentClass="ButterflyValve" TagName="15AA##-inlet" Typical="yes"/>
   <PipingComponent ComponentClass="ControlValve" TagName="15AA##-outlet" Typical="yes"/>
@@ -21,9 +22,7 @@
     <TagRow Filter="F06" Tag="15HFA06" Inlet="RB-L-106" Outlet="RB-L-206" FilterToWaste="no"/>
     <TagRow Filter="F07" Tag="15HFA07" Inlet="RB-L-107" Outlet="RB-L-207" FilterToWaste="no"/>
     <TagRow Filter="F08" Tag="15HFA08" Inlet="RB-L-108" Outlet="RB-L-208" FilterToWaste="no"/>
-    <TagRow Filter="F09" Tag="15HFA09" Inlet="RB-L-109" Outlet="RB-L-209" FilterToWaste="no"/>
-    <TagRow Filter="F10" Tag="15HFA10" Inlet="RB-L-110" Outlet="RB-L-210" FilterToWaste="no"/>
-    <TagRow Filter="F11" Tag="15HFA11" Inlet="RB-L-111" Outlet="RB-L-211" FilterToWaste="no"/>
-    <TagRow Filter="F12" Tag="15HFA12" Inlet="RB-L-112" Outlet="RB-L-212" FilterToWaste="no"/>
   </TagTable>
+  <PipingNetworkSegment ID="SEG-RB-L-421" LineNumber="RB-L-421"><GenericAttributes><GenericAttribute Name="Service" Value="dirty washwater"/><GenericAttribute Name="NominalDiameter" Value=""/></GenericAttributes><Connection FromID="EQ-15UFB01" ToID="EQ-17UGW01"/></PipingNetworkSegment>
+  <PipingNetworkSegment ID="SEG-RB-L-422" LineNumber="RB-L-422"><GenericAttributes><GenericAttribute Name="Service" Value="dirty washwater"/><GenericAttribute Name="NominalDiameter" Value=""/></GenericAttributes><Connection FromID="EQ-15UFB02" ToID="EQ-17UGW01"/></PipingNetworkSegment>
 </PlantModel>

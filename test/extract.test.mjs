@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { extractPlant } from "../src/ingest/extract.mjs";
 import { drawingSet, INSTRUMENTS } from "../src/drawings/make.mjs";
 import { generateWorks } from "../src/generate.mjs";
+import { STRUCTURES } from "../src/layout.mjs";
 import { createOntology } from "../src/ontology.mjs";
 
 const ont = createOntology(generateWorks(7));
@@ -19,7 +20,7 @@ test("sources: one per sheet with number, rev, kind and sha256", () => {
 
 test("rev A has exactly the three seeded AMBIGUOUS cells, each naming its sheets", () => {
   const amb = A.cells.filter((c) => c.grade === "AMBIGUOUS");
-  assert.deepEqual(amb.map((c) => c.key).sort(), ["15CQ13|binding", "17BBB01|presence", "RB-L-210|dn"]);
+  assert.deepEqual(amb.map((c) => c.key).sort(), ["15CQ13|binding", "17BBB01|presence", "HLP-E|binding", "RB-L-210|dn"]); // Task 5 adds POS-HLP-E; restore EXTRACTED then
   assert.match(cell(A, "RB-L-210|dn").reasoning, /RB-LL-001.*RB-PID-05|RB-PID-05.*RB-LL-001/);
   assert.match(cell(A, "17BBB01|presence").reasoning, /RB-GA-001/);
 });
@@ -49,11 +50,11 @@ test("every hero position binds EXTRACTED; F01 binds POS-F01, not F10", () => {
 
 test("lines carry process semantics from the LL and PFD", () => {
   const coag = item(A, "RB-L-501").fields;
-  assert.deepEqual([coag.causal, coag.injectionAt, coag.service], [true, "13UGB01", "coagulant"]);
+  assert.deepEqual([coag.causal, coag.injectionAt, coag.service], [true, "11UGA01", "coagulant"]);
   assert.equal(item(A, "RB-L-431").fields.recycle, true);
   assert.equal(item(A, "RB-L-401").fields.mode, "intermittent");
   const l = item(A, "RB-L-107").fields;
-  assert.deepEqual([l.conveyance, l.dn, l.from, l.to, l.splitFraction, l.designFlow], ["pipe", 450, "15UGS01", "15HFA07", 0.083, 416.667]);
+  assert.deepEqual([l.conveyance, l.dn, l.from, l.to, l.splitFraction, l.designFlow], ["pipe", 450, "15UFB02", "15HFA07", 0.125, 520.833]);
   assert.equal(l.path.length, 3);
   assert.equal(l.path[0].length, 3);
   assert.deepEqual([item(A, "RB-L-002").fields.width, item(A, "RB-L-002").fields.depth], [2, 1.2]);
@@ -61,7 +62,7 @@ test("lines carry process semantics from the LL and PFD", () => {
 
 test("valves from the PID-05 tag table; sample points carry lag", () => {
   const valves = A.items.filter((i) => i.kind === "valve");
-  assert.equal(valves.length, 72);
+  assert.equal(valves.length, 48);
   assert.deepEqual([item(A, "15AA07-outlet").fields.lineId, item(A, "15AA07-outlet").fields.kind], ["RB-L-207", "ControlValve"]);
   const sps = A.items.filter((i) => i.kind === "samplepoint");
   assert.equal(sps.length, INSTRUMENTS.filter((r) => r[3] !== "inline").length);
@@ -73,5 +74,13 @@ test("rev B: filter-to-waste lines and the GA-only old washwater outlet", () => 
   const B = extractPlant(drawingSet("B"), ont);
   assert.deepEqual(B.items.filter((i) => i.kind === "line" && i.fields.service === "filter-to-waste").map((i) => i.tag).sort(), ["RB-L-601", "RB-L-602", "RB-L-603", "RB-L-604"]);
   assert.equal(cell(B, "RB-L-421X|presence").grade, "AMBIGUOUS");
-  assert.equal(B.cells.filter((c) => c.grade === "AMBIGUOUS").length, 4);
+  assert.equal(B.cells.filter((c) => c.grade === "AMBIGUOUS").length, 5); // Task 5 adds POS-HLP-E; restore EXTRACTED then
+});
+
+test("regenerated GA round-trips: every layout structure has an EXTRACTED cell from RB-GA-001", () => {
+  for (const s of STRUCTURES) {
+    const c = cell(A, `${s.tag}|centre`);
+    assert.ok(c, s.tag);
+    assert.deepEqual([c.sheet, c.grade, c.value], ["RB-GA-001", "EXTRACTED", s.centre], s.tag);
+  }
 });
