@@ -19,6 +19,12 @@ import { siteBounds, toLocal, toLonLat, CAPACITY_MLD } from "./layout.mjs";
 import { regionPayload, sinceYouLeft, supplyRisks, focusOf, projectPanel } from "./regionview.mjs";
 import { sceneGrid } from "./scenes.mjs";
 import { liveStats } from "./geolive.mjs";
+import { handleMcp } from "./mcp-server.mjs";
+import { createKgTools } from "./kg/tools.mjs";
+import { createMemoryBackend } from "./kg/backend-memory.mjs";
+import { connectMcp } from "./timebase/mcp.mjs";
+import { pulseToken } from "./timebase/pulse.mjs";
+import { createAtlasBackend } from "./kg/backend-atlas.mjs";
 import { applyTimeouts, matchShadow, specFor, statementSentences, shadowRecord, promotionGap, MODES } from "./harness.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -60,7 +66,23 @@ export function clipPath(path, rects) {
   return parts.filter((p) => p.length >= 2);
 }
 
-export function createServer(sys) {
+const loadCrosswalk = () => JSON.parse(fs.readFileSync(path.resolve(here, "..", "data", "crosswalk.json"), "utf8"));
+
+// The KG tools for the MCP endpoint. Memory by default; WWOS_KG_BACKEND=atlas reads Timebase through its MCP, and any
+// failure to connect logs one line (no token, no secret) and falls back to memory.
+export async function kgToolsFor(sys, env = process.env) {
+  const crosswalk = loadCrosswalk();
+  let backend;
+  if (env.WWOS_KG_BACKEND === "atlas") {
+    try {
+      const getToken = () => pulseToken({ pulseUrl: env.TIMEBASE_PULSE_URL ?? "https://localhost:4542", clientId: env.TIMEBASE_CLIENT_ID, secretFile: env.TIMEBASE_SECRET_FILE });
+      backend = createAtlasBackend({ atlas: await connectMcp(env.TIMEBASE_ATLAS_URL ?? "https://localhost:4552", getToken), historian: await connectMcp(env.TIMEBASE_HISTORIAN_URL ?? "https://localhost:4512", getToken) });
+    } catch (e) { console.error(`KG backend atlas unavailable, using memory: ${e?.code ?? String(e?.message).slice(0, 120)}`); }
+  }
+  return createKgTools({ backend: backend ?? createMemoryBackend(sys), ont: sys.ont, tel: sys.tel, crosswalk });
+}
+
+export function createServer(sys, { kgTools = createKgTools({ backend: createMemoryBackend(sys), ont: sys.ont, tel: sys.tel, crosswalk: loadCrosswalk() }) } = {}) {
   const { ont, tel, actions, runtime, copilot, audit, channels } = sys;
   const workforce = () => [ont.list("Execution"), ont.list("Procedure"), ont.list("Issue"), ont.list("KnowledgeNote")];
   const clients = new Map(); // response -> viewer
@@ -575,8 +597,9 @@ export function createServer(sys) {
 
   const server = http.createServer(async (req, res) => {
     const url = new URL(req.url, "http://localhost");
-    if (!url.pathname.startsWith("/api/")) return serveStatic(url, res);
+    if (!url.pathname.startsWith("/api/") && url.pathname !== "/mcp") return serveStatic(url, res);
     try {
+      if (url.pathname === "/mcp") return await handleMcp(req, res, { tools: kgTools, viewer: viewerOf(req, url) });
       // The chat stub's webhook: the sender is the channel member, not a console user.
       // shortcut: header-trusted sender, like x-acting-user; a real WhatsApp webhook verifies Meta's signature.
       const inbound = req.method === "POST" && url.pathname.match(/^\/api\/channels\/([^/]+)\/inbound$/);
@@ -621,7 +644,7 @@ const SELF = fileURLToPath(import.meta.url);
 if (process.argv[1] && path.resolve(process.argv[1]).toLowerCase() === SELF.toLowerCase()) {
   const port = Number(process.argv[2]) || 8830;
   const sys = createSystem({ seed: 7 });
-  const server = createServer(sys);
+  const server = createServer(sys, { kgTools: await kgToolsFor(sys) });
   for (const a of ["Shift Handover", "Process Watch", "Asset Watch", "Permit Guard", "Shift Cover", "Drop Pack", "Project Watch", "Procedure Steward"]) sys.runtime.run(a, { actingUser: SYSTEM_USER, trigger: { kind: "startup" } });
   setInterval(() => server.tick(1), 2000).unref();
   server.listen(port, "127.0.0.1", () => console.log(`Water Works OS on http://localhost:${port}  (plant clock ${sys.tel.now()}, Claude ${llmEnabled() ? "on" : "off: deterministic agents"})`));
