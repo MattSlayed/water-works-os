@@ -8,12 +8,14 @@ import { createRuntime } from "./agents.mjs";
 import { createCopilot } from "./copilot.mjs";
 import { createChannels } from "./channels.mjs";
 import { seedPlant, createPlantService } from "./plant.mjs";
+import { seedKg } from "./kg/seed.mjs";
 import { createTrackers } from "./trackers.mjs";
 import { createConnectors } from "./connectors/index.mjs";
 
 export function createSystem({ seed = 7 } = {}) {
   const ont = createOntology(generateWorks(seed));
   seedPlant(ont);
+  seedKg(ont);
   const tel = createTelemetry({ ont, seed, start: "2026-10-01T00:00:00Z" });
   const trackers = createTrackers({ ont, seed, start: "2026-10-01T00:00:00Z", minutes: 14 * 24 * 60 });
   const audit = createAudit();
