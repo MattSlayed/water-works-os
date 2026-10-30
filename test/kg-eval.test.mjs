@@ -50,6 +50,21 @@ test("eval-claude without credentials says so and runs nothing", () => {
   assert.match(r.stderr, /ANTHROPIC_API_KEY or ANTHROPIC_AUTH_TOKEN.*nothing was run/);
 });
 
+test("eval-claude --backend atlas with no reachable Atlas stops before any model call", () => {
+  const env = {
+    ...process.env,
+    ANTHROPIC_API_KEY: "sk-test-not-a-key", ANTHROPIC_BASE_URL: "http://127.0.0.1:1", // a model call, if reached, goes nowhere
+    TIMEBASE_ATLAS_URL: "https://127.0.0.1:1", TIMEBASE_HISTORIAN_URL: "https://127.0.0.1:1", TIMEBASE_PULSE_URL: "https://127.0.0.1:1",
+    TIMEBASE_CLIENT_ID: "c", TIMEBASE_SECRET_FILE: "/nope/hunter2.secret"
+  };
+  delete env.ANTHROPIC_AUTH_TOKEN;
+  const r = spawnSync(process.execPath, [fileURLToPath(new URL("../scripts/kg/eval-claude.mjs", import.meta.url)), "--backend", "atlas"], { env, encoding: "utf8", timeout: 60e3 });
+  assert.equal(r.status, 2, r.stderr);
+  assert.match(r.stderr, /^eval-claude: KG backend atlas unavailable: .*nothing was run\.\n$/);
+  assert.ok(!/hunter2|sk-test/.test(r.stderr + r.stdout), "no secret in the message");
+  assert.equal(r.stdout, "", "no question was asked");
+});
+
 test("grader", () => {
   const l1 = q("L1");
   const good = grade("TT-612, the HLP-B drive-end bearing, first went above 70 °C at 2026-10-13T07:25Z [SEN-HLP-B-temp_de@2026-10-13T06:00:00Z..2026-10-13T08:00:00Z].", l1, ctx);

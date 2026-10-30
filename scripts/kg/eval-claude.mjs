@@ -22,8 +22,9 @@ try { ({ default: Anthropic } = await import("@anthropic-ai/sdk")); } catch { st
 const sys = createSystem({ seed: 7 });
 const crosswalk = JSON.parse(readFileSync(new URL("../../data/crosswalk.json", import.meta.url), "utf8"));
 const bank = JSON.parse(readFileSync(new URL("../../data/eval-questions.json", import.meta.url), "utf8"));
-// the same wiring as the MCP endpoint (src/server.mjs); atlas falls back to memory with one logged line if it cannot connect
-const tools = await kgToolsFor(sys, { ...process.env, WWOS_KG_BACKEND: backend });
+// the same wiring as the MCP endpoint (src/server.mjs), but an atlas run that cannot connect stops: never graded as memory
+let tools;
+try { tools = await kgToolsFor(sys, { ...process.env, WWOS_KG_BACKEND: backend }, { fallback: false }); } catch (e) { stop(`eval-claude: ${e.message}; nothing was run.`); }
 const ctx = citeContext(sys.ont, crosswalk);
 const client = new Anthropic();
 

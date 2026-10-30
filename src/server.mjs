@@ -69,15 +69,20 @@ export function clipPath(path, rects) {
 const loadCrosswalk = () => JSON.parse(fs.readFileSync(path.resolve(here, "..", "data", "crosswalk.json"), "utf8"));
 
 // The KG tools for the MCP endpoint. Memory by default; WWOS_KG_BACKEND=atlas reads Timebase through its MCP, and any
-// failure to connect logs one line (no token, no secret) and falls back to memory.
-export async function kgToolsFor(sys, env = process.env) {
+// failure to connect logs one line (no token, no secret) and falls back to memory. With fallback: false (the eval run,
+// which must not grade memory as atlas) the failure throws that same line instead.
+export async function kgToolsFor(sys, env = process.env, { fallback = true } = {}) {
   const crosswalk = loadCrosswalk();
   let backend;
   if (env.WWOS_KG_BACKEND === "atlas") {
     try {
       const getToken = () => pulseToken({ pulseUrl: env.TIMEBASE_PULSE_URL ?? "https://localhost:4542", clientId: env.TIMEBASE_CLIENT_ID, secretFile: env.TIMEBASE_SECRET_FILE });
       backend = createAtlasBackend({ atlas: await connectMcp(env.TIMEBASE_ATLAS_URL ?? "https://localhost:4552", getToken), historian: await connectMcp(env.TIMEBASE_HISTORIAN_URL ?? "https://localhost:4512", getToken) });
-    } catch (e) { console.error(`KG backend atlas unavailable, using memory: ${e?.code ?? String(e?.message).slice(0, 120)}`); }
+    } catch (e) {
+      const why = e?.code ?? String(e?.message).slice(0, 120);
+      if (!fallback) throw new Error(`KG backend atlas unavailable: ${why}`);
+      console.error(`KG backend atlas unavailable, using memory: ${why}`);
+    }
   }
   return createKgTools({ backend: backend ?? createMemoryBackend(sys), ont: sys.ont, tel: sys.tel, crosswalk });
 }
