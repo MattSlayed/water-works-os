@@ -167,3 +167,20 @@ test("an isError tool result throws", async () => {
   const c = await connectMcp("https://a", async () => "tok", { fetch });
   await assert.rejects(c.callTool("GetDataForMultipleTags", {}), /no such dataset/);
 });
+
+const fixtureText = () => JSON.parse(readFileSync(new URL("./fixtures/historian-read.json", import.meta.url), "utf8")).content[0].text;
+const asResult = (text) => ({ content: [{ type: "text", text }] });
+
+test("historian adapter throws when the reply does not add up", () => {
+  const text = JSON.parse(fixtureText());
+  assert.throws(() => HISTORIAN_READ.points(asResult(JSON.stringify(text.replace("56 point(s)", "57 point(s)")))), /parsed 56 of 57 points/);
+  assert.throws(() => HISTORIAN_READ.points(asResult(text.replace("q=192", "q=bad"))), /parsed 55 of 56 points/);
+  assert.throws(() => HISTORIAN_READ.points(asResult(text.replace("v=0.109", "v=abc"))), /non-finite/);
+  assert.throws(() => HISTORIAN_READ.points(asResult(text.replace("- 2026-10-08T00:00:00.0000000Z", "- 2026-10-08T00:00:00.0000000"))), /parsed 55 of 56 points/);
+  assert.throws(() => HISTORIAN_READ.points(asResult("Tag not found")), /no point\(s\) header/);
+  assert.throws(() => HISTORIAN_READ.points({ content: [] }), /no point\(s\) header/);
+});
+
+test("historian adapter: a 0 point(s) reply is an empty series", () => {
+  assert.deepEqual(HISTORIAN_READ.points(asResult("Data for 1 tag(s) in dataset 'Riverbend' (a .. b):\n## AIT-157 - 0 point(s)\n")), []);
+});
