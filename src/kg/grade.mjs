@@ -2,21 +2,26 @@
 // Facts are matched in the prose with the cites cut out, so a cite's own text (a readings window) never counts as a fact.
 const CITE = /\[([^[\]]+)\]/g;
 const WHEN = /\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?Z?/g;
-const NUM = /\d+(?:\.\d+)?/g;
 const DATE = /\d{4}-\d{2}-\d{2}(?:[T ]\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?Z?)?/g;
 const ID = /\b[A-Z][\w-]*\d\w*/g;
 // an ISA tag, not the tail of a longer id (the GA-001 in drawing RB-GA-001)
 const TAG = /(?<!-)\b[A-Z]{2,4}-\d{3}\b/g;
 const ms = (t) => Date.parse(t.replace(" ", "T").replace(/Z?$/, "Z")); // a time without a zone is read as UTC
 
-// one required item: pattern alone must match; value (a number within tol, or an ISO time within tol minutes) is looked
-// for inside the pattern's matches, or anywhere in the prose when there is no pattern
-function holds(prose, { pattern, value, tol = 0 }) {
-  const spans = pattern ? prose.match(new RegExp(pattern, "gi")) ?? [] : [prose];
-  if (value === undefined) return spans.length > 0;
-  if (typeof value === "string") return spans.some((s) => (s.match(WHEN) ?? []).some((t) => Math.abs(ms(t) - Date.parse(value)) <= tol * 60e3));
-  const nums = (s) => s.replace(WHEN, " ").replace(/(\d),(?=\d{3}\b)/g, "$1").match(NUM) ?? [];
-  return spans.some((s) => nums(s).some((n) => Math.abs(Number(n) - value) <= tol));
+// The numbers the text states in a unit (85 °C, 85°C, 5,870 m³), ids and dates removed first so TT-612 or 2026-10-13
+// never count. The unit must not run on into a longer one: "m" is not read from "mm" or "m³".
+export function unitValues(text, unit) {
+  const u = unit.replace(/[.*+?^${}()|[\]\\/]/g, "\\$&");
+  const re = new RegExp(`(\\d{1,3}(?:,\\d{3})+(?:\\.\\d+)?|\\d+(?:\\.\\d+)?)\\s*${u}(?![A-Za-z²³])`, "g");
+  return [...text.replace(DATE, " ").replace(ID, " ").matchAll(re)].map((m) => Number(m[1].replace(/,/g, "")));
+}
+
+// one required item: a number in a unit within tol ({value, tol, unit}), an ISO time within tol minutes ({value, tol}),
+// or a case-insensitive pattern for a fact that is not a number
+function holds(prose, { pattern, value, tol = 0, unit }) {
+  if (unit) return unitValues(prose, unit).some((n) => Math.abs(n - value) <= tol + 1e-9);
+  if (typeof value === "string") return (prose.match(WHEN) ?? []).some((t) => Math.abs(ms(t) - Date.parse(value)) <= tol * 60e3);
+  return new RegExp(pattern, "i").test(prose);
 }
 
 export function grade(text, q, { exists, visible, tags }) {

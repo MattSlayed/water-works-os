@@ -7,7 +7,7 @@ import { fileURLToPath } from "node:url";
 import { createSystem } from "../src/system.mjs";
 import { createKgTools } from "../src/kg/tools.mjs";
 import { createMemoryBackend } from "../src/kg/backend-memory.mjs";
-import { grade, citeContext, viewerOf } from "../src/kg/grade.mjs";
+import { grade, citeContext, viewerOf, unitValues } from "../src/kg/grade.mjs";
 
 const sys = createSystem({ seed: 7 });
 const crosswalk = JSON.parse(readFileSync(new URL("../data/crosswalk.json", import.meta.url), "utf8"));
@@ -26,7 +26,13 @@ test("the bank holds the planned 24 questions", () => {
     assert.ok(sys.ont.get(x.asker)?.type === "Person", `${x.id}: asker is a Person`);
     assert.ok(["answer", "not_found", "insufficient"].includes(x.expect), x.id);
     assert.ok(x.required.length && x.evidence.length, `${x.id}: required and evidence`);
-    for (const r of x.required) if (r.pattern) new RegExp(r.pattern, "i");
+    // a required item is exactly one of: a pattern, a number in a unit, or an ISO time
+    for (const r of x.required) {
+      const kind = [r.pattern !== undefined, r.unit !== undefined && typeof r.value === "number", typeof r.value === "string" && !r.unit];
+      assert.equal(kind.filter(Boolean).length, 1, `${x.id}: ${r.label}`);
+      if (r.pattern) new RegExp(r.pattern, "i");
+    }
+    for (const p of x.forbidden) new RegExp(p, "i");
   }
 });
 
@@ -125,21 +131,23 @@ test("a correct answer to every question grades right, with valid cites and noth
   }
 });
 
-test("required items check facts, not names (review fix round 1)", () => {
-  const wrong = {
-    P2: ["RWP-A is isolated, RWP-B is isolated and RWP-C is isolated [AST-30819]."],
-    L3: ["TT-612 reads 73.99 °C now and is falling, not rising [SEN-HLP-B-temp_de]."],
-    L2: ["Yes, TT-612 went above its 85 °C alarm; it peaked at 74.6 °C and is below it now [SEN-HLP-B-temp_de]."],
-    P5: ["TT-612 is the drive-end bearing temperature of HLP-B; its high alarm is 95 °C, about 85 % of trip [SEN-HLP-B-temp_de]."],
-    L5: ["Yes, AIT-157 breached its 0.5 NTU alarm; it peaked at 0.342 NTU and is below it now [SEN-F07-turb]."],
-    T7: ["CL-4 is drained for repair, so the top water level of CL-4 is 1476 m like the others [DOC-DESIGN-BASIS#c04].",
-      "The top water level of CL-4 is 1476 m; it is currently drained [DOC-DESIGN-BASIS#c04]."],
-    T1: ["F12 is not found, but F12 reads 0.34 NTU."],
-    T6: ["Not available, but on 2026-09-15 it read 0.12 NTU."]
-  };
-  for (const [id, answers] of Object.entries(wrong)) for (const a of answers) assert.equal(grade(a, q(id), ctx).right, false, `${id}: ${a}`);
-  assert.equal(grade("F12 is retired; its duty moved to F07, which reads 0.34 NTU [SEN-F07-turb].", q("T1"), ctx).right, true);
-  assert.equal(grade("No data for 2026-09-15: telemetry starts at 2026-10-01, when AIT-157 read 0.127 NTU [SEN-F07-turb].", q("T6"), ctx).right, true);
+// every phrasing the reviewers tried in fix rounds 1 and 2, with how it must grade
+const REVIEW_CASES = JSON.parse(readFileSync(new URL("./fixtures/kg-eval-review-cases.json", import.meta.url), "utf8"));
+
+test("required items check facts, not names: every reviewer phrasing grades as the reviewer said", () => {
+  assert.ok(REVIEW_CASES.length >= 100);
+  const off = REVIEW_CASES.filter(([want, id, a]) => grade(a, q(id), ctx).right !== want);
+  assert.deepEqual(off, [], "cases grading the other way");
+});
+
+test("unitValues reads numbers in a unit, never from ids, dates or a longer unit", () => {
+  assert.deepEqual(unitValues("TT-612 peaked at 74.6 °C, under its 85°C alarm, at 2026-10-13T07:25Z.", "°C"), [74.6, 85]);
+  assert.deepEqual(unitValues("The highest AIT-157 turbidity in the last 24 hours was 0.342 NTU.", "NTU"), [0.342]);
+  assert.deepEqual(unitValues("Each holds 5,870 m³; the bed is 7.0 m by 11.4 m.", "m³"), [5870]);
+  assert.deepEqual(unitValues("Limit 0.05 mm on a 7.0 m bed", "m"), [7]);
+  assert.deepEqual(unitValues("30 ML/d each, 90 ML/day in all", "ML"), [30, 90]);
+  assert.deepEqual(unitValues("about 85 % of trip, alarm 95 °C", "°C"), [95]);
+  assert.deepEqual(unitValues("F07 is at 0.34 NTU", "°C"), []);
 });
 
 test("an answer must cite its evidence; uncited numbers are counted, ids and dates aside (review fix round 1)", () => {
