@@ -60,7 +60,7 @@ test("cypher is manager only and linted", async () => {
   assert.match(lintCypher("MATCH (n:Pump {Label: 'P-1'}) RETURN n").errors.join(), /use WHERE/);
   for (const w of ["CREATE (n)", "MERGE (n)", "MATCH (n) SET n.x = 1", "MATCH (n) REMOVE n.x", "DROP INDEX i", "CALL db.labels()", "LOAD CSV FROM 'f' AS r RETURN r"]) assert.equal(lintCypher(w).ok, false, w);
   // a quote or backtick inside a comment must not open a "literal" that swallows real clauses
-  for (const w of ["MATCH (n) // it's\nDETACH DELETE n RETURN 'x'", "MATCH (n) /* ` */ DETACH DELETE n /* ` */ RETURN 1", "MATCH (n) /* \" */ SET n.y = 1 // \""]) assert.equal(lintCypher(w).ok, false, w);
+  for (const w of ["MATCH (n) // it's\nDETACH DELETE n RETURN 'x'", "MATCH (n) /* ` */ DETACH DELETE n /* ` */ RETURN 1", "MATCH (n) /* \" */ SET n.y = 1 // \"", "MATCH (n) // x\rDETACH DELETE n"]) assert.equal(lintCypher(w).ok, false, JSON.stringify(w));
   assert.equal(lintCypher("MATCH (n) WHERE n.Label = 'a // b' RETURN n.wosId // CREATE is only a comment").ok, true, "// inside a string literal is not a comment");
 });
 
@@ -125,6 +125,24 @@ test("readings never run past the plant clock", async () => {
   const future = await run("readings", { sensorId: "SEN-F07-turb", from: sys.tel.end, to: sys.tel.end }, tech);
   assert.deepEqual(future.points, []);
   assert.match(future.note, /plant clock/);
+});
+
+test("readings: from is clamped to the telemetry window, bad dates are a note, an over-long window is refused", async () => {
+  const now = sys.tel.now(), t0 = Date.now();
+  const ancient = await run("readings", { sensorId: "SEN-F07-turb", from: "0001-01-01T00:00:00Z", to: now }, tech);
+  assert.ok(Date.now() - t0 < 5000, "the minute grid never outruns the telemetry window");
+  assert.equal(ancient.cite, `SEN-F07-turb@${sys.tel.start}..${now}`);
+  assert.equal(ancient.n, (Date.parse(now) - Date.parse(sys.tel.start)) / 60e3 + 1);
+  for (const input of [{ to: "garbage" }, { from: "garbage" }, { from: "garbage", to: "rubbish" }]) {
+    const r = await run("readings", { sensorId: "SEN-F07-turb", ...input }, tech);
+    assert.deepEqual(r.points, [], JSON.stringify(input));
+    assert.match(r.note, /^empty window: from and to must be ISO times/);
+  }
+  // a clock past the telemetry window (a misconfigured tel) would allow a longer window; it is refused, not looped
+  const late = createKgTools({ backend, ont: sys.ont, tel: { start: sys.tel.start, end: sys.tel.end, now: () => "2030-01-01T00:00:00.000Z" }, crosswalk });
+  const long = await run("readings", { sensorId: "SEN-F07-turb", from: sys.tel.start, to: "2030-01-01T00:00:00.000Z" }, tech, late);
+  assert.deepEqual(long.points, []);
+  assert.match(long.note, /longer than the telemetry window/);
 });
 
 test("raw readings are capped at 500 evenly spaced points", async () => {

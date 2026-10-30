@@ -131,10 +131,15 @@ export function createKgTools({ backend, ont, tel, crosswalk = {} }) {
         const view = ont.view(viewer), s = view.get(resolve(view, sensorId));
         if (s?.type !== "Sensor") return { found: false };
         const now = tel.now(), iso = (ms) => new Date(ms).toISOString();
+        const empty = (why) => ({ id: s.id, points: [], note: `empty window: ${why}`, cite: `${s.id}@${from}..${to}` });
+        if ([from, to].some((x) => x && Number.isNaN(Date.parse(x)))) return empty("from and to must be ISO times");
         if (!to || Date.parse(to) > Date.parse(now)) to = now; // never read past the plant clock, whichever backend answers
         from = from || iso(Date.parse(to) - 86400e3);
+        // never before the telemetry window either, so no caller date can make the minute grid outrun it
+        if (Date.parse(from) < Date.parse(tel.start)) from = tel.start;
         const cite = `${s.id}@${from}..${to}`, fromMs = Date.parse(from), toMs = Date.parse(to);
-        if (!(fromMs <= toMs)) return { id: s.id, points: [], note: `empty window: from must be on or before to and the plant clock (${now})`, cite };
+        if (!(fromMs <= toMs)) return empty(`from must be on or before to and the plant clock (${now})`);
+        if (toMs - fromMs > Date.parse(tel.end) - Date.parse(tel.start)) return empty("longer than the telemetry window");
         // look back so the value held at `from` is known, then read every minute on the grid
         const grid = minuteGrid(await backend.readings(s, iso(fromMs - LOOKBACK), iso(toMs)), fromMs, toMs);
         if (!grid.length) return { id: s.id, points: [], note: "no data", cite };
