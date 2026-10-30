@@ -106,6 +106,15 @@ export function createTelemetry({ ont, seed = 7, start = "2026-10-01T00:00:00Z",
       const end = Math.min(cursor, v.length - 1), from = Math.max(0, end - n + 1);
       return Array.from(v.subarray(from, end + 1), round);
     },
+    // 1-minute points clipped to [fromIso, toIso], rounded like history()
+    series(id, fromIso, toIso) {
+      const v = series.get(id);
+      if (!v) return [];
+      const a = Math.max(0, Math.ceil((Date.parse(fromIso) - t0) / MIN)), b = Math.min(v.length - 1, Math.floor((Date.parse(toIso) - t0) / MIN));
+      const out = [];
+      for (let i = a; i <= b; i++) out.push({ t: new Date(t0 + i * MIN).toISOString(), v: round(v[i]) });
+      return out;
+    },
     sensorsFor: (objId) => sensors.filter((s) => s.assetId === objId || s.processUnitId === objId)
   };
 }

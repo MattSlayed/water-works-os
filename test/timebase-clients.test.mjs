@@ -1,0 +1,117 @@
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { writeFileSync, mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { generateWorks } from "../src/generate.mjs";
+import { createOntology } from "../src/ontology.mjs";
+import { createTelemetry } from "../src/telemetry.mjs";
+import { pulseToken } from "../src/timebase/pulse.mjs";
+import { restCall } from "../src/timebase/rest.mjs";
+import { connectMcp } from "../src/timebase/mcp.mjs";
+import { historianTags } from "../src/timebase/historian-tags.mjs";
+
+const SECRET = "s3cret-value-xyz";
+const secretFile = join(mkdtempSync(join(tmpdir(), "tb-")), "x.secret");
+writeFileSync(secretFile, SECRET + "\n");
+const reply = (status, body, type = "application/json", headers = {}) =>
+  new Response(typeof body === "string" ? body : JSON.stringify(body), { status, headers: { "content-type": type, ...headers } });
+const jwt = (exp) => `h.${Buffer.from(JSON.stringify({ exp })).toString("base64url")}.s`;
+
+test("token never leaks", async () => {
+  const fetch = async () => reply(401, { error: "invalid_client", error_description: `bad ${SECRET} access_token` });
+  await assert.rejects(pulseToken({ pulseUrl: "https://p", clientId: "WaterOS", secretFile, fetch }), (e) => {
+    assert.match(e.message, /401/);
+    assert.match(e.message, /invalid_client/);
+    assert.ok(!e.message.includes(SECRET) && !e.message.includes("access_token"));
+    return true;
+  });
+});
+
+test("token is cached until 30 s before exp", async () => {
+  let calls = 0, exp = Math.floor(Date.now() / 1000) + 3600;
+  const fetch = async (url, init) => {
+    calls++;
+    assert.ok(url === "https://p/auth/token" || url === "https://p2/auth/token");
+    assert.match(String(init.body), /grant_type=client_credentials/);
+    return reply(200, { access_token: jwt(exp) });
+  };
+  const o = { pulseUrl: "https://p", clientId: "WaterOS", secretFile, fetch };
+  assert.equal(await pulseToken(o), await pulseToken(o));
+  assert.equal(calls, 1);
+  exp = Math.floor(Date.now() / 1000) + 10; // inside the 30 s margin, so never reused
+  const o2 = { ...o, pulseUrl: "https://p2" };
+  await pulseToken(o2); await pulseToken(o2);
+  assert.equal(calls, 3);
+});
+
+test("rest rejects html", async () => {
+  const fetch = async () => reply(200, "<html>login</html>", "text/html");
+  await assert.rejects(restCall("https://h", "GET", "/api/x", undefined, { token: "t", fetch }), (e) => e.name === "NotJson");
+});
+
+test("rest sends the bearer, manual redirect and a JSON body", async () => {
+  let seen;
+  const fetch = async (url, init) => { seen = { url, init }; return reply(200, { a: 1 }); };
+  const r = await restCall("https://h", "POST", "/api/x", [1], { token: "tok", fetch });
+  assert.deepEqual(r, { status: 200, body: { a: 1 } });
+  assert.equal(seen.url, "https://h/api/x");
+  assert.equal(seen.init.redirect, "manual");
+  assert.equal(seen.init.headers.Authorization, "Bearer tok");
+  assert.equal(seen.init.body, "[1]");
+});
+
+test("mcp parses SSE and JSON", async () => {
+  const tools = [{ name: "read_raw", description: "d", inputSchema: { type: "object" } }];
+  const run = async (style) => {
+    const sessions = [];
+    const fetch = async (url, init) => {
+      const msg = JSON.parse(init.body);
+      sessions.push(init.headers["mcp-session-id"]);
+      const send = (o) => style === "sse"
+        ? reply(200, `event: message\ndata: {"junk":1}\n\ndata: ${JSON.stringify(o)}\n\n`, "text/event-stream", { "mcp-session-id": "S1" })
+        : reply(200, o, "application/json", { "mcp-session-id": "S1" });
+      if (msg.method === "initialize") return send({ jsonrpc: "2.0", id: msg.id, result: { serverInfo: {} } });
+      if (msg.method === "notifications/initialized") return new Response(null, { status: 202 });
+      if (msg.method === "tools/list") return send({ jsonrpc: "2.0", id: msg.id, result: { tools } });
+      return send({ jsonrpc: "2.0", id: msg.id, error: { code: -1, message: "nope" } });
+    };
+    const c = await connectMcp("https://a", async () => "tok", { fetch });
+    return { list: await c.listTools(), sessions, c };
+  };
+  const a = await run("json"), b = await run("sse");
+  assert.deepEqual(a.list, tools);
+  assert.deepEqual(b.list, tools);
+  assert.equal(a.sessions[0], undefined);
+  assert.deepEqual(a.sessions.slice(1), ["S1", "S1"]); // notifications/initialized and tools/list echo the id
+  await assert.rejects(b.c.callTool("x", {}), /nope/);
+});
+
+const ont = createOntology(generateWorks(7));
+
+test("historian tags", () => {
+  const tags = historianTags(ont);
+  assert.equal(tags.length, 117);
+  assert.equal(new Set(tags.map((t) => t.n)).size, 117);
+  const t = tags.find((x) => x.n === "AIT-157");
+  assert.equal(t.sensorId, "SEN-F07-turb");
+  assert.deepEqual(t.u, { 1: "NTU" });
+  assert.deepEqual(t.fl, { Site: "Riverbend WTW", Asset: "F07", Source: "synthetic" });
+  assert.equal(t.t, "System.Double");
+  const bulk = tags.find((x) => x.sensorId === "SEN-PS1-flow");
+  assert.equal(bulk.fl.Asset, "RS-PS1"); // no asset -> process unit id
+});
+
+test("series matches history, clipped to the window", () => {
+  const start = "2026-10-01T00:00:00Z";
+  const tel = createTelemetry({ ont, start, minutes: 600, startCursorMin: 600 });
+  const id = "SEN-F07-turb";
+  const s = tel.series(id, start, "2026-10-01T00:10:00Z");
+  assert.equal(s.length, 11);
+  assert.equal(s[0].t, "2026-10-01T00:00:00.000Z");
+  assert.equal(s[10].t, "2026-10-01T00:10:00.000Z");
+  assert.deepEqual(s.map((p) => p.v), tel.history(id, 601).slice(0, 11));
+  assert.equal(tel.series(id, "2026-09-30T00:00:00Z", "2026-10-01T00:00:00Z").length, 1);
+  assert.equal(tel.series(id, "2027-01-01T00:00:00Z", "2027-01-02T00:00:00Z").length, 0);
+  assert.equal(tel.series("nope", start, start).length, 0);
+});
