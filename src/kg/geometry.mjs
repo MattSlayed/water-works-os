@@ -4,15 +4,19 @@ import { currentPlantModel, plantId } from "../plant.mjs";
 
 const r3 = (x) => Math.round(x * 1000) / 1000;
 
-export function geometryRefs(sceneMeta, ont, contract) {
-  const objects = sceneMeta.objects, model = currentPlantModel(ont);
+// a scene asset key is owned by its Position, else by its Structure in the released plant model
+export function ownerResolver(ont) {
+  const model = currentPlantModel(ont);
   const positions = new Map(ont.list("Position").map((p) => [p.tag, p.id]));
-  // a scene asset key is owned by its Position, else by its Structure in the released plant model
-  const ownerOf = (asset) => {
+  return (asset) => {
     if (positions.has(asset)) return positions.get(asset);
     const s = model && PLAN[asset] && plantId(model.id, "structure", PLAN[asset].tag);
     return s && ont.get(s) ? s : null;
   };
+}
+
+export function geometryRefs(sceneMeta, ont, contract) {
+  const objects = sceneMeta.objects, ownerOf = ownerResolver(ont);
   const refs = [], links = [], skippedObjects = [], byOwner = new Map(), sceneTag = new Map();
   for (const node of Object.keys(objects).sort()) {
     const o = objects[node], owner = ownerOf(o.asset);
