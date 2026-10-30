@@ -23,6 +23,10 @@ export async function connectMcp(baseUrl, getToken, { fetch: f = fetch } = {}) {
   await post({ jsonrpc: "2.0", method: "notifications/initialized" });
   return {
     listTools: async () => ((await post({ jsonrpc: "2.0", id: ++id, method: "tools/list", params: {} }))?.tools ?? []).map(({ name, description, inputSchema }) => ({ name, description, inputSchema })),
-    callTool: (name, args) => post({ jsonrpc: "2.0", id: ++id, method: "tools/call", params: { name, arguments: args } })
+    callTool: async (name, args) => {
+      const r = await post({ jsonrpc: "2.0", id: ++id, method: "tools/call", params: { name, arguments: args } });
+      if (r?.isError) throw new Error(`MCP tool ${name} failed: ${String(r.content?.find((c) => c.type === "text")?.text ?? "").slice(0, 200)}`);
+      return r;
+    }
   };
 }

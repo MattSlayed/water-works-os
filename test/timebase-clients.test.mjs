@@ -10,6 +10,8 @@ import { pulseToken } from "../src/timebase/pulse.mjs";
 import { restCall } from "../src/timebase/rest.mjs";
 import { connectMcp } from "../src/timebase/mcp.mjs";
 import { historianTags } from "../src/timebase/historian-tags.mjs";
+import { HISTORIAN_READ } from "../src/timebase/historian-read.mjs";
+import { readFileSync } from "node:fs";
 
 const SECRET = "s3cret-value-xyz";
 const secretFile = join(mkdtempSync(join(tmpdir(), "tb-")), "x.secret");
@@ -138,4 +140,30 @@ test("telemetry exposes its own window", () => {
   assert.equal(tel.minutes, 600);
   assert.equal(tel.end, "2026-10-01T10:00:00.000Z");
   assert.equal(tel.series("SEN-F07-turb", tel.start, tel.end).length, 601);
+});
+
+test("historian adapter", () => {
+  const fixture = JSON.parse(readFileSync(new URL("./fixtures/historian-read.json", import.meta.url), "utf8"));
+  const a = HISTORIAN_READ.args("AIT-157", "2026-10-08T00:00:00Z", "2026-10-08T01:00:00Z");
+  assert.equal(HISTORIAN_READ.tool, "GetDataForMultipleTags");
+  assert.deepEqual(a, { datasetName: "Riverbend", tagNamesJson: '["AIT-157"]', startTime: "2026-10-08T00:00:00Z", endTime: "2026-10-08T01:00:00Z" });
+  const pts = HISTORIAN_READ.points(fixture);
+  // The Historian drops consecutive repeated values, so one hour of 1-minute data holds fewer than 60 points (56 captured).
+  assert.ok(pts.length >= 50 && pts.length <= 61, `got ${pts.length}`);
+  assert.equal(pts.length, Number(/(\d+) point\(s\)/.exec(fixture.content[0].text)[1]));
+  for (const p of pts) {
+    assert.match(p.t, /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z$/);
+    assert.ok(Number.isFinite(p.v) && p.q === 192);
+  }
+  assert.ok(pts.every((p, i) => i === 0 || p.t > pts[i - 1].t));
+});
+
+test("an isError tool result throws", async () => {
+  const fetch = async (url, init) => {
+    const m = JSON.parse(init.body);
+    if (m.method === "notifications/initialized") return new Response(null, { status: 202 });
+    return reply(200, { jsonrpc: "2.0", id: m.id, result: m.method === "tools/call" ? { isError: true, content: [{ type: "text", text: "no such dataset" }] } : {} });
+  };
+  const c = await connectMcp("https://a", async () => "tok", { fetch });
+  await assert.rejects(c.callTool("GetDataForMultipleTags", {}), /no such dataset/);
 });
