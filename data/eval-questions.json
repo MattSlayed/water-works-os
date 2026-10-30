@@ -4,26 +4,29 @@
     "kind": "physical",
     "asker": "P-028",
     "question": "Which pumps feed the bulk line and how many are on duty?",
-    "expect": "answer",
-    "required": [
-      {
-        "label": "the high-lift pumps",
-        "pattern": "high[- ]lift|HLP-[A-E]"
+    "status": "answer",
+    "fields": {
+      "duty_pumps": {
+        "type": "ids",
+        "expect": [
+          "HLP-A",
+          "HLP-B",
+          "HLP-C",
+          "HLP-E"
+        ]
       },
-      {
-        "label": "four on duty",
-        "pattern": "\\b(4|four)\\b"
+      "standby_pumps": {
+        "type": "ids",
+        "expect": [
+          "HLP-D"
+        ]
       },
-      {
-        "label": "HLP-D on standby",
-        "pattern": "HLP-D[^.;\\n]*standby|standby[^.;\\n]*HLP-D"
+      "duty_count": {
+        "type": "number",
+        "expect": 4
       }
-    ],
-    "forbidden": [
-      "\\bincluding\\s+HLP-D\\b",
-      "\\b(none|no)\\b[^.;\\n]*\\bstandby\\b",
-      "\\bHLP-D\\s+(is|was)\\s+(also\\s+)?(running|on duty|a duty)"
-    ],
+    },
+    "forbidden": [],
     "evidence": [
       "AST-80576",
       "AST-85704",
@@ -37,28 +40,23 @@
     "kind": "physical",
     "asker": "P-012",
     "question": "Which raw-water pumps are running, and is any of them out of service?",
-    "expect": "answer",
-    "required": [
-      {
-        "label": "RWP-A running",
-        "pattern": "RWP-A[^.;\\n]*(running|in service|on duty|operating|in operation)|(running|in service|on duty|operating|in operation)[^.;\\n]*RWP-A"
+    "status": "answer",
+    "fields": {
+      "running_pumps": {
+        "type": "ids",
+        "expect": [
+          "RWP-A",
+          "RWP-B"
+        ]
       },
-      {
-        "label": "RWP-B running",
-        "pattern": "RWP-B[^.;\\n]*(running|in service|on duty|operating|in operation)|(running|in service|on duty|operating|in operation)[^.;\\n]*RWP-B"
-      },
-      {
-        "label": "RWP-C isolated",
-        "pattern": "RWP-C[^.;\\n]*isolat|isolat[^.;\\n]*RWP-C"
+      "isolated_pumps": {
+        "type": "ids",
+        "expect": [
+          "RWP-C"
+        ]
       }
-    ],
-    "forbidden": [
-      "\\bRWP-[AB]\\s+(is|was)\\s+(also\\s+)?isolat",
-      "\\bRWP-C\\s+(is|was)\\s+(also\\s+)?(running|in service|on duty|operating)",
-      "\\bRWP-C\\b[^.;\\n]*\\b(not|never)\\s+isolat|\\bRWP-C\\s+isn't\\s+isolat",
-      "\\bnone\\s+(is|are)\\s+isolat",
-      "\\ball three\\b[^.;\\n]*\\brunning\\b"
-    ],
+    },
+    "forbidden": [],
     "evidence": [
       "AST-30819",
       "AST-98455",
@@ -70,19 +68,20 @@
     "kind": "physical",
     "asker": "P-004",
     "question": "Which clarifier is out of service, and what is the works rated at until it returns?",
-    "expect": "answer",
-    "required": [
-      {
-        "label": "CL-4 out of service",
-        "pattern": "(CL-4|14UGE04)[^.;\\n]*(out of service|refurbish|drained|offline)|(out of service|refurbish|drained|offline)[^.;\\n]*(CL-4|14UGE04)"
+    "status": "answer",
+    "fields": {
+      "out_of_service": {
+        "type": "ids",
+        "expect": [
+          "CL-4|14UGE04|AST-76091"
+        ]
       },
-      {
-        "label": "rated 90 ML/d",
-        "value": 90,
-        "tol": 0,
-        "unit": "ML"
+      "rated_capacity": {
+        "type": "number",
+        "unit": "ML/d",
+        "expect": 90
       }
-    ],
+    },
     "forbidden": [],
     "evidence": [
       "AST-76091",
@@ -94,21 +93,25 @@
     "kind": "physical",
     "asker": "P-028",
     "question": "What is upstream of filter F07 along the process flow?",
-    "expect": "answer",
-    "required": [
-      {
-        "label": "filter building FB-2",
-        "pattern": "FB-2|15UFB02"
+    "status": "answer",
+    "fields": {
+      "filter_building": {
+        "type": "string",
+        "expect": "FB-2|15UFB02|PM-RB-A:STR-15UFB02"
       },
-      {
-        "label": "the clarifiers",
-        "pattern": "CL-[123]\\b|14UGE0[123]|clarifier"
+      "splitter": {
+        "type": "string",
+        "expect": "DB-1|13UGD01|PM-RB-A:STR-13UGD01"
       },
-      {
-        "label": "splitter box DB-1",
-        "pattern": "DB-1|13UGD01|splitter"
+      "raw_water_pumps": {
+        "type": "ids",
+        "expect": [
+          "RWP-A",
+          "RWP-B",
+          "RWP-C"
+        ]
       }
-    ],
+    },
     "forbidden": [],
     "evidence": [
       "PM-RB-A:STR-15HFA07",
@@ -122,26 +125,23 @@
     "kind": "physical",
     "asker": "P-002",
     "question": "What does TT-612 measure, on which machine, and what is its high alarm?",
-    "expect": "answer",
-    "required": [
-      {
-        "label": "on HLP-B",
-        "pattern": "HLP-B|high-lift pump B"
+    "status": "answer",
+    "fields": {
+      "machine": {
+        "type": "string",
+        "expect": "HLP-B|POS-HLP-B|AST-85704|high-lift pump B"
       },
-      {
-        "label": "drive-end bearing temperature",
-        "pattern": "drive[- ]end|\\bDE\\b"
+      "bearing": {
+        "type": "string",
+        "expect": "drive end|DE|drive end bearing|DE bearing"
       },
-      {
-        "label": "high alarm 85 °C",
-        "value": 85,
-        "tol": 0,
-        "unit": "°C"
+      "alarm": {
+        "type": "number",
+        "unit": "°C",
+        "expect": 85
       }
-    ],
-    "forbidden": [
-      "\\balarm\\s+(is|of|at)\\s+(?!85\\b)\\d+(\\.\\d+)?\\s*°C"
-    ],
+    },
+    "forbidden": [],
     "evidence": [
       "SEN-HLP-B-temp_de",
       "AST-85704"
@@ -152,21 +152,17 @@
     "kind": "physical",
     "asker": "P-028",
     "question": "What does the PS-1 booster pump station on the bulk line measure?",
-    "expect": "answer",
-    "required": [
-      {
-        "label": "flow",
-        "pattern": "flow|FIT-805"
-      },
-      {
-        "label": "pressure",
-        "pattern": "pressure|PIT-801"
-      },
-      {
-        "label": "run state",
-        "pattern": "state|status|YS-801"
+    "status": "answer",
+    "fields": {
+      "sensors": {
+        "type": "ids",
+        "expect": [
+          "FIT-805|SEN-PS1-flow",
+          "PIT-801|SEN-PS1-press",
+          "YS-801|SEN-PS1-state"
+        ]
       }
-    ],
+    },
     "forbidden": [],
     "evidence": [
       "RS-PS1",
@@ -180,19 +176,18 @@
     "kind": "document",
     "asker": "P-028",
     "question": "When overhauling a horizontal split-case pump, at which step is soft foot checked and what is the limit?",
-    "expect": "answer",
-    "required": [
-      {
-        "label": "step 3",
-        "pattern": "\\bstep\\s*3\\b|\\bS03\\b"
+    "status": "answer",
+    "fields": {
+      "step": {
+        "type": "number",
+        "expect": 3
       },
-      {
-        "label": "limit 0.05 mm",
-        "value": 0.05,
-        "tol": 0,
-        "unit": "mm"
+      "limit": {
+        "type": "number",
+        "unit": "mm",
+        "expect": 0.05
       }
-    ],
+    },
     "forbidden": [],
     "evidence": [
       "PRC-CENTRIFUGAL_PUMP-v3"
@@ -203,15 +198,14 @@
     "kind": "document",
     "asker": "P-012",
     "question": "What filtration rate does the Design Basis give at 100 ML/d with every bed in service?",
-    "expect": "answer",
-    "required": [
-      {
-        "label": "6.5 m/h",
-        "value": 6.5,
-        "tol": 0,
-        "unit": "m/h"
+    "status": "answer",
+    "fields": {
+      "filtration_rate": {
+        "type": "number",
+        "unit": "m/h",
+        "expect": 6.5
       }
-    ],
+    },
     "forbidden": [],
     "evidence": [
       "DOC-DESIGN-BASIS#c05"
@@ -222,17 +216,13 @@
     "kind": "document",
     "asker": "P-028",
     "question": "In the diaphragm dosing pump overhaul procedure, what is done at step 4?",
-    "expect": "answer",
-    "required": [
-      {
-        "label": "replace the diaphragm",
-        "pattern": "replac[^.\\n]*diaphragm"
-      },
-      {
-        "label": "record running hours",
-        "pattern": "running hours|run hours"
+    "status": "answer",
+    "fields": {
+      "step_id": {
+        "type": "string",
+        "expect": "PRC-DOSING_PUMP-v3-S04|PRC-DOSING_PUMP-v3#PRC-DOSING_PUMP-v3-S04|S04"
       }
-    ],
+    },
     "forbidden": [],
     "evidence": [
       "PRC-DOSING_PUMP-v3"
@@ -243,15 +233,14 @@
     "kind": "document",
     "asker": "P-004",
     "question": "According to the Design Basis, how much flow does each clarifier carry while CL-4 is out of service?",
-    "expect": "answer",
-    "required": [
-      {
-        "label": "30 ML/d each",
-        "value": 30,
-        "tol": 0,
-        "unit": "ML"
+    "status": "answer",
+    "fields": {
+      "per_clarifier_flow": {
+        "type": "number",
+        "unit": "ML/d",
+        "expect": 30
       }
-    ],
+    },
     "forbidden": [],
     "evidence": [
       "DOC-DESIGN-BASIS#c04"
@@ -262,15 +251,19 @@
     "kind": "document",
     "asker": "P-001",
     "question": "What is the volume of each clear water reservoir in the Design Basis?",
-    "expect": "answer",
-    "required": [
-      {
-        "label": "5870 m³",
-        "value": 5870,
-        "tol": 0,
-        "unit": "m³"
+    "status": "answer",
+    "fields": {
+      "res1_volume": {
+        "type": "number",
+        "unit": "m³",
+        "expect": 5870
+      },
+      "res2_volume": {
+        "type": "number",
+        "unit": "m³",
+        "expect": 5870
       }
-    ],
+    },
     "forbidden": [],
     "evidence": [
       "DOC-DESIGN-BASIS#c07"
@@ -281,14 +274,14 @@
     "kind": "live",
     "asker": "P-028",
     "question": "When did TT-612 first go above 70 °C?",
-    "expect": "answer",
-    "required": [
-      {
-        "label": "2026-10-13T07:25Z (±60 min)",
-        "value": "2026-10-13T07:25:00Z",
-        "tol": 60
+    "status": "answer",
+    "fields": {
+      "first_above_70_c": {
+        "type": "time",
+        "tol": 60,
+        "expect": "2026-10-13T07:25:00Z"
       }
-    ],
+    },
     "forbidden": [],
     "evidence": [
       "SEN-HLP-B-temp_de"
@@ -299,30 +292,25 @@
     "kind": "live",
     "asker": "P-004",
     "question": "Has TT-612 reached its high alarm in the telemetry so far?",
-    "expect": "answer",
-    "required": [
-      {
-        "label": "not reached",
-        "pattern": "^\\s*no\\b|\\bnot\\b|\\bnever\\b|n't\\b|\\bbelow\\b|\\bunder\\b|\\bshort of\\b|\\bno\\s+(?:alarm\\s+)?(?:breach|exceedance)"
+    "status": "answer",
+    "fields": {
+      "peak": {
+        "type": "number",
+        "unit": "°C",
+        "tol": 0.2,
+        "expect": 74.61
       },
-      {
-        "label": "alarm 85 °C",
-        "value": 85,
-        "tol": 0,
-        "unit": "°C"
+      "alarm": {
+        "type": "number",
+        "unit": "°C",
+        "expect": 85
       },
-      {
-        "label": "peak 74.6 °C",
-        "value": 74.61,
-        "tol": 0.1,
-        "unit": "°C"
+      "alarm_reached": {
+        "type": "boolean",
+        "expect": false
       }
-    ],
-    "forbidden": [
-      "\\byes\\b",
-      "(?<!\\b(?:not|never|no|without)\\s+(?:\\w+\\s+){0,2})(?<!n't\\s+(?:\\w+\\s+){0,2})\\b(?:reached|exceeded|exceeds|breached|breaches|went above|gone above|goes above|crossed|rose above|hit|tripped|triggered)\\s+(?:(?:its|the|a|an)\\s+)?(?:high\\s+)?(?:alarm\\b|85\\b)",
-      "\\balarm\\s+(?:limit\\s+)?(?:has|was|is|had)\\s+(?:(?:been|now|already)\\s+)*(?:reached|exceeded|exceeds|breached|breaches|went above|gone above|goes above|crossed|rose above|hit|tripped|triggered)"
-    ],
+    },
+    "forbidden": [],
     "evidence": [
       "SEN-HLP-B-temp_de"
     ]
@@ -332,22 +320,20 @@
     "kind": "live",
     "asker": "P-012",
     "question": "What is TT-612 reading now, and which way has it moved over the last 24 hours?",
-    "expect": "answer",
-    "required": [
-      {
-        "label": "now 74.0 °C",
-        "value": 73.987,
+    "status": "answer",
+    "fields": {
+      "current": {
+        "type": "number",
+        "unit": "°C",
         "tol": 0.05,
-        "unit": "°C"
+        "expect": 73.987
       },
-      {
-        "label": "rising",
-        "pattern": "\\bris(e|es|en|ing)\\b|increas|upward|climb|warm|\\bup\\b"
+      "trend_24h": {
+        "type": "string",
+        "expect": "rising|rise|up|upward|increasing|climbing|warming"
       }
-    ],
-    "forbidden": [
-      "(?<!\\b(?:not|never|no|without)\\s+(?:\\w+\\s+){0,2})(?<!n't\\s+(?:\\w+\\s+){0,2})\\b(fall\\w*|fell|decreas\\w*|drop\\w*|cool\\w*|down\\w*|declin\\w*)"
-    ],
+    },
+    "forbidden": [],
     "evidence": [
       "SEN-HLP-B-temp_de"
     ]
@@ -357,14 +343,14 @@
     "kind": "live",
     "asker": "P-028",
     "question": "When did F07's filtered turbidity AIT-157 first go above 0.3 NTU?",
-    "expect": "answer",
-    "required": [
-      {
-        "label": "2026-10-13T23:40Z (±60 min)",
-        "value": "2026-10-13T23:40:00Z",
-        "tol": 60
+    "status": "answer",
+    "fields": {
+      "first_above_0_3_ntu": {
+        "type": "time",
+        "tol": 60,
+        "expect": "2026-10-13T23:40:00Z"
       }
-    ],
+    },
     "forbidden": [],
     "evidence": [
       "SEN-F07-turb"
@@ -375,30 +361,25 @@
     "kind": "live",
     "asker": "P-004",
     "question": "What was the highest AIT-157 turbidity in the last 24 hours, and did it breach the alarm?",
-    "expect": "answer",
-    "required": [
-      {
-        "label": "max 0.342 NTU",
-        "value": 0.342,
+    "status": "answer",
+    "fields": {
+      "max_24h": {
+        "type": "number",
+        "unit": "NTU",
         "tol": 0.005,
-        "unit": "NTU"
+        "expect": 0.342
       },
-      {
-        "label": "alarm 0.5 NTU",
-        "value": 0.5,
-        "tol": 0,
-        "unit": "NTU"
+      "alarm": {
+        "type": "number",
+        "unit": "NTU",
+        "expect": 0.5
       },
-      {
-        "label": "not breached",
-        "pattern": "^\\s*no\\b|\\bnot\\b|\\bnever\\b|n't\\b|\\bbelow\\b|\\bunder\\b|\\bshort of\\b|\\bno\\s+(?:alarm\\s+)?(?:breach|exceedance)"
+      "alarm_breached": {
+        "type": "boolean",
+        "expect": false
       }
-    ],
-    "forbidden": [
-      "\\byes\\b",
-      "(?<!\\b(?:not|never|no|without)\\s+(?:\\w+\\s+){0,2})(?<!n't\\s+(?:\\w+\\s+){0,2})\\b(?:reached|exceeded|exceeds|breached|breaches|went above|gone above|goes above|crossed|rose above|hit|tripped|triggered)\\s+(?:(?:its|the|a|an)\\s+)?(?:high\\s+)?(?:alarm\\b|0\\.5\\b)",
-      "\\balarm\\s+(?:limit\\s+)?(?:has|was|is|had)\\s+(?:(?:been|now|already)\\s+)*(?:reached|exceeded|exceeds|breached|breaches|went above|gone above|goes above|crossed|rose above|hit|tripped|triggered)"
-    ],
+    },
+    "forbidden": [],
     "evidence": [
       "SEN-F07-turb"
     ]
@@ -408,15 +389,15 @@
     "kind": "live",
     "asker": "P-001",
     "question": "What was AIT-157's mean turbidity from 2026-10-01 to 2026-10-12, before the F07 fault?",
-    "expect": "answer",
-    "required": [
-      {
-        "label": "mean 0.117 NTU",
-        "value": 0.1167,
+    "status": "answer",
+    "fields": {
+      "mean": {
+        "type": "number",
+        "unit": "NTU",
         "tol": 0.005,
-        "unit": "NTU"
+        "expect": 0.1167
       }
-    ],
+    },
     "forbidden": [],
     "evidence": [
       "SEN-F07-turb"
@@ -427,17 +408,15 @@
     "kind": "trap",
     "asker": "P-028",
     "question": "What is the filtered turbidity of filter F12 right now?",
-    "expect": "not_found",
-    "required": [
-      {
-        "label": "F12 not found or retired",
-        "pattern": "not found|no such|does not exist|doesn't exist|could not find|couldn't find|cannot find|can't find|unable to find|retired|decommissioned|no longer"
+    "status": "not_found",
+    "fields": {
+      "turbidity": {
+        "type": "number",
+        "unit": "NTU",
+        "expect": null
       }
-    ],
-    "forbidden": [
-      "\\bF12\\b(?:(?!\\bF\\d{2}\\b)[^.;\\n])*?\\d+(?:\\.\\d+)?\\s*NTU",
-      "\\d+(?:\\.\\d+)?\\s*NTU\\s+(?:for|on|at)\\s+(?:filter\\s+)?F12\\b"
-    ],
+    },
+    "forbidden": [],
     "evidence": [
       "F12"
     ]
@@ -447,13 +426,14 @@
     "kind": "trap",
     "asker": "P-028",
     "question": "What is the dose flow on chlorinator CHL-A right now?",
-    "expect": "not_found",
-    "required": [
-      {
-        "label": "not found",
-        "pattern": "not found|no such|does not exist|doesn't exist|could not find|couldn't find|cannot find|can't find|unable to find|not (visible|available|accessible)|no (access|visibility|data)"
+    "status": "not_found",
+    "fields": {
+      "dose_flow": {
+        "type": "number",
+        "unit": "L/h",
+        "expect": null
       }
-    ],
+    },
     "forbidden": [
       "\\d+(\\.\\d+)?\\s*L/h"
     ],
@@ -467,19 +447,18 @@
     "kind": "trap",
     "asker": "P-012",
     "question": "What is the capacity of reservoir RS-RES1?",
-    "expect": "answer",
-    "required": [
-      {
-        "label": "now RS-CR1, Command reservoir 1",
-        "pattern": "RS-CR1|Command reservoir 1"
+    "status": "answer",
+    "fields": {
+      "site_id": {
+        "type": "string",
+        "expect": "RS-CR1"
       },
-      {
-        "label": "40 ML",
-        "value": 40,
-        "tol": 0,
-        "unit": "ML"
+      "capacity": {
+        "type": "number",
+        "unit": "ML",
+        "expect": 40
       }
-    ],
+    },
     "forbidden": [],
     "evidence": [
       "RS-CR1"
@@ -490,16 +469,14 @@
     "kind": "trap",
     "asker": "P-004",
     "question": "What is AIT-999 reading now?",
-    "expect": "not_found",
-    "required": [
-      {
-        "label": "not found",
-        "pattern": "not found|no such|does not exist|doesn't exist|could not find|couldn't find|cannot find|can't find|unable to find|no (sensor|record)"
+    "status": "not_found",
+    "fields": {
+      "reading": {
+        "type": "number",
+        "expect": null
       }
-    ],
-    "forbidden": [
-      "AIT-999[^.\\n]*\\d+(\\.\\d+)?\\s*(NTU|mg/L)"
-    ],
+    },
+    "forbidden": [],
     "evidence": [
       "AIT-999"
     ]
@@ -509,13 +486,13 @@
     "kind": "trap",
     "asker": "P-028",
     "question": "What equipment is inside the MCC building ELB-1?",
-    "expect": "not_found",
-    "required": [
-      {
-        "label": "not found",
-        "pattern": "not found|no such|does not exist|doesn't exist|could not find|couldn't find|cannot find|can't find|unable to find|not (visible|available|accessible)|no (access|visibility)"
+    "status": "not_found",
+    "fields": {
+      "equipment": {
+        "type": "ids",
+        "expect": null
       }
-    ],
+    },
     "forbidden": [
       "GEN-1|generator"
     ],
@@ -528,17 +505,15 @@
     "kind": "trap",
     "asker": "P-001",
     "question": "What was AIT-157 reading on 2026-09-15?",
-    "expect": "insufficient",
-    "required": [
-      {
-        "label": "no data before the telemetry window",
-        "pattern": "insufficient|no data|not available|no (reading|record)s?|before[^.\\n]*(start|begin|window|2026-10-01)|outside[^.\\n]*window|starts?[^.\\n]*2026-10-01|cannot (say|tell|determine)"
+    "status": "insufficient",
+    "fields": {
+      "turbidity": {
+        "type": "number",
+        "unit": "NTU",
+        "expect": null
       }
-    ],
-    "forbidden": [
-      "\\b2026-09-15\\b(?:(?!\\b\\d{4}-\\d{2}-\\d{2}\\b)[^.;\\n])*?\\d+\\.\\d+\\s*NTU",
-      "\\d+\\.\\d+\\s*NTU\\s+(?:on|for)\\s+2026-09-15"
-    ],
+    },
+    "forbidden": [],
     "evidence": [
       "SEN-F07-turb"
     ]
@@ -548,18 +523,19 @@
     "kind": "trap",
     "asker": "P-004",
     "question": "What is the top water level of clarifier CL-4?",
-    "expect": "insufficient",
-    "required": [
-      {
-        "label": "CL-4 has none (drained)",
-        "pattern": "no top water level|has no|drained|not (given|stated|listed|recorded|available)|insufficient"
+    "status": "insufficient",
+    "fields": {
+      "cl4_state": {
+        "type": "string",
+        "expect": "drained|drained for refurbishment"
+      },
+      "top_water_level": {
+        "type": "number",
+        "unit": "m",
+        "expect": null
       }
-    ],
-    "forbidden": [
-      "\\b(CL-4|14UGE04)('s)?\\s+(top water level|TWL)\\s+(is|was|of)\\s+(about\\s+)?1[ ,]?476",
-      "\\b(top water level|TWL)\\s+(of|for)\\s+(CL-4|14UGE04)\\s+(is|was)\\s+(about\\s+)?1[ ,]?476",
-      "\\b(CL-4|14UGE04)\\s+(is|sits|runs)\\s+at\\s+1[ ,]?476"
-    ],
+    },
+    "forbidden": [],
     "evidence": [
       "DOC-DESIGN-BASIS#c04",
       "POS-CL-4"

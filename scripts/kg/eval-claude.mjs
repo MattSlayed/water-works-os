@@ -30,15 +30,24 @@ const client = new Anthropic();
 
 const system = `You answer questions about the Riverbend water treatment works using only the tools provided.
 The plant clock is ${sys.tel.now()}: "now" means that time. Telemetry starts at ${sys.tel.start}.
-Answer in plain text. Cite every fact in square brackets with the cite field of the tool item it came from, for example [SEN-F07-turb] or [DOC-DESIGN-BASIS#c05]. Cite only what the tools returned.
-Give times in ISO 8601 UTC, for example 2026-10-13T07:25Z.
+Answer in plain text first. Cite every fact in square brackets with the cite field of the tool item it came from, for example [SEN-RAW-turb] or [DOC-DESIGN-BASIS#c02]. Cite only what the tools returned.
 If the tools do not find what was asked about, say "not found" in words and do not guess. If the data cannot answer the question, say "insufficient evidence" in words.
-Be brief.`;
+Be brief.
+Then end with one fenced \`\`\`json block: {"status": "answer" | "not_found" | "insufficient", "fields": {...}, "citations": ["<cite>", ...]}.
+- status: "not_found" when the thing asked about is not found; "insufficient" when it exists but the data cannot answer; else "answer".
+- fields: exactly the fields the question lists, no others. Use null for a field the tools cannot answer.
+- number: a JSON number in the listed unit (or a string with the number and its unit). boolean: true or false. string: a short value, such as a tag or one word.
+- ids: an array of plant tags where one exists (such as SLP-A or BWR-1), else object ids. time: ISO 8601 UTC, such as 2026-10-02T14:05Z.
+- citations: the cites the answer rests on.`;
+
+// the question, then its fields: names, types and units, never the expected values
+const userTurn = (q) => `${q.question}\n\nFields for the json block:\n${Object.entries(q.fields)
+  .map(([name, f]) => `- ${name}: ${f.type}${f.unit ? ` (${f.unit})` : ""}`).join("\n")}`;
 
 async function ask(q) {
   const viewer = viewerOf(sys.ont, q.asker), mine = toolsFor(tools, viewer);
   const defs = mine.map(({ name, description, inputSchema }) => ({ name, description, input_schema: inputSchema }));
-  const messages = [{ role: "user", content: q.question }];
+  const messages = [{ role: "user", content: userTurn(q) }];
   let calls = 0;
   for (let turn = 0; turn < MAX_TURNS; turn++) {
     const r = await client.beta.messages.create({
@@ -73,8 +82,8 @@ for (const q of bank) {
     run = { answer: "", stop: why, calls: 0 };
   }
   const g = grade(run.answer, q, ctx);
-  rows.push({ id: q.id, kind: q.kind, asker: q.asker, expect: q.expect, ...run, ...g });
-  console.log(`${q.id} ${g.right ? "right" : "WRONG"}${g.citationsValid ? "" : " bad-cite"}${g.leak ? " LEAK" : ""}${g.inventedTags.length ? ` invented ${g.inventedTags}` : ""} (${run.calls} calls, ${run.stop})`);
+  rows.push({ id: q.id, kind: q.kind, asker: q.asker, status: q.status, ...run, ...g });
+  console.log(`${q.id} ${g.right ? "right" : `WRONG (${g.failed.join(", ")})`}${g.citationsValid ? "" : " bad-cite"}${g.leak ? " LEAK" : ""}${g.inventedTags.length ? ` invented ${g.inventedTags}` : ""} (${run.calls} calls, ${run.stop})`);
 }
 
 const n = rows.length, count = (f) => rows.filter(f).length;
