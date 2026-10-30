@@ -115,3 +115,27 @@ test("series matches history, clipped to the window", () => {
   assert.equal(tel.series(id, "2027-01-01T00:00:00Z", "2027-01-02T00:00:00Z").length, 0);
   assert.equal(tel.series("nope", start, start).length, 0);
 });
+
+test("pulse token call never follows redirects", async () => {
+  let init;
+  const fetch = async (u, i) => { init = i; return new Response(null, { status: 307, headers: { location: "https://evil/x" } }); };
+  await assert.rejects(pulseToken({ pulseUrl: "https://p3", clientId: "WaterOS", secretFile, fetch }), /307/);
+  assert.equal(init.redirect, "manual");
+});
+
+test("rest returns a null body for an empty 204", async () => {
+  const fetch = async () => new Response(null, { status: 204 });
+  assert.deepEqual(await restCall("https://h", "DELETE", "/api/x", undefined, { token: "t", fetch }), { status: 204, body: null });
+});
+
+test("mcp fails on a non-MCP content type", async () => {
+  const fetch = async () => reply(200, "<html>login</html>", "text/html");
+  await assert.rejects(connectMcp("https://a", async () => "tok", { fetch }), /unexpected reply type/);
+});
+
+test("telemetry exposes its own window", () => {
+  const tel = createTelemetry({ ont, start: "2026-10-01T00:00:00Z", minutes: 600 });
+  assert.equal(tel.minutes, 600);
+  assert.equal(tel.end, "2026-10-01T10:00:00.000Z");
+  assert.equal(tel.series("SEN-F07-turb", tel.start, tel.end).length, 601);
+});

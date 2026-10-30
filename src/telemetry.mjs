@@ -90,6 +90,8 @@ export function createTelemetry({ ont, seed = 7, start = "2026-10-01T00:00:00Z",
   const round = (x) => Math.round(x * 1000) / 1000;
   return {
     start,
+    minutes,
+    end: new Date(t0 + minutes * MIN).toISOString(),
     now: () => new Date(t0 + cursor * MIN).toISOString(),
     cursor: () => cursor,
     // the plant clock runs on past the replay window; readings hold the last sample

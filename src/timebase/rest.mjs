@@ -7,6 +7,7 @@ export async function restCall(base, method, path, body, { token, fetch: f = fet
   });
   const type = r.headers.get("content-type") || "";
   const text = await r.text();
+  if (r.status === 204 || !text) return { status: r.status, body: null }; // Atlas answers most deletes/publishes with an empty 204
   if (r.status >= 200 && r.status < 300 && !type.includes("json")) {
     throw Object.assign(new Error(`${method} ${path}: ${r.status} reply is not JSON`), { name: "NotJson", status: r.status });
   }

@@ -12,8 +12,10 @@ export async function connectMcp(baseUrl, getToken, { fetch: f = fetch } = {}) {
     session = r.headers.get("mcp-session-id") || session;
     const text = await r.text();
     if (!text.trim()) return null;
-    const json = text.trimStart().startsWith("{") ? JSON.parse(text)
-      : text.split("\n").filter((l) => l.startsWith("data:")).map((l) => JSON.parse(l.slice(5))).pop();
+    const type = r.headers.get("content-type") || "";
+    const json = type.includes("application/json") ? JSON.parse(text)
+      : type.includes("text/event-stream") ? text.split("\n").filter((l) => l.startsWith("data:")).map((l) => JSON.parse(l.slice(5))).pop()
+      : (() => { throw new Error(`MCP ${msg.method}: unexpected reply type`); })();
     if (json?.error) throw new Error(`MCP ${msg.method}: ${json.error.message || json.error.code}`);
     return json?.result;
   };

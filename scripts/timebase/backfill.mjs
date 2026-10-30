@@ -23,9 +23,8 @@ const call = async (method, path, body) => {
 const ok = (what, r) => { if (r.status < 200 || r.status > 299) throw new Error(`${what}: HTTP ${r.status}`); return r; };
 
 const ont = createOntology(generateWorks(7));
-const start = "2026-10-01T00:00:00Z", minutes = 20160;
-const tel = createTelemetry({ ont, start, minutes });
-const toIso = new Date(Date.parse(start) + minutes * 60000).toISOString();
+const tel = createTelemetry({ ont }); // the window comes from telemetry, never from this script
+const { start, end } = tel;
 const tags = historianTags(ont);
 
 if (process.argv.includes("--reset")) {
@@ -37,7 +36,7 @@ ok("create tags", await call("POST", `/api/datasets/${DS}/tags`, tags.map(({ sen
 
 const totals = { tags: tags.length, sent: 0, accepted: 0, cs: 0, pp: 0, lda: 0 };
 for (const { n, sensorId } of tags) {
-  const pts = tel.series(sensorId, start, toIso); // oldest first
+  const pts = tel.series(sensorId, start, end); // oldest first
   for (let i = 0; i < pts.length; i += BATCH) {
     const batch = pts.slice(i, i + BATCH).map((p) => ({ t: p.t, v: p.v, q: 192 }));
     const w = ok(`write ${n}`, await call("POST", `/api/datasets/${DS}/data/${encodeURIComponent(n)}`, batch));
