@@ -10,7 +10,7 @@ import { atlasModel, planLoad, ATLAS_TYPES } from "../../src/timebase/atlas-mode
 
 const BR = process.argv[2], DOM = "riverbend", MAP = "plant";
 if (!BR || !/^[\w.-]+$/.test(BR)) throw new Error("Usage: load-atlas.mjs <branch>");
-if (BR.toLowerCase() === "main") throw new Error('Refusing branch "main": load onto a working branch');
+if (BR !== "riverbend") throw new Error(`Refusing branch "${BR}": REST writes go to branch "riverbend" only`);
 const env = process.env;
 if (!env.TIMEBASE_CLIENT_ID || !env.TIMEBASE_SECRET_FILE) throw new Error("Set TIMEBASE_CLIENT_ID and TIMEBASE_SECRET_FILE");
 const base = env.TIMEBASE_ATLAS_URL ?? "https://localhost:4552";

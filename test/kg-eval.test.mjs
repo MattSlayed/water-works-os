@@ -74,6 +74,17 @@ test("eval-claude --backend atlas with no reachable Atlas stops before any model
   assert.equal(r.stdout, "", "no question was asked");
 });
 
+test("eval-claude with a key the API cannot be reached with stops (exit 2), it does not grade empty answers", async (t) => {
+  try { await import("@anthropic-ai/sdk"); } catch { return t.skip("optional @anthropic-ai/sdk not installed"); }
+  const env = { ...process.env, ANTHROPIC_API_KEY: "sk-test-not-a-key", ANTHROPIC_BASE_URL: "http://127.0.0.1:1", WWOS_KG_CYPHER: "1" };
+  delete env.ANTHROPIC_AUTH_TOKEN;
+  const r = spawnSync(process.execPath, [fileURLToPath(new URL("../scripts/kg/eval-claude.mjs", import.meta.url))], { env, encoding: "utf8", timeout: 120e3 });
+  assert.equal(r.status, 2, r.stderr);
+  assert.match(r.stderr, /^eval-claude: .*nothing was graded\.\n$/);
+  assert.ok(!/sk-test|undefined/.test(r.stderr + r.stdout));
+  assert.equal(r.stdout, "", "no question was graded");
+});
+
 // a correct answer to every question, in the shape the run asks for
 const CORRECT = {
   P1: ["The five high-lift pumps HLP-A to HLP-E feed the bulk line. Four are on duty: HLP-A, HLP-B, HLP-C and HLP-E [AST-80576] [AST-85704] [AST-35766] [AST-50170]; HLP-D is on standby [AST-92504].",

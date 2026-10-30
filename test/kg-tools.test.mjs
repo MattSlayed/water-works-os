@@ -223,3 +223,9 @@ test("clearance sweep: no technician tool output names a hidden object or a pers
   for (const [name, input] of calls) walk(name, await run(name, input, tech));
   assert.deepEqual([...bad].slice(0, 25), []);
 });
+
+test("createKgTools reads WWOS_KG_CYPHER from the env it is given, not process.env", () => {
+  const mk = (env) => createKgTools({ backend, ont: sys.ont, tel: sys.tel, crosswalk, env }).some((t) => t.name === "cypher");
+  assert.equal(mk({ WWOS_KG_CYPHER: "1" }), true);
+  assert.equal(mk({ WWOS_KG_CYPHER: "0" }), false);
+});

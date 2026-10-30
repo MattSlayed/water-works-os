@@ -148,12 +148,14 @@ as an MCP endpoint at `POST /mcp` on the same port as the console.
 - **Run the MCP server:** `npm start`, then
   `claude mcp add --transport http wateros http://localhost:8830/mcp --header "x-acting-user: P-028"`.
   `WWOS_KG_BACKEND=memory` (default) reads the in-memory works; `WWOS_KG_BACKEND=atlas` reads Timebase Atlas and Historian
-  through their MCP and falls back to memory, with one log line, if it cannot connect. `WWOS_KG_CYPHER=1` adds a twelfth,
+  through their MCP. Do not set `atlas` until the install is licensed and the domain compiles: the MCP connection succeeds
+  even then (only the compile is refused), so there is no fallback to memory and every graph query fails. `WWOS_KG_CYPHER=1` adds a twelfth,
   linted `cypher` tool.
+- **People data and the model provider:** MCP clients such as Claude Code send tool results (people data for supervisors and above) to the model provider; inference is cross-border, disclosed under POPIA s72 (see `src/llm.mjs`). `/mcp` accepts no foreign `Origin` and takes the viewer from `x-acting-user` only.
 - **Backfill the Historian and load Atlas** (the stack is at `E:\Timebase`): set `TIMEBASE_CLIENT_ID`,
   `TIMEBASE_SECRET_FILE` (a path under `E:\Timebase\secrets\`, never the secret itself) and, if Pulse's CA is not trusted,
   `NODE_EXTRA_CA_CERTS`. Then `node scripts/timebase/backfill.mjs` (dataset `Riverbend` only; `--reset` clears it) and
-  `node scripts/timebase/load-atlas.mjs riverbend` (a working branch, never `main`; safe to re-run).
+  `node scripts/timebase/load-atlas.mjs riverbend` (branch `riverbend` only; safe to re-run).
 - **Eval:** `node scripts/kg/eval-claude.mjs --backend memory|atlas --out <file>` runs Claude over `data/eval-questions.json`
   as each question's asker and grades the structured answers with the rule grader. It needs `ANTHROPIC_API_KEY`, and an
   atlas run stops rather than grading memory if Atlas is unreachable.

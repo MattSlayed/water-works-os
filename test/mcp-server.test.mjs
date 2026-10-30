@@ -103,3 +103,14 @@ test("WWOS_KG_BACKEND=atlas that cannot connect logs one line without secrets an
   assert.ok(!/hunter2/.test(lines[0]));
   assert.equal((await tools.find((t) => t.name === "get").run({ id: CLB }, { id: personWith("supervisor"), clearance: "supervisor" })).found, true);
 });
+
+test("/mcp refuses a foreign Origin (DNS rebinding), allows its own and none, and ignores ?as=", async () => {
+  const port = new URL(base).port, who = personWith("manager");
+  const post = (headers, qs = "") => fetch(`${base}/mcp${qs}`, { method: "POST", headers: { "content-type": "application/json", ...headers }, body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "ping" }) });
+  assert.equal((await post({ origin: "http://evil.example", "x-acting-user": who })).status, 403);
+  assert.equal((await post({ origin: `http://evil.example:${port}`, "x-acting-user": who })).status, 403);
+  assert.equal((await post({ origin: `http://localhost:${port}`, "x-acting-user": who })).status, 200);
+  assert.equal((await post({ origin: `http://127.0.0.1:${port}`, "x-acting-user": who })).status, 200);
+  assert.equal((await post({ "x-acting-user": who })).status, 200, "no Origin: a CLI client");
+  assert.equal((await post({}, `?as=${who}`)).status, 401, "?as= is not a credential on /mcp");
+});

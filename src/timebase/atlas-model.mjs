@@ -91,7 +91,8 @@ const canon = (v) => Array.isArray(v) ? `[${v.map(canon).join(",")}]`
   : v && typeof v === "object" ? `{${Object.keys(v).sort().filter((k) => v[k] != null).map((k) => `${JSON.stringify(k)}:${canon(v[k])}`).join(",")}}`
   : JSON.stringify(v);
 
-// What to POST, PATCH (always the full property set: PATCH replaces the map) and DELETE to make existing match desired.
+// What to POST, PATCH (always the full property set; the vendor PATCH merges, so a dropped property is not cleared) and DELETE to make existing match desired.
+// shortcut: dropped properties are not cleared; send clear:["properties"] — verify on the first licensed run
 export function planLoad(desired, existing) {
   const have = new Map(existing.map((x) => [x.id, x])), want = new Set(desired.map((x) => x.id));
   const create = [], update = [];

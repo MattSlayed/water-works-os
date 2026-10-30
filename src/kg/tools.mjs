@@ -43,7 +43,7 @@ function summary(pts, alarmHi) {
   };
 }
 
-export function createKgTools({ backend, ont, tel, crosswalk = {} }) {
+export function createKgTools({ backend, ont, tel, crosswalk = {}, env = process.env }) {
   const renamed = new Map((crosswalk.renames || []).filter(([, n]) => n));
   const oldOf = new Map((crosswalk.assets || []).map((a) => [a.canonical, a.old]));
   const exact = (view, s) => s && view.search(s, 50).find((o) => !PEOPLE.has(o.type) && [o.id, o.tag, o.positionTag, o.kks].some((x) => x && x.toLowerCase() === s.toLowerCase()));
@@ -229,7 +229,7 @@ export function createKgTools({ backend, ont, tel, crosswalk = {} }) {
     t.run = async (input = {}, viewer) => scrub(ont.view(viewer), await run(input, viewer));
   }
 
-  if (process.env.WWOS_KG_CYPHER === "1") tools.push({
+  if (env.WWOS_KG_CYPHER === "1") tools.push({
     name: "cypher",
     description: "Read-only openCypher against the Atlas riverbend domain. Linted first: no writes, type tests in WHERE (never a label on a traversal's far end), no inline property maps.",
     minClearance: "manager",

@@ -184,3 +184,13 @@ test("historian adapter throws when the reply does not add up", () => {
 test("historian adapter: a 0 point(s) reply is an empty series", () => {
   assert.deepEqual(HISTORIAN_READ.points(asResult("Data for 1 tag(s) in dataset 'Riverbend' (a .. b):\n## AIT-157 - 0 point(s)\n")), []);
 });
+
+test("load-atlas refuses any branch but riverbend before a network call", async () => {
+  const { spawnSync } = await import("node:child_process");
+  const env = { ...process.env, TIMEBASE_CLIENT_ID: "c", TIMEBASE_SECRET_FILE: "/nope", TIMEBASE_ATLAS_URL: "https://127.0.0.1:1", TIMEBASE_PULSE_URL: "https://127.0.0.1:1" };
+  for (const br of ["main", "spike-riverbend"]) {
+    const r = spawnSync(process.execPath, ["scripts/timebase/load-atlas.mjs", br], { env, encoding: "utf8", timeout: 30e3 });
+    assert.notEqual(r.status, 0, br);
+    assert.match(r.stderr, /Refusing branch .*riverbend. only/, br);
+  }
+});

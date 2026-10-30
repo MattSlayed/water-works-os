@@ -24,7 +24,7 @@ const crosswalk = JSON.parse(readFileSync(new URL("../../data/crosswalk.json", i
 const bank = JSON.parse(readFileSync(new URL("../../data/eval-questions.json", import.meta.url), "utf8"));
 // the same wiring as the MCP endpoint (src/server.mjs), but an atlas run that cannot connect stops: never graded as memory
 let tools;
-try { tools = await kgToolsFor(sys, { ...process.env, WWOS_KG_BACKEND: backend }, { fallback: false }); } catch (e) { stop(`eval-claude: ${e.message}; nothing was run.`); }
+try { tools = await kgToolsFor(sys, { ...process.env, WWOS_KG_BACKEND: backend, WWOS_KG_CYPHER: "0" }, { fallback: false }); } catch (e) { stop(`eval-claude: ${e.message}; nothing was run.`); }
 const ctx = citeContext(sys.ont, crosswalk);
 const client = new Anthropic();
 
@@ -45,7 +45,7 @@ const userTurn = (q) => `${q.question}\n\nFields for the json block:\n${Object.e
   .map(([name, f]) => `- ${name}: ${f.type}${f.unit ? ` (${f.unit})` : ""}`).join("\n")}`;
 
 async function ask(q) {
-  const viewer = viewerOf(sys.ont, q.asker), mine = toolsFor(tools, viewer);
+  const viewer = viewerOf(sys.ont, q.asker), mine = toolsFor(tools, viewer).filter((t) => t.name !== "people"); // no question needs people data; none goes to the provider
   const defs = mine.map(({ name, description, inputSchema }) => ({ name, description, input_schema: inputSchema }));
   const messages = [{ role: "user", content: userTurn(q) }];
   let calls = 0;
@@ -78,7 +78,10 @@ const rows = [];
 for (const q of bank) {
   let run;
   try { run = await ask(q); } catch (e) {
-    const why = e instanceof Anthropic.APIError ? `API error ${e.status}` : String(e?.message).slice(0, 200);
+    // a credential or connection failure is a run that could not happen, not a question missed
+    if (e instanceof Anthropic.AuthenticationError || e instanceof Anthropic.PermissionDeniedError || e instanceof Anthropic.APIConnectionError)
+      stop(`eval-claude: the Anthropic API refused or could not be reached (${e.constructor.name}); nothing was graded.`);
+    const why = e instanceof Anthropic.APIError ? `API error ${e.status ?? e.constructor.name}` : String(e?.message).slice(0, 200);
     run = { answer: "", stop: why, calls: 0 };
   }
   const g = grade(run.answer, q, ctx);

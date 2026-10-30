@@ -84,7 +84,7 @@ export async function kgToolsFor(sys, env = process.env, { fallback = true } = {
       console.error(`KG backend atlas unavailable, using memory: ${why}`);
     }
   }
-  return createKgTools({ backend: backend ?? createMemoryBackend(sys), ont: sys.ont, tel: sys.tel, crosswalk });
+  return createKgTools({ backend: backend ?? createMemoryBackend(sys), ont: sys.ont, tel: sys.tel, crosswalk, env });
 }
 
 export function createServer(sys, { kgTools = createKgTools({ backend: createMemoryBackend(sys), ont: sys.ont, tel: sys.tel, crosswalk: loadCrosswalk() }) } = {}) {
@@ -106,7 +106,7 @@ export function createServer(sys, { kgTools = createKgTools({ backend: createMem
   channels.on((e) => broadcast(e));
 
   const viewerOf = (req, url) => {
-    const id = req.headers["x-acting-user"] || url.searchParams.get("as");
+    const id = req.headers["x-acting-user"] || (url && url.searchParams.get("as"));
     const p = id && ont.get(id);
     if (!p || p.type !== "Person") throw new HttpError(401, "unknown acting user");
     return { id: p.id, kind: "person", role: p.role, clearance: p.clearance, name: p.name };
@@ -604,7 +604,12 @@ export function createServer(sys, { kgTools = createKgTools({ backend: createMem
     const url = new URL(req.url, "http://localhost");
     if (!url.pathname.startsWith("/api/") && url.pathname !== "/mcp") return serveStatic(url, res);
     try {
-      if (url.pathname === "/mcp") return await handleMcp(req, res, { tools: kgTools, viewer: viewerOf(req, url) });
+      if (url.pathname === "/mcp") {
+        // DNS rebinding: a browser page rebound to 127.0.0.1 sends a foreign Origin; CLI clients send none. No ?as= here.
+        const port = req.socket.localPort, origin = req.headers.origin;
+        if (origin !== undefined && origin !== `http://localhost:${port}` && origin !== `http://127.0.0.1:${port}`) throw new HttpError(403, "origin not allowed");
+        return await handleMcp(req, res, { tools: kgTools, viewer: viewerOf(req, null) });
+      }
       // The chat stub's webhook: the sender is the channel member, not a console user.
       // shortcut: header-trusted sender, like x-acting-user; a real WhatsApp webhook verifies Meta's signature.
       const inbound = req.method === "POST" && url.pathname.match(/^\/api\/channels\/([^/]+)\/inbound$/);
