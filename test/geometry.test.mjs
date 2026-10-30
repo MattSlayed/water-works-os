@@ -45,6 +45,20 @@ test("the nine contract tags are anchored", () => {
   assert.equal(g.anchors.size + g.skippedSensors.length, ont.list("Sensor").length);
 });
 
+test("a line sample point anchors the sensor to the structure upstream of the line", () => {
+  const ont = plantOnly();
+  const g = geometryRefs(scene, ont, contract);
+  const sp = ont.list("SamplePoint", (p) => p.sensorId === "SEN-RAW-turb")[0];
+  assert.ok(sp.lineId && !sp.structureId);
+  assert.equal(ont.get(sp.lineId).fromId, "PM-RB-A:STR-10UPA01");
+  assert.equal(g.anchors.get("SEN-RAW-turb").geometryId, "GEO-RWP-1");
+  // AIT-402 has no asset, no contract entry and no structure sample point: only the line step can anchor it
+  const fin = ont.list("SamplePoint", (p) => p.sensorId === "SEN-FIN-ph")[0], from = ont.get(fin.lineId).fromId;
+  assert.ok(!contract.tags[ont.get("SEN-FIN-ph").tag] && from);
+  const owner = [from, ont.get(from).positionId].find((o) => g.links.some(([f, , to]) => f === o && to === g.anchors.get("SEN-FIN-ph")?.geometryId));
+  assert.ok(owner, "SEN-FIN-ph anchors to the upstream structure");
+});
+
 test("seedKg is idempotent and createSystem seeds it", () => {
   const ont = plantOnly();
   seedKg(ont);

@@ -29,14 +29,18 @@ export function geometryRefs(sceneMeta, ont, contract) {
     if (!ids) return null;
     return (sceneTag.has(tag) && ids.includes(sceneTag.get(tag)) && sceneTag.get(tag)) || ids.find((i) => objects[i.slice(4)].asset === i.slice(4)) || ids[0];
   };
-  const spStructure = new Map(ont.list("SamplePoint", (p) => p.sensorId && p.structureId).map((p) => [p.sensorId, p.structureId]));
+  // the structure a sensor's sample point sits on, or for a line sample the structure upstream (where the sample is drawn)
+  const spStructure = new Map(ont.list("SamplePoint", (p) => p.sensorId).map((p) => [p.sensorId, p.structureId || ont.get(p.lineId)?.fromId]));
+  // a structure's meshes hang off it, or off the Position it contains
+  const onStructure = (sid, tag) => pick(sid, tag) || pick(ont.get(sid)?.positionId, tag);
   const anchors = new Map(), skippedSensors = [];
   for (const s of ont.list("Sensor")) {
     const pos = s.assetId && ont.get(s.assetId)?.positionId;
     const ctr = contract.tags?.[s.tag]?.asset;
-    // last resort, contract tags only: the contract names an asset the scene does not model (SRC, DP-2, AIT-301), so take its zone's first structure
+    // shortcut: picks the first structure with geometry in the zone, so AIT-301 (clarified turbidity) pins to DB-1 approximately; upgrade when process units link to their structures.
+    // Contract-tagged sensors only: the contract names an asset the scene does not model (SRC, DP-2, AIT-301).
     const inZone = () => ctr && Object.keys(PLAN).filter((k) => PLAN[k].zoneId === s.zoneId).map((k) => pick(ownerOf(k), s.tag)).find(Boolean);
-    const geometryId = pick(pos, s.tag) || (ctr && pick(ownerOf(ctr), s.tag)) || pick(spStructure.get(s.id), s.tag) || inZone();
+    const geometryId = pick(pos, s.tag) || (ctr && pick(ownerOf(ctr), s.tag)) || onStructure(spStructure.get(s.id), s.tag) || inZone();
     if (geometryId) anchors.set(s.id, { geometryId, offset: [0, 0, 0] }); else skippedSensors.push(s.id);
   }
   return { refs, links, anchors, skippedObjects, skippedSensors };
