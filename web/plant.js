@@ -10,12 +10,12 @@ import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import { LineSegments2 } from "three/addons/lines/LineSegments2.js";
 import { LineSegmentsGeometry } from "three/addons/lines/LineSegmentsGeometry.js";
 import { LineMaterial } from "three/addons/lines/LineMaterial.js";
+import { BUILDING, terraces } from "./terraces.js";
 
 const DATUM = 1450; // level (m) drawn at y = 0
 const GROUND = 1448;
 const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
-const BUILDING = new Set(["pump_house", "dosing_house", "chlorine_house", "chemical_store", "mcc", "lab", "admin", "gen_set", "pipe_gallery", "filter_building", "workshop"]);
-const OPENABLE = new Set(["pump_house", "dosing_house", "chlorine_house"]); // click-down: walls go translucent
+const OPENABLE = new Set(["pump_house", "dosing_house", "chlorine_house", "filter_building"]); // click-down: walls go translucent
 const ROUND = new Set(["clarifier_circular", "thickener"]);
 const STATE_COLOR = { running: 0x4ade80, standby: 0x60a5fa, isolated: 0x94a3b8, fault: 0xf87171, tripped: 0xf87171 };
 const BAND_COLOR = { in: 0x2b7a83, near: 0x8f8a3c, over: 0x7a4a26, none: 0x2a6b7d };
@@ -161,38 +161,22 @@ export function mountPlant(container, data, { mode = "physical", quality = "medi
     if (item.positionId) byId.set(item.positionId, byId.get(item.id));
   };
 
-  // ---- terraces follow the hydraulic profile: each zone at its buildings' floor, else 2 m above its lowest base ----
+  // ---- terraces follow the hydraulic profile (web/terraces.js) ----
   const zones = data.zones || [];
-  const own = (z) => data.structures.filter((s) => s.zoneId === z.id);
-  const grade = new Map(zones.map((z) => {
-    const ss = own(z), b = ss.filter((s) => BUILDING.has(s.kind) && s.kind !== "pipe_gallery");
-    return [z.id, b.length ? Math.min(...b.map((s) => s.baseLevel)) : ss.length ? Math.min(...ss.map((s) => s.baseLevel)) + 2 : null];
-  }));
-  // Z11 (the laboratory) holds no structure of its own: it is the north half of ADM-1's east third, so it takes Z12's grade.
-  for (const z of zones) if (grade.get(z.id) == null) grade.set(z.id, grade.get("Z12") ?? 1452);
-  // A terrace is its zone rect grown to the footprints of its structures (zone rects are hand-drawn; only centres are guaranteed inside).
-  // A covered reservoir also needs its embankment toe (1.6 m out per metre of height).
-  const terraceRect = (z) => {
-    let [x0, y0, x1, y1] = [z.rect[0], z.rect[1], z.rect[0] + z.rect[2], z.rect[1] + z.rect[3]];
-    for (const s of own(z)) {
-      const m = s.kind === "reservoir_covered" ? 1.6 * s.height : 0, hw = (s.diameter ?? s.w) / 2 + m, hl = (s.diameter ?? s.l) / 2 + m;
-      x0 = Math.min(x0, s.centre[0] - hw); x1 = Math.max(x1, s.centre[0] + hw); y0 = Math.min(y0, s.centre[1] - hl); y1 = Math.max(y1, s.centre[1] + hl);
-    }
-    return [x0, y0, x1 - x0, y1 - y0];
-  };
+  const { grade, pieces } = terraces(zones, data.structures);
   const zoneAt = (x, y) => zones.find((z) => x >= z.rect[0] && x <= z.rect[0] + z.rect[2] && y >= z.rect[1] && y <= z.rect[1] + z.rect[3]);
   const gradeAt = (x, y) => { const z = zoneAt(x, y); return z ? grade.get(z.id) : GROUND; };
   add(new THREE.PlaneGeometry(4000, 4000).rotateX(-Math.PI / 2).translate(0, GROUND - DATUM, 0), M.grass, { cast: false });
   {
     const tops = [], sides = [];
-    for (const z of zones) {
-      const [x, y, zw, zh] = terraceRect(z), g = grade.get(z.id), hgt = g - GROUND + 0.01, c = P(x + zw / 2, y + zh / 2, GROUND);
+    for (const { rect: [x0, y0, x1, y1], grade: g } of pieces) {
+      const zw = x1 - x0, zh = y1 - y0, hgt = g - GROUND + 0.01, c = P(x0 + zw / 2, y0 + zh / 2, GROUND);
       tops.push(new THREE.PlaneGeometry(zw, zh).rotateX(-Math.PI / 2).translate(c.x, g - DATUM, c.z));
       sides.push(shell(zw, zh, hgt, 0.5).translate(c.x, GROUND - DATUM, c.z));
     }
     if (tops.length) { add(mergeGeometries(tops), M.lawn, { cast: false }); add(mergeGeometries(sides), M.wall); }
     // concrete aprons 2 m round each structure, just above the terrace (fake contact shadow comes from the shadow map)
-    const aprons = data.structures.filter((s) => s.kind !== "reservoir_covered").map((s) => { const z = zoneAt(s.centre[0], s.centre[1]), g = z ? grade.get(z.id) : GROUND, c = P(s.centre[0], s.centre[1], g + 0.04);
+    const aprons = data.structures.filter((s) => s.kind !== "reservoir_covered").map((s) => { const g = grade.get(s.zoneId) ?? GROUND, c =P(s.centre[0], s.centre[1], g + 0.04);
       return s.diameter ? new THREE.CircleGeometry(s.diameter / 2 + 2, 40).rotateX(-Math.PI / 2).translate(c.x, c.y, c.z) : new THREE.PlaneGeometry(s.w + 4, s.l + 4).rotateX(-Math.PI / 2).translate(c.x, c.y, c.z); });
     if (aprons.length) add(mergeGeometries(aprons), M.concrete, { cast: false });
   }
@@ -416,6 +400,8 @@ export function mountPlant(container, data, { mode = "physical", quality = "medi
     }
     open = sid;
   };
+  // filter beds stand inside a filter building: selecting one opens the building around it
+  const hostOf = (s) => data.structures.find((b) => OPENABLE.has(b.kind) && b.w && Math.abs(s.centre[0] - b.centre[0]) <= b.w / 2 && Math.abs(s.centre[1] - b.centre[1]) <= b.l / 2);
   const highlights = [];
   const boxFor = (e, color) => { const h2 = new THREE.Box3Helper(new THREE.Box3().setFromObject(e.proxy).expandByScalar(0.4), color); scene.add(h2); return h2; };
   function select(id, { silent } = {}) {
@@ -424,6 +410,7 @@ export function mountPlant(container, data, { mode = "physical", quality = "medi
     selected = e ? e.item.id : null;
     if (!e) { selLabel.visible = false; setOpen(null); invalidate(); if (!silent) onSelect?.(null); return; }
     if (e.kind === "structure" && OPENABLE.has(e.item.kind)) setOpen(e.item.id);
+    else if (e.kind === "structure" && e.item.kind === "filter_bed") setOpen(hostOf(e.item)?.id ?? null);
     else if (e.kind === "machine" && e.structureId !== open) setOpen(buildings.has(e.structureId) && OPENABLE.has(byId.get(e.structureId)?.item.kind) ? e.structureId : null);
     else if (e.kind === "structure") setOpen(null);
     selBox = boxFor(e, 0x60a5fa);
@@ -438,9 +425,9 @@ export function mountPlant(container, data, { mode = "physical", quality = "medi
     ray.setFromCamera(ndc, camera);
     // machines inside a closed building cannot be picked through its walls
     const cands = proxies.filter((p) => api.mode === "blueprint" || p.userData.kind !== "machine" || p.userData.structureId === open || !buildings.has(p.userData.structureId));
-    const hits = ray.intersectObjects(cands, false);
-    const inner = hits.find((x) => x.object.userData.kind !== "structure");
-    return (inner || hits[0])?.object.userData.id || null;
+    const hits = ray.intersectObjects(cands, false), past = hits.filter((x) => x.object.userData.id !== open); // an open building is see-through
+    const inner = past.find((x) => x.object.userData.kind !== "structure");
+    return (inner || past[0] || hits[0])?.object.userData.id || null;
   };
   let down = null;
   renderer.domElement.addEventListener("pointerdown", (ev) => { down = [ev.clientX, ev.clientY]; });
