@@ -74,3 +74,15 @@ test("seedKg is idempotent and createSystem seeds it", () => {
   assert.equal(sys.list("GeometryRef").length, refs);
   assert.ok(sys.list("Sensor", (s) => s.tag === "TT-612")[0].anchor.geometryId.startsWith("GEO-HLP-B_"));
 });
+
+test("a GeometryRef carries its owner's zone, so a technician cannot see a hidden owner's mesh", () => {
+  const { ont } = createSystem({ seed: 7 });
+  for (const l of ont.list("GeometryRef").flatMap((g) => ont.links(g.id, { rel: "HAS_GEOMETRY", dir: "in" }))) assert.equal(ont.get(l.to).zoneId, ont.zoneOf(l.from) ?? undefined, l.to);
+  assert.equal(ont.get("GEO-CLB-1").zoneId, "Z06");
+  const tech = ont.view({ id: "X", clearance: "technician" });
+  assert.equal(tech.get("GEO-CLB-1"), null);
+  assert.ok(tech.get("GEO-F07_Sand"));
+  seedKg(ont); // re-seeding is idempotent and keeps the zone
+  assert.equal(ont.get("GEO-CLB-1").zoneId, "Z06");
+  assert.equal(ont.list("GeometryRef").length, 117);
+});

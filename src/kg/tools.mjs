@@ -7,22 +7,38 @@ import { currentPlantModel } from "../plant.mjs";
 import { lintCypher } from "./cypher-lint.mjs";
 
 const EVENT_KINDS = ["Alert", "WorkOrder", "Sample"];
-const kept = (view, items) => items.filter((i) => view.get(i.id));
+// POPIA: people data is reachable only through the people tool; no other tool returns these types or names their ids
+export const PEOPLE = new Set(["Person", "Competency", "Presence", "Participant", "Channel", "Message", "Execution", "Feedback"]);
+const sees = (view, id) => { const o = typeof id === "string" && view.get(id); return !!o && !PEOPLE.has(o.type); };
+const kept = (view, items) => items.filter((i) => sees(view, i.id));
 // a PlantModel's cells describe every zone, so like the generic routes the tools give its summary only
 const strip = ({ prov, ...o }) => (o.type === "PlantModel" ? (({ items, cells, sources, ...s }) => s)(o) : o);
 const str = { type: "string" };
 const schema = (properties, required = []) => ({ type: "object", properties, required, additionalProperties: false });
 export const toolsFor = (tools, viewer) => tools.filter((t) => !t.minClearance || rank(viewer?.clearance) >= rank(t.minClearance));
 
-// least-squares slope per hour; mean weighted by held time, since Historian stores changes only (a dense series weighs 1 min each)
-function summary(pts, toIso, alarmHi) {
-  const ts = pts.map((p) => Date.parse(p.t)), vs = pts.map((p) => p.v), n = pts.length, r = (x) => Math.round(x * 1e4) / 1e4;
-  const w = ts.map((t, i) => (i + 1 < n ? ts[i + 1] : Math.max(Date.parse(toIso), t + 60e3)) - t);
-  const W = w.reduce((a, b) => a + b, 0), h = ts.map((t) => (t - ts[0]) / 3.6e6);
-  const hm = h.reduce((a, b) => a + b, 0) / n, vm = vs.reduce((a, b) => a + b, 0) / n;
-  const sxx = h.reduce((s, x) => s + (x - hm) ** 2, 0), sxy = h.reduce((s, x, i) => s + (x - hm) * (vs[i] - vm), 0);
+const MIN = 60e3, RAW_CAP = 500;
+// shortcut: a value unchanged for more than a day before `from` reads as no data until its next change; widen if that bites
+const LOOKBACK = 86400e3;
+// The value held at each minute of [from, to]. Historian stores changes only, so a row holds until the next one;
+// a quality-0 row starts a gap (it is not held over); a 0001-01-01 row is an empty TVQ with no time, so it places nothing.
+function minuteGrid(rows, fromMs, toMs) {
+  const ev = rows.filter((p) => !String(p.t).startsWith("0001-01-01")).map((p) => ({ t: Date.parse(p.t), v: p.q === 0 ? null : p.v })).sort((a, b) => a.t - b.t);
+  const out = [];
+  let i = 0, cur = null;
+  for (let m = Math.ceil(fromMs / MIN) * MIN; m <= toMs; m += MIN) {
+    while (i < ev.length && ev[i].t <= m) cur = ev[i++].v;
+    if (cur !== null) out.push({ t: new Date(m).toISOString(), v: cur });
+  }
+  return out;
+}
+// over the minute grid, so a held value counts for every minute it holds; slope is least squares, per hour
+function summary(pts, alarmHi) {
+  const n = pts.length, vs = pts.map((p) => p.v), h = pts.map((p) => (Date.parse(p.t) - Date.parse(pts[0].t)) / 3.6e6), r = (x) => Math.round(x * 1e4) / 1e4;
+  const sum = (xs) => xs.reduce((a, b) => a + b, 0), hm = sum(h) / n, vm = sum(vs) / n;
+  const sxx = sum(h.map((x) => (x - hm) ** 2)), sxy = sum(h.map((x, i) => (x - hm) * (vs[i] - vm)));
   return {
-    n, min: Math.min(...vs), max: Math.max(...vs), mean: r(vs.reduce((s, v, i) => s + v * w[i], 0) / W), first: vs[0], last: vs[n - 1],
+    n, min: vs.reduce((a, b) => Math.min(a, b)), max: vs.reduce((a, b) => Math.max(a, b)), mean: r(vm), first: vs[0], last: vs[n - 1],
     slopePerH: sxx ? r(sxy / sxx) : 0, firstAboveAlarmAt: alarmHi == null ? null : pts.find((p) => p.v > alarmHi)?.t ?? null
   };
 }
@@ -30,12 +46,17 @@ function summary(pts, toIso, alarmHi) {
 export function createKgTools({ backend, ont, tel, crosswalk = {} }) {
   const renamed = new Map((crosswalk.renames || []).filter(([, n]) => n));
   const oldOf = new Map((crosswalk.assets || []).map((a) => [a.canonical, a.old]));
-  const exact = (view, s) => s && view.search(s, 50).find((o) => [o.id, o.tag, o.positionTag, o.kks].some((x) => x && x.toLowerCase() === s.toLowerCase()));
-  // an id, a renamed id, a tag or KKS, or a crosswalk canonical name, resolved only among what the viewer sees
+  const exact = (view, s) => s && view.search(s, 50).find((o) => !PEOPLE.has(o.type) && [o.id, o.tag, o.positionTag, o.kks].some((x) => x && x.toLowerCase() === s.toLowerCase()));
+  // an id, a renamed id, a tag or KKS, or a crosswalk canonical name, resolved only among what the viewer sees (never a person)
   const resolve = (view, id) => {
     const s = String(id ?? "").trim();
-    return (view.get(s) || view.get(renamed.get(s)) || exact(view, s) || exact(view, oldOf.get(s)))?.id ?? null;
+    const o = view.get(s) || view.get(renamed.get(s)) || exact(view, s) || exact(view, oldOf.get(s));
+    return o && !PEOPLE.has(o.type) ? o.id : null;
   };
+  // a string naming an ontology object the viewer may not see, or a person, is dropped at any depth (array entries too)
+  const hidden = (view, v) => typeof v === "string" && !!ont.get(v) && !sees(view, v);
+  const scrub = (view, v) => Array.isArray(v) ? v.filter((x) => !hidden(view, x)).map((x) => scrub(view, x))
+    : v && typeof v === "object" ? Object.fromEntries(Object.entries(v).filter(([, x]) => !hidden(view, x)).map(([k, x]) => [k, scrub(view, x)])) : v;
 
   // nodes, aliases and machine-in-structure edges from the viewer's released model, process edges from the backend:
   // pruned before the walk, so a hidden node is never walked through (the same graph as /api/plant/graph for that viewer)
@@ -83,7 +104,7 @@ export function createKgTools({ backend, ont, tel, crosswalk = {} }) {
       inputSchema: schema({ id: str }, ["id"]),
       async run({ id }, viewer) {
         const view = ont.view(viewer), o = await backend.get(resolve(view, id) || id);
-        if (o && view.get(o.id)) return { found: true, item: { ...strip(o), cite: o.id } };
+        if (o && sees(view, o.id)) return { found: true, item: { ...strip(o), cite: o.id } };
         const ids = (crosswalk.retired || []).filter((r) => r === id || r === `POS-${id}`);
         if (!ids.length) return { found: false };
         const canonical = (crosswalk.assets || []).find((a) => a.canonical === id || a.old === id);
@@ -104,18 +125,23 @@ export function createKgTools({ backend, ont, tel, crosswalk = {} }) {
     walkTool("downstream", downstreamOf),
     {
       name: "readings",
-      description: "A sensor's readings over [from, to]: a summary {n, min, max, mean, first, last, slopePerH, firstAboveAlarmAt} or the raw points. No-data points are dropped, never read as zero. Defaults to the last 24 h of plant time.",
+      description: `A sensor's value at each minute of [from, to] (to is clamped to the plant clock): a summary {n, min, max, mean, first, last, slopePerH, firstAboveAlarmAt} or the raw minute points (at most ${RAW_CAP}, evenly spaced, with truncated and count when cut). Stored values hold until they change; no-data minutes are left out, never read as zero. Defaults to the last 24 h of plant time.`,
       inputSchema: schema({ sensorId: str, from: str, to: str, agg: { enum: ["summary", "raw"] } }, ["sensorId"]),
       async run({ sensorId, from, to, agg = "summary" }, viewer) {
         const view = ont.view(viewer), s = view.get(resolve(view, sensorId));
         if (s?.type !== "Sensor") return { found: false };
-        to = to || tel.now();
-        from = from || new Date(Date.parse(to) - 86400e3).toISOString();
-        const cite = `${s.id}@${from}..${to}`;
-        // Historian no-data rows (time 0001-01-01 or quality 0) are absent readings, never zeros
-        const points = (await backend.readings(s, from, to)).filter((p) => !String(p.t).startsWith("0001-01-01") && p.q !== 0);
-        if (!points.length) return { id: s.id, points: [], note: "no data", cite };
-        return agg === "raw" ? { id: s.id, unit: s.unit, points, cite } : { id: s.id, unit: s.unit, ...summary(points, to, s.alarmHi), cite };
+        const now = tel.now(), iso = (ms) => new Date(ms).toISOString();
+        if (!to || Date.parse(to) > Date.parse(now)) to = now; // never read past the plant clock, whichever backend answers
+        from = from || iso(Date.parse(to) - 86400e3);
+        const cite = `${s.id}@${from}..${to}`, fromMs = Date.parse(from), toMs = Date.parse(to);
+        if (!(fromMs <= toMs)) return { id: s.id, points: [], note: `empty window: from must be on or before to and the plant clock (${now})`, cite };
+        // look back so the value held at `from` is known, then read every minute on the grid
+        const grid = minuteGrid(await backend.readings(s, iso(fromMs - LOOKBACK), iso(toMs)), fromMs, toMs);
+        if (!grid.length) return { id: s.id, points: [], note: "no data", cite };
+        if (agg !== "raw") return { id: s.id, unit: s.unit, ...summary(grid, s.alarmHi), cite };
+        if (grid.length <= RAW_CAP) return { id: s.id, unit: s.unit, points: grid, cite };
+        const points = Array.from({ length: RAW_CAP }, (_, i) => grid[Math.round((i * (grid.length - 1)) / (RAW_CAP - 1))]);
+        return { id: s.id, unit: s.unit, points, truncated: true, count: grid.length, cite };
       }
     },
     {
@@ -188,10 +214,15 @@ export function createKgTools({ backend, ont, tel, crosswalk = {} }) {
         const who = new Set(people.map((p) => p.id));
         const presence = view.list("Presence", (x) => (!zoneId || x.zoneId === zoneId) && (!s || who.has(x.personId)))
           .map((x) => ({ id: x.id, personId: x.personId, zoneId: x.zoneId, since: x.since, cite: x.id }));
-        return { people: kept(view, people), presence: kept(view, presence) };
+        return { people, presence };
       }
     }
   ];
+  // every tool but people (the one door to people data) is scrubbed; cypher drops whole rows instead, below
+  for (const t of tools) if (t.name !== "people") {
+    const run = t.run;
+    t.run = async (input = {}, viewer) => scrub(ont.view(viewer), await run(input, viewer));
+  }
 
   if (process.env.WWOS_KG_CYPHER === "1") tools.push({
     name: "cypher",
@@ -203,9 +234,10 @@ export function createKgTools({ backend, ont, tel, crosswalk = {} }) {
       const lint = lintCypher(query);
       if (!lint.ok) return lint;
       const view = ont.view(viewer), r = await backend.cypher(query, params || {});
-      // a row naming a WaterOS object the viewer may not see is dropped (rows are tables, so the query is the citation)
-      const hidden = (v) => (Array.isArray(v) ? v.some(hidden) : typeof v === "string" && !!ont.get(v) && !view.get(v));
-      return { ok: true, columns: r.columns, rows: r.rows.filter((row) => !row.some(hidden)), cite: `cypher:${query}` };
+      // a row naming a WaterOS object the viewer may not see (or a person) is dropped whole, so columns stay aligned;
+      // rows are tables, so the query is the citation
+      const bad = (v) => (Array.isArray(v) ? v.some(bad) : hidden(view, v));
+      return { ok: true, columns: r.columns, rows: r.rows.filter((row) => !row.some(bad)), cite: `cypher:${query}` };
     }
   });
   return tools;

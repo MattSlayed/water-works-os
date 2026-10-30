@@ -59,6 +59,9 @@ test("cypher is manager only and linted", async () => {
   assert.equal(lintCypher("MATCH (n) WHERE n.Label = 'CREATE SET' RETURN n.wosId").ok, true, "keywords inside a string literal pass");
   assert.match(lintCypher("MATCH (n:Pump {Label: 'P-1'}) RETURN n").errors.join(), /use WHERE/);
   for (const w of ["CREATE (n)", "MERGE (n)", "MATCH (n) SET n.x = 1", "MATCH (n) REMOVE n.x", "DROP INDEX i", "CALL db.labels()", "LOAD CSV FROM 'f' AS r RETURN r"]) assert.equal(lintCypher(w).ok, false, w);
+  // a quote or backtick inside a comment must not open a "literal" that swallows real clauses
+  for (const w of ["MATCH (n) // it's\nDETACH DELETE n RETURN 'x'", "MATCH (n) /* ` */ DETACH DELETE n /* ` */ RETURN 1", "MATCH (n) /* \" */ SET n.y = 1 // \""]) assert.equal(lintCypher(w).ok, false, w);
+  assert.equal(lintCypher("MATCH (n) WHERE n.Label = 'a // b' RETURN n.wosId // CREATE is only a comment").ok, true, "// inside a string literal is not a comment");
 });
 
 test("retired and invented ids", async () => {
@@ -109,6 +112,27 @@ test("readings: summary and raw over the telemetry window, cited by sensor and w
   assert.ok("firstAboveAlarmAt" in sum);
   const raw = await run("readings", { sensorId: "SEN-F07-turb", from, to, agg: "raw" }, tech);
   assert.equal(raw.points.length, series.length);
+  assert.deepEqual(raw.points.map((p) => p.v), series.map((p) => p.v), "a dense series is its own minute grid");
+});
+
+test("readings never run past the plant clock", async () => {
+  const now = sys.tel.now();
+  assert.ok(now < sys.tel.end, "the clock is inside the telemetry window");
+  const r = await run("readings", { sensorId: "SEN-F07-turb", from: new Date(Date.parse(now) - 3600e3).toISOString(), to: sys.tel.end, agg: "raw" }, tech);
+  assert.ok(r.cite.endsWith(`..${now}`));
+  assert.equal(r.points.at(-1).t, new Date(Date.parse(now)).toISOString());
+  assert.equal(r.points.length, 61);
+  const future = await run("readings", { sensorId: "SEN-F07-turb", from: sys.tel.end, to: sys.tel.end }, tech);
+  assert.deepEqual(future.points, []);
+  assert.match(future.note, /plant clock/);
+});
+
+test("raw readings are capped at 500 evenly spaced points", async () => {
+  const now = sys.tel.now(), r = await run("readings", { sensorId: "SEN-F07-turb", from: sys.tel.start, to: now, agg: "raw" }, tech);
+  const minutes = (Date.parse(now) - Date.parse(sys.tel.start)) / 60e3 + 1;
+  assert.deepEqual([r.points.length, r.truncated, r.count], [500, true, minutes]);
+  assert.equal(r.points[0].t, new Date(sys.tel.start).toISOString());
+  assert.equal(r.points.at(-1).t, new Date(now).toISOString());
 });
 
 test("locate: own geometry, the position's, or the sensor anchor; [] when none", async () => {
@@ -149,4 +173,35 @@ test("agents never import REST", () => {
     const imports = readFileSync(f, "utf8").split("\n").filter((l) => /^\s*(import|export)\b|import\s*\(/.test(l));
     assert.ok(!imports.some((l) => /timebase\/rest\.mjs/.test(l)), `${f.pathname} imports the REST client`);
   }
+});
+
+const PEOPLE_TYPES = ["Person", "Competency", "Presence", "Participant", "Channel", "Message", "Execution", "Feedback"];
+
+test("people data and hidden ids never leave get, search or neighbors", async () => {
+  for (const id of ["P-001", "CMP-001", "PRS-001", "PAR-001", "CHN-P-001", "MSG-H01", "EXE-H01", "FBK-H01", "GEO-CLB-1"]) assert.deepEqual(await run("get", { id }, tech), { found: false }, id);
+  assert.deepEqual(await run("neighbors", { id: "P-001" }, tech), { found: false, items: [] });
+  assert.ok(!(await run("search", { q: "CLB" }, tech)).items.some((i) => i.id === "GEO-CLB-1"));
+  const spt = (await run("get", { id: "PM-RB-A:SPT-SP-16CQ01" }, tech)).item;
+  assert.ok(spt && !("sensorId" in spt), "the Z06 sensor id is dropped from a visible sample point");
+  const trk = (await run("get", { id: "TRK-CL2" }, tech)).item;
+  assert.ok(trk && !("boundTo" in trk));
+  assert.equal((await run("get", { id: "PM-RB-A:SPT-SP-16CQ01" }, mgr)).item.sensorId, "SEN-FIN-cl", "a manager keeps it");
+});
+
+test("clearance sweep: no technician tool output names a hidden object or a person", async () => {
+  const view = sys.ont.view(tech), bad = new Set();
+  const walk = (name, v) => {
+    if (typeof v === "string") { const o = sys.ont.get(v); if (o && (!view.get(v) || PEOPLE_TYPES.includes(o.type))) bad.add(`${name}: ${v}`); }
+    else if (v && typeof v === "object") for (const x of Object.values(v)) walk(name, x);
+  };
+  const ids = sys.ont.list().map((o) => o.id);
+  const calls = [
+    ...ids.flatMap((id) => [["get", { id }], ["neighbors", { id }], ["locate", { id }], ["documents", { aboutId: id }], ["events", { scope: id }]]),
+    ...["CLB", "chlor", "GEO", "P-0", "Precious", "SEN-FIN", "TRK", "CMP", "MSG", "SPT"].map((q) => ["search", { q, limit: 100 }]),
+    ...["F07", "PM-RB-A:STR-20UBA02", "POS-CL-1", "PM-RB-A:STR-10UPA01"].flatMap((id) => [["upstream", { id }], ["downstream", { id }]]),
+    ["events", {}], ["documents", { q: "chlor" }], ["documents", {}], ["read", { chunkId: "DOC-DESIGN-BASIS#c06" }],
+    ...["SEN-F07-turb", "SEN-FIN-cl", "SEN-RAW-turb"].map((sensorId) => ["readings", { sensorId, from: sys.tel.start, to: sys.tel.end, agg: "raw" }])
+  ];
+  for (const [name, input] of calls) walk(name, await run(name, input, tech));
+  assert.deepEqual([...bad].slice(0, 25), []);
 });

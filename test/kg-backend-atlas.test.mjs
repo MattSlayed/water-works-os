@@ -69,14 +69,28 @@ test("upstream over Atlas feeds equals upstream over memory, pruned the same way
 
 test("no data is not zero", async () => {
   historianText = "Data for 1 tag(s) in dataset 'Riverbend' (a .. b):\n## AIT-157 - 1 point(s)\n- 0001-01-01T00:00:00Z  v=0  q=0\n";
-  const from = sys.tel.start, to = sys.tel.end;
-  assert.deepEqual(await run("readings", { sensorId: "SEN-F07-turb", from, to }, tech), { id: "SEN-F07-turb", points: [], note: "no data", cite: `SEN-F07-turb@${from}..${to}` });
-  assert.equal(JSON.parse(historianReplies.at(-1).tagNamesJson)[0], "AIT-157", "Historian is keyed by the ISA tag");
+  const from = sys.tel.start, to = sys.tel.end, now = sys.tel.now();
+  assert.deepEqual(await run("readings", { sensorId: "SEN-F07-turb", from, to }, tech), { id: "SEN-F07-turb", points: [], note: "no data", cite: `SEN-F07-turb@${from}..${now}` }, "to is clamped to the plant clock");
+  const sent = historianReplies.at(-1);
+  assert.equal(JSON.parse(sent.tagNamesJson)[0], "AIT-157", "Historian is keyed by the ISA tag");
+  assert.equal(sent.endTime, new Date(now).toISOString(), "the Atlas path is clamped to the plant clock too");
+  // a quality-0 row starts a gap (it is not held over), and the values are read on the 1-minute grid
   historianText = "## AIT-157 - 3 point(s)\n- 2026-10-01T00:00:00Z  v=0.2  q=192\n- 2026-10-01T00:05:00Z  v=0  q=0\n- 2026-10-01T00:10:00Z  v=0.4  q=192\n";
   const s = await run("readings", { sensorId: "SEN-F07-turb", from: "2026-10-01T00:00:00Z", to: "2026-10-01T00:20:00Z" }, tech);
-  assert.deepEqual([s.n, s.min, s.max, s.first, s.last], [2, 0.2, 0.4, 0.2, 0.4]);
-  assert.equal(s.mean, 0.3, "changes-only: each value holds until the next point (0.2 for 10 min, 0.4 for 10 min)");
-  assert.equal(s.slopePerH, 1.2);
+  assert.deepEqual([s.n, s.min, s.max, s.first, s.last], [16, 0.2, 0.4, 0.2, 0.4], "00:00-00:04 at 0.2, 00:05-00:09 no data, 00:10-00:20 at 0.4");
+  assert.equal(s.mean, 0.3375);
+  assert.equal(s.slopePerH, 0.765);
+  assert.equal(s.firstAboveAlarmAt, null, "alarmHi 0.5 is never passed");
+});
+
+test("a value steady across the whole window is read from before the window, not reported as no data", async () => {
+  historianText = "## AIT-157 - 1 point(s)\n- 2026-10-01T00:00:00Z  v=0.25  q=192\n";
+  const s = await run("readings", { sensorId: "SEN-F07-turb", from: "2026-10-01T06:00:00Z", to: "2026-10-01T06:10:00Z" }, tech);
+  assert.deepEqual([s.n, s.min, s.max, s.mean, s.first, s.last, s.slopePerH], [11, 0.25, 0.25, 0.25, 0.25, 0.25, 0]);
+  assert.ok(Date.parse(historianReplies.at(-1).startTime) < Date.parse("2026-10-01T06:00:00Z"), "the request looks back before from");
+  historianText = "## AIT-157 - 2 point(s)\n- 2026-10-01T05:58:00Z  v=0.4  q=192\n- 2026-10-01T06:03:00Z  v=0.6  q=192\n";
+  const a = await run("readings", { sensorId: "SEN-F07-turb", from: "2026-10-01T06:00:00Z", to: "2026-10-01T06:05:00Z" }, tech);
+  assert.deepEqual([a.n, a.first, a.last, a.firstAboveAlarmAt], [6, 0.4, 0.6, "2026-10-01T06:03:00.000Z"], "from to the first change is the held earlier value");
 });
 
 test("cypher on Atlas: linted before it is sent", async () => {

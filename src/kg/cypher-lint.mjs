@@ -3,8 +3,9 @@
 const WRITE = /\b(CREATE|MERGE|SET|DELETE|REMOVE|DROP|CALL|LOAD\s+CSV)\b/gi;
 
 export function lintCypher(q) {
-  // string literals (with backslash escapes) and backticked names are blanked first, so their contents never match
-  const s = String(q ?? "").replace(/'(?:\\.|[^'\\])*'|"(?:\\.|[^"\\])*"|`[^`]*`/g, "''");
+  // string literals (with backslash escapes), backticked names and comments are blanked first, in one left-to-right
+  // pass: a quote inside a comment cannot open a literal, and a // inside a literal is not a comment
+  const s = String(q ?? "").replace(/'(?:\\.|[^'\\])*'|"(?:\\.|[^"\\])*"|`[^`]*`|\/\/[^\n]*|\/\*[\s\S]*?\*\//g, (m) => (m[0] === "/" ? " " : "''"));
   const errors = [];
   for (const m of s.matchAll(WRITE)) errors.push(`${m[1].toUpperCase().replace(/\s+/, " ")} is a write or procedure clause; agent Cypher is read-only`);
   // a node pattern straight after a relationship's closing - or -> is a far end

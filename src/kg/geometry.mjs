@@ -21,8 +21,9 @@ export function geometryRefs(sceneMeta, ont, contract) {
   for (const node of Object.keys(objects).sort()) {
     const o = objects[node], owner = ownerOf(o.asset);
     if (!owner) { skippedObjects.push(node); continue; }
-    const { cx, cy, w, l, zMin, zMax } = o.site, id = `GEO-${node}`;
-    refs.push({ id, type: "GeometryRef", file: "riverbend.glb", node, floor: o.floor, centroid: [cx, cy, r3((zMin + zMax) / 2)], bbox: { w, l, h: r3(zMax - zMin) } });
+    const { cx, cy, w, l, zMin, zMax } = o.site, id = `GEO-${node}`, zoneId = ont.zoneOf(owner);
+    // the owner's zone, so ont.view hides a mesh wherever it hides the owner
+    refs.push({ id, type: "GeometryRef", file: "riverbend.glb", node, floor: o.floor, centroid: [cx, cy, r3((zMin + zMax) / 2)], bbox: { w, l, h: r3(zMax - zMin) }, ...(zoneId ? { zoneId } : {}) });
     links.push([owner, "HAS_GEOMETRY", id]);
     (byOwner.get(owner) || byOwner.set(owner, []).get(owner)).push(id);
     if (o.tag) sceneTag.set(o.tag, id);
