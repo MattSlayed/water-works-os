@@ -5,10 +5,10 @@
     "expect": "answer",
     "required": [
       { "label": "the high-lift pumps", "pattern": "high[- ]lift|HLP-[A-E]" },
-      { "label": "four on duty", "pattern": "\\b(4|four)\\b" },
-      { "label": "HLP-D on standby", "pattern": "HLP-D[^.\\n]*standby|standby[^.\\n]*HLP-D" }
+      { "label": "four on duty", "pattern": "\\b(4|four)\\b[^.;\\n]*(duty|running|in service)|(duty|running|in service)[^.;\\n]*\\b(4|four)\\b" },
+      { "label": "HLP-D on standby", "pattern": "HLP-D[^.;\\n]*standby|standby[^.;\\n]*HLP-D" }
     ],
-    "forbidden": [],
+    "forbidden": ["HLP-D\\s+(is|was)\\s+(also\\s+)?(running|on duty)"],
     "evidence": ["AST-80576", "AST-85704", "AST-35766", "AST-92504", "AST-50170"]
   },
   {
@@ -16,11 +16,11 @@
     "question": "Which raw-water pumps are running, and is any of them out of service?",
     "expect": "answer",
     "required": [
-      { "label": "RWP-A running", "pattern": "RWP-A" },
-      { "label": "RWP-B running", "pattern": "RWP-B" },
-      { "label": "RWP-C isolated", "pattern": "RWP-C[^.\\n]*isolat|isolat[^.\\n]*RWP-C" }
+      { "label": "RWP-A running", "pattern": "RWP-A[^.;\\n]*(running|in service|on duty)|(running|in service|on duty)[^.;\\n]*RWP-A" },
+      { "label": "RWP-B running", "pattern": "RWP-B[^.;\\n]*(running|in service|on duty)|(running|in service|on duty)[^.;\\n]*RWP-B" },
+      { "label": "RWP-C isolated", "pattern": "RWP-C[^.;\\n]*isolat|isolat[^.;\\n]*RWP-C" }
     ],
-    "forbidden": [],
+    "forbidden": ["RWP-[AB]\\s+(is|was)\\s+(also\\s+)?isolat", "RWP-C\\s+(is|was)\\s+(also\\s+)?(running|in service|on duty)"],
     "evidence": ["AST-30819", "AST-98455", "AST-42245"]
   },
   {
@@ -28,7 +28,7 @@
     "question": "Which clarifier is out of service, and what is the works rated at until it returns?",
     "expect": "answer",
     "required": [
-      { "label": "CL-4", "pattern": "CL-4|14UGE04" },
+      { "label": "CL-4 out of service", "pattern": "(CL-4|14UGE04)[^.;\\n]*(out of service|refurbish|drained|offline)|(out of service|refurbish|drained|offline)[^.;\\n]*(CL-4|14UGE04)" },
       { "label": "90 ML/d", "pattern": "90\\s*ML" }
     ],
     "forbidden": [],
@@ -53,7 +53,7 @@
     "required": [
       { "label": "on HLP-B", "pattern": "HLP-B|high-lift pump B" },
       { "label": "drive-end bearing temperature", "pattern": "drive[- ]end|\\bDE\\b" },
-      { "label": "high alarm 85 °C", "value": 85, "tol": 0 }
+      { "label": "high alarm 85 °C", "pattern": "alarm[^.;\\n]*?\\d+(\\.\\d+)?|\\d+(\\.\\d+)?\\s*°C[^.;\\n\\d]*alarm", "value": 85, "tol": 0 }
     ],
     "forbidden": [],
     "evidence": ["SEN-HLP-B-temp_de", "AST-85704"]
@@ -75,7 +75,7 @@
     "question": "When overhauling a horizontal split-case pump, at which step is soft foot checked and what is the limit?",
     "expect": "answer",
     "required": [
-      { "label": "step 3", "pattern": "step\\s*3\\b|S03" },
+      { "label": "soft foot at step 3", "pattern": "(step\\s*3\\b|S03)[^.;\\n]*soft|soft[^.;\\n]*(step\\s*3\\b|S03)" },
       { "label": "0.05 mm", "pattern": "0\\.05\\s*mm" }
     ],
     "forbidden": [],
@@ -129,11 +129,11 @@
     "question": "Has TT-612 reached its high alarm in the telemetry so far?",
     "expect": "answer",
     "required": [
-      { "label": "not reached", "pattern": "has not|hasn't|have not|did not|didn't|not yet|never|below|\\bno\\b" },
-      { "label": "alarm 85 °C", "value": 85, "tol": 0 },
-      { "label": "peak 74.6 °C", "value": 74.61, "tol": 0.1 }
+      { "label": "not reached", "pattern": "has not|hasn't|have not|did not|didn't|not yet|never|(remain(s|ed)?|stay(s|ed)?|still|well)\\s+below|short of" },
+      { "label": "alarm 85 °C", "pattern": "alarm[^.;\\n]*?\\d+(\\.\\d+)?|\\d+(\\.\\d+)?\\s*°C[^.;\\n\\d]*alarm", "value": 85, "tol": 0 },
+      { "label": "peak 74.6 °C", "pattern": "(peak|max|highest)[^.;\\n]*?\\d+(\\.\\d+)?|\\d+(\\.\\d+)?\\s*°C[^.;\\n\\d]*(peak|max|highest)", "value": 74.61, "tol": 0.1 }
     ],
-    "forbidden": [],
+    "forbidden": ["\\byes\\b", "(?<!not |n't |never |yet )(reached|exceeded|breached|went above|gone above|crossed|rose above)[^.;\\n]*(alarm|\\b85\\b)"],
     "evidence": ["SEN-HLP-B-temp_de"]
   },
   {
@@ -141,10 +141,10 @@
     "question": "What is TT-612 reading now, and which way has it moved over the last 24 hours?",
     "expect": "answer",
     "required": [
-      { "label": "now 74.0 °C", "value": 73.987, "tol": 0.05 },
+      { "label": "now 74.0 °C", "pattern": "(now|currently|reads|reading|latest)[^.;\\n]*?\\d+(\\.\\d+)?|\\d+(\\.\\d+)?\\s*°C[^.;\\n\\d]*(now|currently)", "value": 73.987, "tol": 0.05 },
       { "label": "rising", "pattern": "ris|increas|upward|climb|warm" }
     ],
-    "forbidden": [],
+    "forbidden": ["fall|decreas|drop|cool"],
     "evidence": ["SEN-HLP-B-temp_de"]
   },
   {
@@ -160,18 +160,18 @@
     "question": "What was the highest AIT-157 turbidity in the last 24 hours, and did it breach the alarm?",
     "expect": "answer",
     "required": [
-      { "label": "max 0.342 NTU", "value": 0.342, "tol": 0.005 },
-      { "label": "alarm 0.5 NTU", "value": 0.5, "tol": 0 },
-      { "label": "not breached", "pattern": "has not|hasn't|did not|didn't|not breach|never|below|\\bno\\b" }
+      { "label": "max 0.342 NTU", "pattern": "(peak|max|highest)[^.;\\n]*?\\d+(\\.\\d+)?|\\d+(\\.\\d+)?\\s*NTU[^.;\\n\\d]*(peak|max|highest)", "value": 0.342, "tol": 0.005 },
+      { "label": "alarm 0.5 NTU", "pattern": "alarm[^.;\\n]*?\\d+(\\.\\d+)?|\\d+(\\.\\d+)?\\s*NTU[^.;\\n\\d]*alarm", "value": 0.5, "tol": 0 },
+      { "label": "not breached", "pattern": "has not|hasn't|did not|didn't|not breach|never|(remain(s|ed)?|stay(s|ed)?|still|well)\\s+below|short of" }
     ],
-    "forbidden": [],
+    "forbidden": ["\\byes\\b", "(?<!not |n't |never |yet )(reached|exceeded|breached|went above|gone above|crossed|rose above)[^.;\\n]*(alarm|0\\.5)"],
     "evidence": ["SEN-F07-turb"]
   },
   {
     "id": "L6", "kind": "live", "asker": "P-001",
     "question": "What was AIT-157's mean turbidity from 2026-10-01 to 2026-10-12, before the F07 fault?",
     "expect": "answer",
-    "required": [{ "label": "mean 0.117 NTU", "value": 0.1167, "tol": 0.005 }],
+    "required": [{ "label": "mean 0.117 NTU", "pattern": "(mean|average)[^.;\\n]*?\\d+\\.\\d+|\\d+\\.\\d+\\s*NTU[^.;\\n\\d]*(mean|average)", "value": 0.1167, "tol": 0.005 }],
     "forbidden": [],
     "evidence": ["SEN-F07-turb"]
   },
@@ -180,7 +180,7 @@
     "question": "What is the filtered turbidity of filter F12 right now?",
     "expect": "not_found",
     "required": [{ "label": "F12 not found or retired", "pattern": "not found|no such|does not exist|doesn't exist|could not find|couldn't find|cannot find|can't find|unable to find|retired|decommissioned|no longer" }],
-    "forbidden": ["F12[^.\\n]*\\d+(\\.\\d+)?\\s*NTU"],
+    "forbidden": ["F12('s)?\\s+(filtered\\s+)?(turbidity\\s+)?(is|reads|was|reading|at)\\s+(about\\s+|around\\s+)?\\d+(\\.\\d+)?\\s*NTU", "turbidity\\s+(of|for|on|at)\\s+(filter\\s+)?F12\\s+(is|was|reads)\\s+(about\\s+|around\\s+)?\\d"],
     "evidence": ["F12"]
   },
   {
@@ -223,7 +223,7 @@
     "question": "What was AIT-157 reading on 2026-09-15?",
     "expect": "insufficient",
     "required": [{ "label": "no data before the telemetry window", "pattern": "insufficient|no data|not available|no (reading|record)s?|before[^.\\n]*(start|begin|window|2026-10-01)|outside[^.\\n]*window|starts?[^.\\n]*2026-10-01|cannot (say|tell|determine)" }],
-    "forbidden": ["2026-09-15[^.\\n]*\\d\\.\\d+\\s*NTU"],
+    "forbidden": ["(on|for)\\s+2026-09-15,?\\s+(AIT-157|it|the turbidity|F07)?\\s*(was|read|reads|reading)\\s+(about\\s+|around\\s+)?\\d", "AIT-157\\s+(was|read)\\s+(about\\s+|around\\s+)?\\d[^.;\\n]*2026-09-15"],
     "evidence": ["SEN-F07-turb"]
   },
   {
@@ -231,7 +231,7 @@
     "question": "What is the top water level of clarifier CL-4?",
     "expect": "insufficient",
     "required": [{ "label": "CL-4 has none (drained)", "pattern": "no top water level|has no|drained|not (given|stated|listed|recorded|available)|insufficient" }],
-    "forbidden": ["(CL-4|14UGE04)('s)? (top water level|TWL) (is|of) 1476"],
+    "forbidden": ["(CL-4|14UGE04)[^.;\\n]*1[ ,]?476|1[ ,]?476[^.;\\n]*(CL-4|14UGE04)"],
     "evidence": ["DOC-DESIGN-BASIS#c04", "POS-CL-4"]
   }
 ]

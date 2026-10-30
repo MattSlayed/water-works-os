@@ -3,6 +3,8 @@
 const CITE = /\[([^[\]]+)\]/g;
 const WHEN = /\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?Z?/g;
 const NUM = /\d+(?:\.\d+)?/g;
+const DATE = /\d{4}-\d{2}-\d{2}(?:[T ]\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?Z?)?/g;
+const ID = /\b[A-Z][\w-]*\d\w*/g;
 // an ISA tag, not the tail of a longer id (the GA-001 in drawing RB-GA-001)
 const TAG = /(?<!-)\b[A-Z]{2,4}-\d{3}\b/g;
 const ms = (t) => Date.parse(t.replace(" ", "T").replace(/Z?$/, "Z")); // a time without a zone is read as UTC
@@ -24,9 +26,10 @@ export function grade(text, q, { exists, visible, tags }) {
   const asked = new Set(q.question.match(TAG) ?? []);
   return {
     right: !missing.length && !(q.forbidden ?? []).some((p) => new RegExp(p, "i").test(prose)),
-    citationsValid: cites.every(exists),
-    // sentences stating a number (a tag's digits aside) with no cite
-    uncitedFacts: text.split(/(?<=[.!?])\s+|\n+/).filter((s) => /\d/.test(s.replace(TAG, " ")) && !s.includes("[")).length,
+    // every cite resolves, and an answer cites at least one of its evidence ids (a cite's base is its id before @ or #)
+    citationsValid: cites.every(exists) && (q.expect !== "answer" || cites.some((c) => q.evidence.includes(c) || q.evidence.includes(c.split(/[@#]/)[0]))),
+    // sentences stating a number with no cite; digits inside ids and tags (TT-612, SEN-F07-turb) and dates are not numbers
+    uncitedFacts: text.split(/(?<=[.!?])\s+|\n+/).filter((s) => /\d/.test(s.replace(DATE, " ").replace(ID, " ")) && !s.includes("[")).length,
     leak: cites.some((c) => exists(c) && !visible(c, q.asker)),
     inventedTags: [...new Set(text.match(TAG) ?? [])].filter((t) => !tags.has(t) && !asked.has(t)),
     missing
