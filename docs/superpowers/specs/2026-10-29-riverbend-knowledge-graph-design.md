@@ -336,11 +336,11 @@ These are exposed to the in-app agents and as an **MCP server**, which closes Wa
 ## 13. Build order
 0. **Inputs.** *(Done.)* Copy the mock source to `novacore-mock/` and the contract and scene meta into `data/riverbend/`.
 1. **Crosswalk and canonical plant.** *(Done, plan `2026-10-29-riverbend-canonical-plant.md`: 8 filters, CL-1..4, HLP-A..E, RES-1/2, CR-1/2, 100 ML/d.)* Update `layout.mjs`, the drawings and `generate.mjs`, and fix the tests that change.
-2. **Physical layer from 3D.** Export glTF and the meta, generate GeometryRefs and sensor anchors, and write the Design Basis.
+2. **Physical layer from 3D.** *(Done, plan `2026-10-30-riverbend-atlas-physical-tools.md`.)* Export glTF and the meta, generate GeometryRefs and sensor anchors, and write the Design Basis.
 3. **Generator.** Build the coupled 90-day model, S1–S7 and the answer key, and promote Alarm, Event and Anomaly to graph objects.
 4. **Documents.** Generate the document families, chunk them, add the planted imperfections and the one-time LLM pass.
-5. **Tools and MCP server**, with the eval bank and scoring.
-6. **Neo4j mirror and loader.**
+5. **Tools and MCP server**, with the eval bank and scoring. *(Done, plan `2026-10-30-riverbend-atlas-physical-tools.md`; the Claude eval run is not yet executed.)*
+6. **Atlas loader.** *(Done, plan `2026-10-30-riverbend-atlas-physical-tools.md`; replaces the Neo4j mirror per the Timebase amendment. Live Atlas verification is pending a licence.)*
 7. **Overlay.** Add glTF loading in `web/plant.js` and `focus` framing, then the website static export with prepared answers.
 
 Each step is its own plan under `docs/superpowers/plans/` and is browser-walked before the next.

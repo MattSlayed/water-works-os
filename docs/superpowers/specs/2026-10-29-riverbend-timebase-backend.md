@@ -122,6 +122,15 @@ subagent-driven. The step 2/5/6 plan is then written against Atlas.
 - Pulse: client `WaterOSSpike`, whose secret is in `E:\Timebase\secrets\`.
 - Spike scripts: in the session scratchpad, not in the repo.
 
+### Status (2026-10-30)
+
+Steps 2, 5 and 6 are built (plan `2026-10-30-riverbend-atlas-physical-tools.md`). Live verification is partly blocked.
+
+- **Historian: done.** `scripts/timebase/backfill.mjs` loaded 117 tags and 2,358,837 points into dataset `Riverbend`, with 0 rejected.
+- **Atlas: loaded, not compiled.** `scripts/timebase/load-atlas.mjs` wrote the model and published it to branch `riverbend`. The compile is refused by the unlicensed install's Instances entitlement: the limit enforced is 500 against 1,000 documented, and the model counts 5,814 instances including property strategies. Until the install is licensed, the Atlas backend cannot be read live; the memory backend serves the same tools.
+- **New quirk:** `[word...]` in a static string is read as a placeholder, and there is no escape. The loader must avoid it in labels and descriptions.
+- The alarms row above is unchanged.
+
 ## 5. Protect rules (in addition to the base design)
 
 - Harness agents reach Atlas **only through MCP** with a component token. They never get the raw token or REST

@@ -6,7 +6,7 @@ An ontology-driven operating system for a **synthetic** water treatment works (R
 ## Run it
 
 ```bash
-npm test          # 493 tests: generator, ontology, telemetry, functions, actions, agents + evals, copilot, chat, drawings, parsers, plant model, process graph, region, trackers, scenes, Geo Watch, live mode, agent harness, root cause, connectors, digester, studio, recommendations, spec triage, job briefs, API, web
+npm test          # 568 tests: generator, ontology, telemetry, functions, actions, agents + evals, copilot, chat, drawings, parsers, plant model, process graph, region, trackers, scenes, Geo Watch, live mode, agent harness, root cause, connectors, digester, studio, recommendations, spec triage, job briefs, API, web
 npm start         # http://localhost:8830  (plant clock advances 1 minute every 2 seconds)
 ```
 
@@ -137,6 +137,29 @@ three.js 0.160.0 (MIT) is vendored under `web/vendor/three@0.160.0/` from the np
 it is not a package dependency. Regenerate the drawing set with `node scripts/make-drawings.mjs`.
 
 Design prototypes for the same screens: https://claude.ai/artifact/LwS7u1g2MyCjYfzRA4ivKL (private until shared).
+
+## Knowledge graph on Timebase
+
+Design: `docs/superpowers/specs/2026-10-29-riverbend-knowledge-graph-design.md` and `2026-10-29-riverbend-timebase-backend.md`.
+Eleven read-only tools (search, get, neighbors, upstream, downstream, readings, events, documents, read, locate, people)
+over the Riverbend plant, each answer item carrying a `cite` id and pruned to the acting person's clearance. They are served
+as an MCP endpoint at `POST /mcp` on the same port as the console.
+
+- **Run the MCP server:** `npm start`, then
+  `claude mcp add --transport http wateros http://localhost:8830/mcp --header "x-acting-user: P-028"`.
+  `WWOS_KG_BACKEND=memory` (default) reads the in-memory works; `WWOS_KG_BACKEND=atlas` reads Timebase Atlas and Historian
+  through their MCP and falls back to memory, with one log line, if it cannot connect. `WWOS_KG_CYPHER=1` adds a twelfth,
+  linted `cypher` tool.
+- **Backfill the Historian and load Atlas** (the stack is at `E:\Timebase`): set `TIMEBASE_CLIENT_ID`,
+  `TIMEBASE_SECRET_FILE` (a path under `E:\Timebase\secrets\`, never the secret itself) and, if Pulse's CA is not trusted,
+  `NODE_EXTRA_CA_CERTS`. Then `node scripts/timebase/backfill.mjs` (dataset `Riverbend` only; `--reset` clears it) and
+  `node scripts/timebase/load-atlas.mjs riverbend` (a working branch, never `main`; safe to re-run).
+- **Eval:** `node scripts/kg/eval-claude.mjs --backend memory|atlas --out <file>` runs Claude over `data/eval-questions.json`
+  as each question's asker and grades the structured answers with the rule grader. It needs `ANTHROPIC_API_KEY`, and an
+  atlas run stops rather than grading memory if Atlas is unreachable.
+- **Known limits:** the Atlas model cannot compile until the install is licensed (Instances entitlement 500 against the
+  model's 5,814), so Atlas is loaded and published to branch `riverbend` but not read live. The Claude eval run has not
+  been executed yet.
 
 ## Not in this build
 
