@@ -5,6 +5,9 @@
 import { MODEL, llmEnabled } from "./llm.mjs";
 import { toolsFor } from "./kg/tools.mjs";
 import { currentPlantModel } from "./plant.mjs";
+import { projectIndicators } from "./project-indicators.mjs";
+import { projectsAsked } from "./agents.mjs";
+import { writeSnapshot } from "./project-snapshot.mjs";
 
 const MAX_TURNS = 8;
 const SEVERITY = { high: 3, medium: 2, low: 1 };
@@ -61,11 +64,37 @@ function alertBrief(ont, tel, viewer, question) {
   return { answer, citations: citationsIn(view, answer), focus: plantFocus(ont, viewer, [a.assetId, ...sensors].filter(Boolean)), model: false };
 }
 
+const AREAS = { people: "People", plant: "Plant and process", procedures: "Procedures", compliance: "Compliance" };
+
+// What the 3D view frames for a project: its targeted assets, its zones and what it takes out of service.
+function projectFocus(ont, viewer, p) {
+  const proj = ont.view(viewer).get(p.id);
+  return plantFocus(ont, viewer, [...ont.view(viewer).links(p.id, { rel: "TARGETS", dir: "out" }).map((l) => l.to), ...(proj?.zoneIds || []), ...(proj?.takesOutOfService || []).map((t) => t.id)]);
+}
+
+// The deterministic project brief: the header line, then one line per area that is not green.
+function projectBrief(ont, tel, viewer, question) {
+  const found = projectsAsked(ont.view(viewer), question).sort((a, b) => String(a.start).localeCompare(String(b.start)));
+  const ind = found[0] && projectIndicators(ont, tel, viewer, found[0].id);
+  if (!ind) return null;
+  const { milestones: m, spendZar, budgetZar, daysSinceReport } = ind.header, overdue = Array.isArray(m.overdue) ? m.overdue.length : m.overdue;
+  const lines = [`${ind.title}: ${m.confirmed} confirmed of ${m.total} milestones, ${overdue} overdue; R ${spendZar} of R ${budgetZar}; last report ${daysSinceReport == null ? "none" : `${daysSinceReport} days ago`} [${ind.id}]`];
+  for (const [k, a] of Object.entries(ind.areas)) {
+    if (a.status === "green") continue;
+    const cite = (a.items.find((i) => i.status !== "green") || a.items[0])?.cite;
+    lines.push(`${AREAS[k]}: ${a.summary}${cite ? ` [${cite}]` : ""}`);
+  }
+  if (found.length > 1) lines.push(`Also matching: ${found.slice(1).map((p) => p.title).join(", ")}.`);
+  const answer = lines.join("\n"), { id, title, header, areas } = ind;
+  return { answer, citations: citationsIn(ont.view(viewer), answer), focus: projectFocus(ont, viewer, ind), model: false, project: { id, title, header, areas } };
+}
+
 export function createSiteAgent({ ont, tel, tools, client = null }) {
   const system = () => `You are the Site Agent in the 3D twin of the Riverbend water treatment works. The plant clock is ${tel.now()}: "now" means that time.
 Investigate the operator's question with the tools: find the alert or reading it concerns, check the live data around it, and read the relevant documents.
 Call show_on_map once with the ids of the place it concerns (assets, positions, sensors or zones), so the 3D view flies there.
 Then brief the operator: what happened, where, what the readings show, and what to check first. At most six short sentences.
+For a question about a maintenance project: call project_status and read its latest progress report with documents (aboutId = the project), call show_on_map with the project's assets or zones, then brief: progress against milestones, each area that is not green, and what to check first. At most eight sentences.
 Cite every fact in square brackets with the cite field of the tool item it came from, for example [SEN-RAW-turb]. Cite only what the tools returned.
 If a few searches find nothing, stop and say you cannot find it among what you can see; do not guess.`;
 
@@ -74,7 +103,7 @@ If a few searches find nothing, stop and say you cannot find it among what you c
     try { ({ default: Anthropic } = await import("@anthropic-ai/sdk")); } catch { return null; }
     client ??= new Anthropic();
     const mine = toolsFor(tools, viewer).filter((t) => t.name !== "people" && t.name !== "cypher");
-    let shown = [];
+    let shown = [], project = null;
     const defs = [...mine.map(({ name, description, inputSchema }) => ({ name, description, input_schema: inputSchema })),
       { name: "show_on_map", description: "Fly the 3D view to these objects: ids of assets, positions, sensors, zones or plant items.", input_schema: { type: "object", properties: { ids: { type: "array", items: { type: "string" } } }, required: ["ids"], additionalProperties: false } }];
     const messages = [{ role: "user", content: question }];
@@ -87,7 +116,8 @@ If a few searches find nothing, stop and say you cannot find it among what you c
       messages.push({ role: "assistant", content: r.content });
       if (r.stop_reason !== "tool_use") {
         const answer = r.content.filter((b) => b.type === "text").map((b) => b.text).join("\n").trim();
-        return answer ? { answer, citations: citationsIn(ont.view(viewer), answer), focus: shown, model: true } : null;
+        if (!answer) return null;
+        return { answer, citations: citationsIn(ont.view(viewer), answer), focus: shown.length || !project ? shown : projectFocus(ont, viewer, project), model: true, ...(project && { project }) };
       }
       const results = await Promise.all(r.content.filter((b) => b.type === "tool_use").map(async (b) => {
         if (b.name === "show_on_map") {
@@ -96,7 +126,11 @@ If a few searches find nothing, stop and say you cannot find it among what you c
         }
         const t = mine.find((x) => x.name === b.name);
         if (!t) return { type: "tool_result", tool_use_id: b.id, content: `Unknown tool: ${b.name}`, is_error: true };
-        try { return { type: "tool_result", tool_use_id: b.id, content: JSON.stringify(await t.run(b.input, viewer)) }; }
+        try {
+          const out = await t.run(b.input, viewer);
+          if (b.name === "project_status" && out?.found) project = { id: out.id, title: out.title, header: out.header, areas: out.areas };
+          return { type: "tool_result", tool_use_id: b.id, content: JSON.stringify(out) };
+        }
         catch (e) { return { type: "tool_result", tool_use_id: b.id, content: `${b.name} failed: ${String(e?.message).slice(0, 200)}`, is_error: true }; }
       }));
       messages.push({ role: "user", content: results });
@@ -105,11 +139,14 @@ If a few searches find nothing, stop and say you cannot find it among what you c
   }
 
   async function ask({ question, viewer }) {
+    let r = null;
     if (client || llmEnabled()) {
-      try { const r = await claudeBrief(question, viewer); if (r) return r; }
-      catch (e) { console.warn(`[site-agent] ${e?.status ? `API error ${e.status}` : e?.message}; using the alert brief`); }
+      try { r = await claudeBrief(question, viewer); }
+      catch (e) { console.warn(`[site-agent] ${e?.status ? `API error ${e.status}` : e?.message}; using the fallback brief`); }
     }
-    return alertBrief(ont, tel, viewer, question);
+    r ??= projectBrief(ont, tel, viewer, question) || alertBrief(ont, tel, viewer, question);
+    if (r.project) r.changed = writeSnapshot(ont, viewer, r.project, { brief: r.answer, citations: r.citations, model: r.model, at: tel.now() }).changed;
+    return r;
   }
 
   return { ask };

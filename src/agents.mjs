@@ -85,7 +85,7 @@ const weekOf = (iso) => Math.floor((Date.parse(String(iso).slice(0, 10)) / 86400
 const statusText = (p, st) => `${p.title}: ${st.milestones.claimed} of ${st.milestones.total} milestones claimed, ${st.milestones.confirmed} confirmed. Contract end ${p.end}. ${st.openIssues} open issue(s). Last contractor report ${st.lastReportAt ? `${st.daysSinceReport} days ago (${st.lastReportAt.slice(0, 10)})` : "none"}.${st.overdue.length ? ` Overdue: ${st.overdue.map((id) => (p.milestones.find((m) => m.id === id) || {}).title || id).join(", ")}.` : ""}`;
 
 const PROJECT_WORDS = /\b(project|contract|contractor|refurb\w*|milestones?|progress)\b/i;
-const projectsAsked = (ctx, q) => {
+export const projectsAsked = (ctx, q) => {
   const words = String(q).toLowerCase().match(/[a-z]{5,}/g) || [];
   return ctx.list("Project", (p) => String(q).includes(p.id) || (PROJECT_WORDS.test(q) && words.some((w) => p.title.toLowerCase().includes(w))));
 };

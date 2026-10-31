@@ -2,7 +2,10 @@ import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { createSystem } from "../src/system.mjs";
 import { createServer } from "../src/server.mjs";
+import { readFileSync } from "node:fs";
 import { createSiteAgent, plantFocus } from "../src/site-agent.mjs";
+import { createKgTools } from "../src/kg/tools.mjs";
+import { createMemoryBackend } from "../src/kg/backend-memory.mjs";
 
 for (const k of ["ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "WWOS_LLM"]) delete process.env[k]; // the alert brief, never a live call
 
@@ -74,4 +77,81 @@ test("site agent: the last allowed turn forbids tools, so a long search still en
   assert.equal(calls.length, 8);
   assert.ok(calls.slice(0, 7).every((c) => !c.tool_choice));
   assert.equal(calls[7].messages[calls[7].messages.length - 2].content.at(-1).text, "No more tool calls are allowed. Write the brief now from what you have.");
+});
+
+// project questions: the real KG tools over their own system, so snapshot counts stay out of the other tests
+const crosswalk = JSON.parse(readFileSync(new URL("../data/crosswalk.json", import.meta.url), "utf8"));
+const projectAgent = (client = null) => {
+  const s = createSystem({ seed: 7 });
+  const tools = createKgTools({ backend: createMemoryBackend(s), ont: s.ont, tel: s.tel, crosswalk });
+  return { s, agent: createSiteAgent({ ont: s.ont, tel: s.tel, tools, client }), mgr: { id: "P-004", clearance: s.ont.get("P-004").clearance } };
+};
+const CL4 = "how is the clarifier 4 refurbishment project going?";
+
+test("site agent: fallback project brief for 'how is the clarifier 4 refurbishment project going?' has the header line, project, and a linked snapshot", async () => {
+  const { s, agent, mgr } = projectAgent();
+  const r = await agent.ask({ question: CL4, viewer: mgr });
+  assert.equal(r.model, false);
+  assert.equal(r.project.id, "PRJ-CL4");
+  assert.match(r.answer, /^Clarifier 4 scraper drive refurbishment: \d+ confirmed of 6 milestones, \d+ overdue; R \d+ of R 1200000; last report (\d+ days ago|none) \[PRJ-CL4\]/);
+  const [snap] = s.ont.list("ProjectSnapshot");
+  assert.ok(s.ont.links(snap.id, { rel: "ABOUT" }).some((l) => l.to === "PRJ-CL4"));
+  assert.ok(r.focus.includes("PM-RB-A:MCH-CL-4"));
+  assert.deepEqual(r.changed, []);
+});
+
+test("site agent: asking the same project twice gives changed: []", async () => {
+  const { s, agent, mgr } = projectAgent();
+  await agent.ask({ question: CL4, viewer: mgr });
+  assert.deepEqual((await agent.ask({ question: CL4, viewer: mgr })).changed, []);
+  assert.equal(s.ont.list("ProjectSnapshot").length, 2);
+});
+
+test("site agent: a changed area is reported against the newest earlier snapshot", async () => {
+  const { s, agent, mgr } = projectAgent();
+  await agent.ask({ question: CL4, viewer: mgr });
+  const [first] = s.ont.list("ProjectSnapshot");
+  s.ont.upsert({ ...first, areas: { ...first.areas, plant: { ...first.areas.plant, status: first.areas.plant.status === "red" ? "green" : "red" } } });
+  const r = await agent.ask({ question: CL4, viewer: mgr });
+  assert.deepEqual(r.changed.map((c) => c.area), ["plant"]);
+});
+
+test("site agent: a technician never diffs against a manager's snapshot", async () => {
+  const { s, agent, mgr } = projectAgent();
+  const tech = { id: s.ont.list("Person", (p) => p.clearance === "technician")[0].id, clearance: "technician" };
+  await agent.ask({ question: CL4, viewer: mgr });
+  const first = s.ont.list("ProjectSnapshot")[0];
+  s.ont.upsert({ ...first, areas: Object.fromEntries(Object.entries(first.areas).map(([k, a]) => [k, { ...a, status: "red" }])) }); // would differ everywhere
+  const r = await agent.ask({ question: CL4, viewer: tech });
+  assert.deepEqual(r.changed, []);
+  assert.deepEqual(s.ont.view(tech).list("ProjectSnapshot").map((x) => x.minClearance), ["technician"]);
+});
+
+test("site agent: with Claude, project_status is offered, its result fills project, and a snapshot is written", async () => {
+  const calls = [];
+  const replies = [
+    { stop_reason: "tool_use", content: [{ type: "tool_use", id: "t1", name: "project_status", input: { projectId: "PRJ-RES2" } }] },
+    { stop_reason: "tool_use", content: [{ type: "tool_use", id: "t2", name: "show_on_map", input: { ids: ["AST-RES-2"] } }] },
+    { stop_reason: "end_turn", content: [{ type: "text", text: "Compliance is red on the reservoir project [PRJ-RES2]." }] }
+  ];
+  const client = { beta: { messages: { create: async (req) => { calls.push(req); return replies[calls.length - 1]; } } } };
+  const { s, agent, mgr } = projectAgent(client);
+  const r = await agent.ask({ question: "reservoir 2 status?", viewer: mgr });
+  assert.equal(r.model, true);
+  assert.ok(calls[0].tools.some((t) => t.name === "project_status") && !calls[0].tools.some((t) => t.name === "people"));
+  assert.match(calls[0].system, /call project_status and read its latest progress report with documents/);
+  assert.equal(r.project.id, "PRJ-RES2");
+  assert.equal(r.project.areas.compliance.status, "red");
+  const snaps = s.ont.list("ProjectSnapshot");
+  assert.equal(snaps.length, 1);
+  assert.equal(snaps[0].model, true);
+  assert.ok(s.ont.links(snaps[0].id, { rel: "ABOUT" }).some((l) => l.to === "PRJ-RES2"));
+});
+
+test("site agent: a question naming no project returns no project and writes no snapshot", async () => {
+  const { s, agent, mgr } = projectAgent();
+  const r = await agent.ask({ question: "What is going on with the turbidity alert?", viewer: mgr });
+  assert.equal(r.project, undefined);
+  assert.equal(r.changed, undefined);
+  assert.equal(s.ont.list("ProjectSnapshot").length, 0);
 });
