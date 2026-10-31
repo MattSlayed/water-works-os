@@ -22,6 +22,8 @@ import { liveStats } from "./geolive.mjs";
 import { handleMcp } from "./mcp-server.mjs";
 import { createKgTools } from "./kg/tools.mjs";
 import { createSiteAgent } from "./site-agent.mjs";
+import { projectIndicators } from "./project-indicators.mjs";
+import { nOf, changedAreas } from "./project-snapshot.mjs";
 import { createMemoryBackend } from "./kg/backend-memory.mjs";
 import { connectMcp } from "./timebase/mcp.mjs";
 import { pulseToken } from "./timebase/pulse.mjs";
@@ -539,6 +541,22 @@ export function createServer(sys, { kgTools = createKgTools({ backend: createMem
       for (const c of view.list("Correction", (x) => x.scope && [p.clientOrgId, p.contractorOrgId].includes(x.scope.orgId))) cors.set(c.id, c);
       return { project: p, status: projectStatus(p, ont.list("ProgressClaim"), ont.list("Issue"), tel.now()), claims: view.list("ProgressClaim", (c) => c.projectId === id), issues: view.list("Issue", (i) => i.projectId === id), channel: view.get(p.channelId),
         corrections: withInherited([...cors.values()], id) };
+    }],
+    ["GET", /^\/api\/projects\/([^/]+)\/indicators$/, (v, m) => {
+      const r = projectIndicators(ont, tel, v, decodeURIComponent(m[1]));
+      if (!r) throw new HttpError(404, "not found");
+      return r;
+    }],
+    ["GET", /^\/api\/projects\/([^/]+)\/snapshots$/, (v, m) => {
+      const view = ont.view(v), id = decodeURIComponent(m[1]);
+      if (view.get(id)?.type !== "Project") throw new HttpError(404, "not found");
+      // each row is diffed against the previous snapshot of its own clearance, as the agent does when it writes one
+      const last = {};
+      return view.list("ProjectSnapshot", (s) => s.projectId === id).sort((a, b) => nOf(a) - nOf(b)).map((s) => {
+        const row = { id: s.id, at: s.at, minClearance: s.minClearance, model: s.model, areas: Object.fromEntries(Object.entries(s.areas).map(([k, a]) => [k, { status: a.status }])), changed: changedAreas(last[s.minClearance], s.areas) };
+        last[s.minClearance] = s;
+        return row;
+      }).reverse();
     }],
     ["GET", /^\/api\/performance\/person\/([^/]+)$/, (v, m) => {
       const id = decodeURIComponent(m[1]), p = ont.get(id);

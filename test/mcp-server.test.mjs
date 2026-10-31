@@ -25,7 +25,7 @@ const call = async (name, args, opts) => {
   return { ...r, result: r.json?.result, data: r.json?.result && JSON.parse(r.json.result.content[0].text) };
 };
 
-test("initialize then list: a technician gets 11 tools and no cypher", async () => {
+test("initialize then list: a technician gets 12 tools and no cypher", async () => {
   const init = await rpc({ id: 1, method: "initialize", params: { protocolVersion: "2025-03-26", capabilities: {}, clientInfo: { name: "t", version: "0" } } });
   assert.equal(init.status, 200);
   assert.ok(init.headers.get("mcp-session-id"));
@@ -37,7 +37,7 @@ test("initialize then list: a technician gets 11 tools and no cypher", async () 
   assert.equal(note.json, null);
   const list = await rpc({ id: 2, method: "tools/list" });
   const names = list.json.result.tools.map((t) => t.name);
-  assert.equal(names.length, 11);
+  assert.equal(names.length, 12);
   assert.ok(!names.includes("cypher"));
   for (const t of list.json.result.tools) assert.ok(t.description && t.inputSchema.type === "object");
 });

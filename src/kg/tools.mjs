@@ -5,6 +5,7 @@ import { rank } from "../ontology.mjs";
 import { graphFrom, upstreamOf, downstreamOf, processPaths, travelWindow } from "../functions.mjs";
 import { currentPlantModel } from "../plant.mjs";
 import { lintCypher } from "./cypher-lint.mjs";
+import { projectIndicators } from "../project-indicators.mjs";
 
 const EVENT_KINDS = ["Alert", "WorkOrder", "Sample"];
 // POPIA: people data is reachable only through the people tool; no other tool returns these types or names their ids
@@ -177,13 +178,26 @@ export function createKgTools({ backend, ont, tel, crosswalk = {}, env = process
         const near = new Set([about, view.get(about)?.positionId].filter(Boolean));
         const isAbout = (c) => !about || c.documentId === about || view.links(c.id, { rel: "ABOUT", dir: "out" }).some((l) => near.has(l.to));
         const all = view.list("Chunk"), chunked = new Set(all.map((c) => c.documentId)), heads = (c) => c.heading.toLowerCase().includes(s);
+        const at = (c) => ont.get(c.documentId)?.at || "";
         const chunks = all.filter((c) => isAbout(c) && (!s || `${c.heading}\n${c.text}`.toLowerCase().includes(s)))
-          .sort((a, b) => (s ? heads(b) - heads(a) : 0) || a.order - b.order)
+          // dated documents (progress reports) about one object read newest first
+          .sort((a, b) => (s ? heads(b) - heads(a) : 0) || (about ? at(b).localeCompare(at(a)) : 0) || a.order - b.order)
           .map((c) => ({ id: c.id, type: "Chunk", documentId: c.documentId, heading: c.heading, snippet: c.text.slice(0, 240), cite: c.id }));
         const steps = view.list("Procedure", (p) => !chunked.has(p.documentId) && (!about || about === p.id || about === p.documentId)).flatMap((p) =>
           (p.steps || []).filter((st) => !s || `${p.title}\n${st.text}`.toLowerCase().includes(s))
             .map((st) => ({ id: p.id, type: "ProcedureStep", documentId: p.documentId, step: st.step, snippet: st.text, cite: `${p.id}#${st.id}` })));
         return { items: kept(view, [...chunks, ...steps]) };
+      }
+    },
+    {
+      name: "project_status",
+      description: "A project's four dashboard areas (people, plant and process, procedures, compliance), each with a status, summary and cited checks, rated for the viewer at the plant clock. projectId is an id, tag or exact title; progress reports are under documents.",
+      inputSchema: schema({ projectId: str }, ["projectId"]),
+      async run({ projectId }, viewer) {
+        const view = ont.view(viewer), t = String(projectId ?? "").trim().toLowerCase();
+        const id = resolve(view, projectId) || view.list("Project", (p) => p.title?.toLowerCase() === t)[0]?.id;
+        const r = id && projectIndicators(ont, tel, viewer, id);
+        return r ? { found: true, ...r, cite: id } : { found: false };
       }
     },
     {

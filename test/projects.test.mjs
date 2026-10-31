@@ -23,7 +23,7 @@ test("seed: channels, the CL-4 contract, chat history, past jobs, issues and fie
   const lastContractor = msgs.filter((m) => m.channelId === "CHN-GRP-CL4" && m.from.startsWith("PAR-")).map((m) => m.at).sort().pop();
   assert.equal(lastContractor, "2026-10-10T16:40:00Z");
   assert.equal(ont.list("ProgressClaim").length, 4);
-  const ex = ont.list("Execution");
+  const ex = ont.list("Execution", (e) => !e.projectId);
   assert.equal(ex.length, 12);
   assert.ok(ex.every((e) => e.state === "done" && e.steps.every((s) => s.minutes > 0)));
   assert.ok(new Set(ex.map((e) => e.personId)).size >= 4);

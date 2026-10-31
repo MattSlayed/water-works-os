@@ -163,6 +163,18 @@ as an MCP endpoint at `POST /mcp` on the same port as the console.
   model's 5,814), so Atlas is loaded and published to branch `riverbend` but not read live. The Claude eval run has not
   been executed yet.
 
+### Site Agent and project briefs
+
+- **Site Agent:** on the Plant page (`#/plant`), ask about an incident. It reads live data and documents through the KG tools
+  (the people tool is never offered), briefs with citations, and flies the 3D camera to the place it names. Without an
+  `ANTHROPIC_API_KEY` it briefs from the best-matching active alert. `npm start` loads `.env` when present.
+- **Project briefs:** ask "how is the clarifier 4 refurbishment project going?" The brief comes with four expandable
+  indicators, **People**, **Plant & Process**, **Procedures** and **Compliance**, each green, amber, red or none. They are
+  computed from the KG for the asker's clearance; People shows roles and counts only, never names. The same cards are on
+  each project page (`#/project/<id>`), with `GET /api/projects/:id/indicators` and `/api/projects/:id/snapshots`.
+- **Snapshots:** every project answer is written back into the KG as a `ProjectSnapshot` linked ABOUT the project. It is
+  stored with the asker's clearance, not their identity, and the next answer says what changed since.
+
 ## Not in this build
 
 - Real connectors (OPC UA/MQTT gateway, ERP/CMMS, LIMS, HR, GIS, RTLS, WhatsApp Business API, Microsoft 365, Google
