@@ -229,3 +229,12 @@ test("createKgTools reads WWOS_KG_CYPHER from the env it is given, not process.e
   assert.equal(mk({ WWOS_KG_CYPHER: "1" }), true);
   assert.equal(mk({ WWOS_KG_CYPHER: "0" }), false);
 });
+
+test("kg tools: a person id inside free text (a Permit Guard alert title) is withheld; the rest of the title stays", async () => {
+  const s = createSystem({ seed: 7 }), mgr2 = { id: "P-001", clearance: "manager" };
+  s.runtime.run("Permit Guard", { actingUser: mgr2, chain: false });
+  const ts = createKgTools({ backend: createMemoryBackend(s), ont: s.ont, tel: s.tel, crosswalk });
+  const titles = (await run("events", { scope: "Z06", kinds: ["Alert"] }, mgr2, ts)).items.map((i) => i.title);
+  assert.ok(titles.includes("[withheld] in Disinfection without gas-safety:chlorine"), titles.join(" | "));
+  assert.ok(!titles.some((t) => /\bP-\d+/.test(t)));
+});

@@ -9,7 +9,7 @@
   },
   "scripts": {
     "test": "node --test \"test/*.test.mjs\"",
-    "start": "node src/server.mjs"
+    "start": "node --env-file-if-exists=.env src/server.mjs"
   },
   "optionalDependencies": {
     "@anthropic-ai/sdk": "^1.1.0"

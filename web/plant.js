@@ -628,13 +628,16 @@ export function mountPlant(container, data, { mode = "physical", quality = "medi
       select(e.item.id, { silent: true });
       return true;
     },
-    // Fit the camera to a set of items (an explicit request, like flyTo).
-    frame(ids = []) {
+    // Fit the camera to a set of items (an explicit request, like flyTo). min widens the shot; tilt (radians above the
+    // horizon) looks down from the current bearing, so a small item is seen with its surroundings and not behind them.
+    frame(ids = [], { min = 20, tilt = null } = {}) {
       const box = new THREE.Box3();
       for (const id of ids) { const e = byId.get(id); if (e) box.expandByObject(e.proxy); }
       if (box.isEmpty()) return false;
-      const c = box.getCenter(new THREE.Vector3()), r = Math.max(20, box.getSize(new THREE.Vector3()).length() * 0.75);
-      const dir = camera.position.clone().sub(controls.target).normalize(), tp = c.clone().add(dir.multiplyScalar(r / Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) * 0.6));
+      const c = box.getCenter(new THREE.Vector3()), r = Math.max(min, box.getSize(new THREE.Vector3()).length() * 0.75);
+      const dir = camera.position.clone().sub(controls.target).normalize();
+      if (tilt != null) { const flat = Math.hypot(dir.x, dir.z) || 1; dir.set((dir.x / flat) * Math.cos(tilt), Math.sin(tilt), (dir.z / flat) * Math.cos(tilt)); }
+      const tp = c.clone().add(dir.multiplyScalar(r / Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) * 0.6));
       tp.y = Math.max(tp.y, c.y + r * 0.5);
       if (reduced) { controls.target.copy(c); camera.position.copy(tp); invalidate(); } else fly = { t0: performance.now(), ms: 700, ft: controls.target.clone(), fp: camera.position.clone(), tt: c, tp };
       return true;

@@ -21,6 +21,7 @@ import { sceneGrid } from "./scenes.mjs";
 import { liveStats } from "./geolive.mjs";
 import { handleMcp } from "./mcp-server.mjs";
 import { createKgTools } from "./kg/tools.mjs";
+import { createSiteAgent } from "./site-agent.mjs";
 import { createMemoryBackend } from "./kg/backend-memory.mjs";
 import { connectMcp } from "./timebase/mcp.mjs";
 import { pulseToken } from "./timebase/pulse.mjs";
@@ -89,6 +90,7 @@ export async function kgToolsFor(sys, env = process.env, { fallback = true } = {
 
 export function createServer(sys, { kgTools = createKgTools({ backend: createMemoryBackend(sys), ont: sys.ont, tel: sys.tel, crosswalk: loadCrosswalk() }) } = {}) {
   const { ont, tel, actions, runtime, copilot, audit, channels } = sys;
+  const siteAgent = createSiteAgent({ ont, tel, tools: kgTools });
   const workforce = () => [ont.list("Execution"), ont.list("Procedure"), ont.list("Issue"), ont.list("KnowledgeNote")];
   const clients = new Map(); // response -> viewer
   const muster = { on: false, since: null, checkins: new Set() };
@@ -449,6 +451,11 @@ export function createServer(sys, { kgTools = createKgTools({ backend: createMem
       return r;
     }],
     ["POST", /^\/api\/decisions\/([^/]+)\/reverse$/, (v, m) => { const r = actions.reverse(decodeURIComponent(m[1]), v); if (r.status === "refused") throw new HttpError(409, r.reason); return r; }],
+    ["POST", /^\/api\/plant\/ask$/, async (v, m, url, req) => {
+      const q = (await body(req)).question;
+      if (typeof q !== "string" || !q.trim() || q.length > 500) throw new HttpError(400, "question must be 1-500 characters");
+      return siteAgent.ask({ question: q.trim(), viewer: v });
+    }],
     ["POST", /^\/api\/copilot\/open$/, async (v, m, url, req) => {
       const b = await body(req);
       try { const s = copilot.open({ ...b, user: v }); return { id: s.id, insight: s.insight }; } catch (e) { throw new HttpError(404, e.message); }

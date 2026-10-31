@@ -55,8 +55,11 @@ export function createKgTools({ backend, ont, tel, crosswalk = {}, env = process
   };
   // a string naming an ontology object the viewer may not see, or a person, is dropped at any depth (array entries too)
   const hidden = (view, v) => typeof v === "string" && !!ont.get(v) && !sees(view, v);
+  // and inside free text (an alert title naming a person, say), each such id is replaced, not the whole string dropped
+  const redact = (view, s) => s.replace(/\b[A-Z][A-Z0-9]*(?:-[A-Za-z0-9]+)+\b/g, (t) => (hidden(view, t) ? "[withheld]" : t));
   const scrub = (view, v) => Array.isArray(v) ? v.filter((x) => !hidden(view, x)).map((x) => scrub(view, x))
-    : v && typeof v === "object" ? Object.fromEntries(Object.entries(v).filter(([, x]) => !hidden(view, x)).map(([k, x]) => [k, scrub(view, x)])) : v;
+    : v && typeof v === "object" ? Object.fromEntries(Object.entries(v).filter(([, x]) => !hidden(view, x)).map(([k, x]) => [k, scrub(view, x)]))
+    : typeof v === "string" ? redact(view, v) : v;
 
   // nodes, aliases and machine-in-structure edges from the viewer's released model, process edges from the backend:
   // pruned before the walk, so a hidden node is never walked through (the same graph as /api/plant/graph for that viewer)
