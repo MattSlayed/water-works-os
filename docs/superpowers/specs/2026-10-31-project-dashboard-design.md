@@ -1,6 +1,6 @@
 # Riverbend project dashboard and project briefs
 
-Status: approved in chat 2026-10-31 (Matthew: "merge the Site Agent and go ahead with the project dashboard design? yes").
+Status: built on branch feat/project-dashboard (2026-10-31); live check pending. Approved in chat 2026-10-31 (Matthew: "merge the Site Agent and go ahead with the project dashboard design? yes").
 Builds on the Site Agent (`src/site-agent.mjs`, merged 6277617) and the KG tools (`src/kg/tools.mjs`).
 
 ## Intent
