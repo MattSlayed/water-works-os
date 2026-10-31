@@ -12,6 +12,14 @@ async function api(path, { method = "GET", body } = {}) {
   if (!res.ok) throw Object.assign(new Error(json.error || res.statusText), { status: res.status });
   return json;
 }
+// a KG tool call through /mcp, the door the agents use; the server runs it as the acting person and prunes the result
+async function kg(name, args) {
+  const res = await fetch("/mcp", { method: "POST", headers: { "x-acting-user": state.user, "content-type": "application/json" }, body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name, arguments: args } }) });
+  const j = await res.json().catch(() => ({}));
+  if (j.error || !j.result) throw new Error(j.error?.message || res.statusText);
+  if (j.result.isError) throw new Error(j.result.content[0].text);
+  return JSON.parse(j.result.content[0].text);
+}
 function toast(msg) {
   const t = $("#toast");
   t.textContent = msg;
@@ -328,25 +336,104 @@ const views = {
     const [d, m] = await Promise.all([api("/api/plant"), api("/api/map")]);
     state.plant?.dispose();
     state.plant = null;
+    state.bloom?.dispose();
+    state.bloom = null;
     state.plantRev = d.model.id;
+    const enc = encodeURIComponent;
+    const contact = d.structures.find((s) => s.kind === "contact_tank") || d.structures[d.structures.length - 1];
+    const chips = ["chlorine", contact && `upstream of ${contact.tag}`, "neighbours of SITE-RB", "turbidity"].filter(Boolean);
     view.innerHTML = `<div class="row"><div><h2>03 / the works as drawn · plant model rev ${esc(d.model.rev)} · released ${time(d.model.release && d.model.release.at)} by ${esc(d.model.release && d.model.release.by)}</h2><h1>Plant</h1></div>
-        <div class="btns"><a class="btn" href="#/plantmodels">Revisions and review</a><a class="btn" href="#/map">Site map</a></div></div>
-      <div class="plantwrap"><section class="panel stage3d plant" aria-label="3D plant"><div class="disclose badge">${esc(d.model.disclosure)}</div>
+        <div class="btns"><span class="btns ptabs" role="tablist" aria-label="Plant view"><button class="btn" role="tab" data-ptab="graph" aria-controls="pgraph">Graph</button><button class="btn" role="tab" data-ptab="3d" aria-controls="p3d">3D</button></span><a class="btn" href="#/plantmodels">Revisions and review</a><a class="btn" href="#/map">Site map</a></div></div>
+      <div class="plantwrap"><section class="panel bloom" id="pgraph" role="tabpanel" aria-label="Plant knowledge graph">
+          <form id="bq" class="bloombar"><label for="bqi">Query the graph</label><input id="bqi" maxlength="200" autocomplete="off" placeholder="chlorine · upstream of 16UGH01 · neighbours of SITE-RB"><button class="btn primary">Run</button><button type="button" class="btn" id="breset">Reset</button></form>
+          <div class="bloomchips">${chips.map((c) => `<button type="button" class="chip" data-bchip="${esc(c)}">${esc(c)}</button>`).join("")}</div>
+          <p class="bstat" id="bstat" aria-live="polite"></p><div class="bloomlegend" id="blegend" aria-label="Node types"></div></section>
+        <section class="panel stage3d plant" id="p3d" role="tabpanel" aria-label="3D plant" hidden><div class="disclose badge">${esc(d.model.disclosure)}</div>
         <div class="plantbar" role="group" aria-label="View"><button class="btn" data-pmode="physical">Physical</button><button class="btn" data-pmode="blueprint">Blueprint</button><button class="btn" data-popt="xray">X-ray</button><button class="btn" data-popt="skeletal">Skeletal map</button><button class="btn" id="pclear">Clear</button></div></section>
         <aside class="side"><section class="panel" id="pagent"><h2>Site Agent</h2>
           <form id="pask" class="btns" style="flex-wrap:nowrap"><label class="sr" for="pq">Ask the Site Agent</label><input id="pq" maxlength="500" placeholder="What is happening with the turbidity alert?" style="flex:1;background:var(--bg2);border:1px solid var(--line);padding:8px"><button class="btn primary">Ask</button></form>
           <div id="pans" aria-live="polite"></div></section>
-        <section class="panel" id="psel" aria-live="polite">${plantSide(null)}</section></aside></div>`;
-    const stage = $(".stage3d.plant"), side = $("#psel");
+        <section class="panel" id="psel" aria-live="polite"></section></aside></div>`;
+    const stage = $(".stage3d.plant"), graphEl = $("#pgraph"), side = $("#psel"), stageHtml = stage.innerHTML;
+    let tab = null;
+
+    // ---- graph (Bloom): the KG the agents query, through the same MCP door, as the acting person ----
+    const { mountBloom, plantGraph, parseQuery, colourOf } = await import("/bloom.js");
+    const pg = plantGraph(d), plantIds = new Set([...pg.nodes.map((n) => n.id), ...pg.alias.keys()]);
+    const stat = (html) => { $("#bstat").innerHTML = html; };
+    const legend = () => { $("#blegend").innerHTML = [...state.bloom.types].sort().map((t) => `<span><i style="background:${colourOf(t)}">${esc(t[0])}</i>${esc(t)}</span>`).join(""); };
+    const edgeOf = (c, x) => (x.dir === "out" ? { from: c, to: x.id, rel: x.rel } : { from: x.id, to: c, rel: x.rel });
+    const kindOf = (x) => (x.includes(":STR-") ? "Structure" : x.startsWith("POS-") ? "Position" : x.includes(":VLV-") ? "Valve" : x.includes(":SPT-") ? "SamplePoint" : null);
+    const via = (tool, args) => `<span class="mono">${esc(tool)} ${esc(JSON.stringify(args))}</span>`;
+    const bloomSide = (n) => {
+      if (!n) { side.innerHTML = `<h2>Graph</h2><p class="meta">The plant as the knowledge graph holds it: structures and their machines, joined by process lines. Click a node to inspect it; double-click it, or press E, to expand its links. Every query runs through the same KG tools the agents use, as you, so it shows only what your clearance allows.</p>`; return; }
+      const plant = plantIds.has(n.id);
+      side.innerHTML = `<h2>${esc(n.type)}</h2><h1 style="font-size:20px;margin:2px 0">${esc(n.label)}</h1><p class="meta mono">${esc(n.id)}${n.sub ? ` · ${esc(n.sub)}` : ""}</p>
+        <div class="btns"><button class="btn primary" data-bx="neighbors">Expand</button>${plant ? `<button class="btn" data-bx="upstream">Upstream</button><button class="btn" data-bx="downstream">Downstream</button><button class="btn" id="b3d">Show in 3D</button>` : ""}<a class="btn" href="#/object/${enc(n.id)}">Open record</a></div>`;
+      side.querySelectorAll("[data-bx]").forEach((b) => b.addEventListener("click", () => run(b.dataset.bx, { id: n.id })));
+      $("#b3d")?.addEventListener("click", async () => { await setTab("3d"); state.plant?.flyTo(n.id); });
+    };
+    const results = (title, items) => {
+      side.innerHTML = `<h2>${esc(title)}</h2><ul class="list">${items.slice(0, 60).map((i) => `<li><button class="linkbtn" data-bsel="${esc(i.id)}"><i class="dot" style="background:${colourOf(i.type || "")}"></i>${esc(i.label || i.id)}</button> <span class="meta">${esc(i.type || "")}${i.rel ? ` · ${esc(i.rel)}` : ""}</span></li>`).join("")}</ul>`;
+      side.querySelectorAll("[data-bsel]").forEach((b) => b.addEventListener("click", () => { state.bloom.select(b.dataset.bsel); state.bloom.frame([b.dataset.bsel]); }));
+    };
+    async function run(tool, args) {
+      stat(`Running ${via(tool, args)}…`);
+      try {
+        if (tool === "search") {
+          const items = (await kg("search", args)).items || [];
+          if (!items.length) { state.bloom.highlight(null); return stat(`${via(tool, args)} → nothing you can see matches.`); }
+          const ids = state.bloom.add(items.map(({ id, type, label }) => ({ id, type, label })));
+          // join each hit to what is already drawn, so a result lands in context rather than floating
+          const nb = await Promise.all(items.slice(0, 8).map((i) => kg("neighbors", { id: i.id }).catch(() => ({ items: [] }))));
+          state.bloom.add([], nb.flatMap((r, k) => (r.items || []).filter((x) => state.bloom.has(x.id)).map((x) => edgeOf(items[k].id, x))));
+          state.bloom.highlight(ids); state.bloom.frame(ids); results(`Search: ${args.q}`, items);
+          stat(`${via(tool, args)} → ${items.length} item(s)`);
+        } else if (tool === "neighbors") {
+          let c = state.bloom.has(args.id) ? state.bloom.resolve(args.id) : null;
+          if (!c) {
+            const g = await kg("get", { id: args.id });
+            if (!g.found) { state.bloom.highlight(null); return stat(`${via(tool, args)} → not found, or not visible to you.`); }
+            c = g.item.id;
+            state.bloom.add([{ id: c, type: g.item.type, label: g.item.tag || g.item.name || g.item.title || c }]);
+          }
+          const all = (await kg("neighbors", { id: c })).items || [], items = all.slice(0, 40);
+          state.bloom.add(items.map(({ id, type, label }) => ({ id, type, label })), items.map((x) => edgeOf(c, x)), c);
+          const ids = [c, ...items.map((x) => x.id)];
+          state.bloom.highlight(ids); state.bloom.frame(ids); state.bloom.select(c);
+          stat(`${via(tool, { id: c })} → ${all.length} link(s)${all.length > items.length ? `, showing ${items.length}` : ""}`);
+        } else {
+          const r = await kg(tool, args);
+          if (r.found === false) { state.bloom.highlight(null); return stat(`${via(tool, args)} → not a plant item you can see.`); }
+          const items = (r.items || []).filter((x) => state.bloom.has(x.id) || kindOf(x.id));
+          state.bloom.add(items.filter((x) => !state.bloom.has(x.id)).map((x) => ({ id: x.id, type: kindOf(x.id), label: x.id.replace(/^PM-RB-[A-Z]:[A-Z]+-/, "") })), [], r.id);
+          const ids = [r.id, ...items.map((x) => x.id)];
+          state.bloom.highlight(ids); state.bloom.frame(ids); state.bloom.select(r.id);
+          stat(`${via(tool, args)} → ${items.length} item(s) along the process lines`);
+        }
+        legend();
+      } catch (e) { stat(`${via(tool, args)} failed: ${esc(e.message)}`); }
+    }
+    state.bloom = mountBloom(graphEl, pg, { onSelect: bloomSide, onExpand: (n) => run("neighbors", { id: n.id }) });
+    legend();
+    const intro = `${pg.nodes.length} nodes from the released plant model, as you see it. Query with a word, <span class="mono">upstream of …</span>, <span class="mono">downstream of …</span> or <span class="mono">neighbours of …</span>.`;
+    stat(intro);
+    $("#bq").addEventListener("submit", (e) => { e.preventDefault(); const p = parseQuery($("#bqi").value); if (p) run(p.tool, p.args); });
+    graphEl.querySelectorAll("[data-bchip]").forEach((b) => b.addEventListener("click", () => { $("#bqi").value = b.dataset.bchip; const p = parseQuery(b.dataset.bchip); run(p.tool, p.args); }));
+    $("#breset").addEventListener("click", () => { state.bloom.reset(); legend(); bloomSide(null); $("#bqi").value = ""; stat(intro); });
+
+    // ---- 3D: mounted only while its tab is open, so the graph view costs no GPU memory ----
+    const weak = innerWidth < 720 || (navigator.deviceMemory && navigator.deviceMemory <= 4); // weak devices and phones open in blueprint (design §5.4)
+    const bar = () => {
+      stage.querySelectorAll("[data-pmode]").forEach((b) => b.setAttribute("aria-pressed", String(state.plant?.mode === b.dataset.pmode)));
+      stage.querySelectorAll("[data-popt]").forEach((b) => { b.hidden = state.plant?.mode !== "blueprint"; });
+    };
     const fallback = (why) => {
       state.plant?.dispose();
       state.plant = null;
       stage.innerHTML = `<div class="disclose badge">${esc(d.model.disclosure)}</div><div class="plantsvg">${plantSvg(d, m)}</div><p class="meta" style="padding:0 10px">${esc(why)} Showing the site plan with structure outlines and line paths; each structure links to its record.</p>`;
       bindMap(stage);
     };
-    const { mountPlant, webglAvailable } = await import("/plant.js");
-    if (!webglAvailable()) return fallback("3D is not available in this browser.");
-    const enc = encodeURIComponent;
     const upstream = async (it) => {
       const u = await api(`/api/plant/graph/upstream/${enc(it.id)}`);
       state.plant.caption(null);
@@ -370,20 +457,31 @@ const views = {
       $("#flyto")?.addEventListener("click", () => state.plant?.flyTo(it.id));
       $("#upstream")?.addEventListener("click", () => upstream(it).catch((e) => toast(e.message)));
     };
-    // weak devices and phones open in blueprint (design §5.4)
-    const weak = innerWidth < 720 || (navigator.deviceMemory && navigator.deviceMemory <= 4);
-    const bar = () => {
-      stage.querySelectorAll("[data-pmode]").forEach((b) => b.setAttribute("aria-pressed", String(state.plant?.mode === b.dataset.pmode)));
-      stage.querySelectorAll("[data-popt]").forEach((b) => { b.hidden = state.plant?.mode !== "blueprint"; });
-    };
-    try {
-      state.plant = mountPlant(stage, { ...d, zones: m.zones }, { mode: weak ? "blueprint" : "physical", onSelect: show, onLost: () => fallback("The 3D view lost its graphics context."), onSlow: () => { state.plant?.setMode("blueprint"); bar(); } });
-    } catch (e) { return fallback(`3D could not start (${e.message}).`); }
-    const opts = { xray: false, skeletal: false };
-    stage.querySelectorAll("[data-pmode]").forEach((b) => b.addEventListener("click", () => { state.plant.setMode(b.dataset.pmode); bar(); }));
-    stage.querySelectorAll("[data-popt]").forEach((b) => b.addEventListener("click", () => { opts[b.dataset.popt] = !opts[b.dataset.popt]; state.plant.setOption(b.dataset.popt, opts[b.dataset.popt]); b.setAttribute("aria-pressed", String(opts[b.dataset.popt])); }));
-    $("#pclear").addEventListener("click", () => { state.plant.highlight([]); state.plant.caption(null); $("#upinfo")?.remove(); });
-    // the Site Agent reads live data and documents, briefs, and flies the camera to the place it names
+    async function mount3d() {
+      stage.innerHTML = stageHtml;
+      const { mountPlant, webglAvailable } = await import("/plant.js");
+      if (tab !== "3d") return;
+      if (!webglAvailable()) return fallback("3D is not available in this browser.");
+      try {
+        state.plant = mountPlant(stage, { ...d, zones: m.zones }, { mode: weak ? "blueprint" : "physical", onSelect: show, onLost: () => fallback("The 3D view lost its graphics context."), onSlow: () => { state.plant?.setMode("blueprint"); bar(); } });
+      } catch (e) { return fallback(`3D could not start (${e.message}).`); }
+      const opts = { xray: false, skeletal: false };
+      stage.querySelectorAll("[data-pmode]").forEach((b) => b.addEventListener("click", () => { state.plant.setMode(b.dataset.pmode); bar(); }));
+      stage.querySelectorAll("[data-popt]").forEach((b) => b.addEventListener("click", () => { opts[b.dataset.popt] = !opts[b.dataset.popt]; state.plant.setOption(b.dataset.popt, opts[b.dataset.popt]); b.setAttribute("aria-pressed", String(opts[b.dataset.popt])); }));
+      $("#pclear").addEventListener("click", () => { state.plant.highlight([]); state.plant.caption(null); $("#upinfo")?.remove(); });
+      bar();
+    }
+    async function setTab(t) {
+      if (t === tab) return;
+      tab = t;
+      view.querySelectorAll("[data-ptab]").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.ptab === t)));
+      graphEl.hidden = t !== "graph";
+      stage.hidden = t !== "3d";
+      if (t === "3d") { show(null); await mount3d(); } else { state.plant?.dispose(); state.plant = null; bloomSide(null); }
+    }
+    view.querySelectorAll("[data-ptab]").forEach((b) => b.addEventListener("click", () => setTab(b.dataset.ptab)));
+
+    // the Site Agent reads live data and documents, briefs, and points at the place: the camera in 3D, the nodes in the graph
     $("#pask").addEventListener("submit", async (e) => {
       e.preventDefault();
       const q = $("#pq").value.trim(), btn = $("#pask button"), out = $("#pans");
@@ -395,12 +493,15 @@ const views = {
         out.lastElementChild.outerHTML = `<div class="msg">${esc(r.answer)}${r.citations.length ? `<br><span class="cite">${r.citations.map((c) => esc(c.id)).join(" · ")}</span>` : ""}<br><span class="cite">${r.model ? "written by Claude from live data and documents" : "from the active alert and its live readings"}${r.focus.length ? "" : "; nothing to show on the map"}</span></div>`;
         if (r.project) out.insertAdjacentHTML("beforeend", indicatorCards(r.project, r.changed));
         if (r.focus.length && state.plant) { state.plant.caption(null); state.plant.highlight(r.focus); state.plant.frame(r.focus, { min: 60, tilt: 0.9 }); }
+        if (r.focus.length && tab === "graph") { state.bloom.highlight(r.focus); state.bloom.frame(r.focus); state.bloom.select(r.focus[0]); }
       } catch (err) { out.lastElementChild.remove(); toast(err.message); }
       btn.disabled = false;
     });
-    bar();
+
+    // a deep link to an item (the region map's Enter plant, a fly-to) opens 3D on it; otherwise the graph comes first
+    await setTab(id ? "3d" : "graph");
     const hitOf = (x) => x.id === id || x.positionId === id;
-    if (id && state.plant.flyTo(id)) {
+    if (id && state.plant?.flyTo(id)) {
       const mc = d.machines.find(hitOf);
       show(mc ? { ...mc, kind3d: "machine" } : { ...(d.structures.find(hitOf) || d.valves.find(hitOf)), kind3d: d.structures.some(hitOf) ? "structure" : "valve" });
     }
@@ -1091,7 +1192,7 @@ async function route() {
   const [, name = "console", arg] = location.hash.match(/^#\/([^/]+)\/?(.*)$/) || [];
   document.querySelectorAll("[data-nav]").forEach((a) => a.classList.toggle("active", a.dataset.nav === name || a.dataset.nav === `${name}s` || (name === "plantmodels" && a.dataset.nav === "plant") || (name === "run" && a.dataset.nav === "agents")));
   if (name !== "asset") { state.twin?.dispose(); state.twin = null; state.copilot = null; }
-  if (name !== "plant") { state.plant?.dispose(); state.plant = null; }
+  if (name !== "plant") { state.plant?.dispose(); state.plant = null; state.bloom?.dispose(); state.bloom = null; }
   if (name !== "region") { state.region?.dispose(); state.region = null; state.regionRefresh = null; }
   const fn = views[name];
   if (!fn) { view.innerHTML = `<h1>Not found</h1>`; return; }
