@@ -238,3 +238,36 @@ test("kg tools: a person id inside free text (a Permit Guard alert title) is wit
   assert.ok(titles.includes("[withheld] in Disinfection without gas-safety:chlorine"), titles.join(" | "));
   assert.ok(!titles.some((t) => /\bP-\d+/.test(t)));
 });
+
+test("kg tools: project_status returns the four areas for PRJ-CL4 and found:false for an unknown id", async () => {
+  const r = await run("project_status", { projectId: "PRJ-CL4" }, mgr);
+  assert.equal(r.found, true);
+  assert.equal(r.cite, "PRJ-CL4");
+  assert.deepEqual(Object.keys(r.areas), ["people", "plant", "procedures", "compliance"]);
+  const byTitle = await run("project_status", { projectId: "clarifier 4 SCRAPER drive refurbishment" }, mgr);
+  assert.equal(byTitle.cite, "PRJ-CL4", "an exact title resolves, case-insensitively");
+  assert.deepEqual(await run("project_status", { projectId: "PRJ-NOPE" }, mgr), { found: false });
+  assert.ok(!toolsFor(tools, tech).every((t) => t.name !== "project_status"), "no minClearance");
+});
+
+test("kg tools: documents with aboutId PRJ-RES2 returns its progress-report chunks, newest report first", async () => {
+  const ids = (await run("documents", { aboutId: "PRJ-RES2" }, mgr)).items.map((i) => i.id).filter((id) => id.startsWith("DOC-PR-PRJ-RES2-"));
+  assert.equal(ids.length, 12);
+  assert.deepEqual(ids, [...ids].sort((a, b) => b.slice(0, 25).localeCompare(a.slice(0, 25)) || a.localeCompare(b)));
+  assert.ok(ids[0].startsWith("DOC-PR-PRJ-RES2-20261009"));
+});
+
+test("kg tools: a technician's project_status and documents for PRJ-PS2 hold nothing from Z15", async () => {
+  const out = [await run("project_status", { projectId: "PRJ-PS2" }, tech), await run("documents", { aboutId: "PRJ-PS2" }, tech), await run("documents", { q: "MCC" }, tech)];
+  const cites = JSON.stringify(out).match(/"(?:cite|id)":"([^"]+)"/g)?.map((m) => m.slice(m.indexOf(":") + 2, -1)) ?? [];
+  for (const id of cites) assert.notEqual(sys.ont.view(sup).zoneOf(id), "Z15", id);
+  assert.equal(out[0].header.lastReportAt, null, "the Z15 progress reports do not reach a technician's header");
+  assert.deepEqual(out[1], { items: [] });
+  assert.ok((await run("documents", { aboutId: "PRJ-PS2" }, sup)).items.length > 0, "a supervisor does see them");
+});
+
+test("kg tools: project_status output holds no person id at any depth", async () => {
+  const projects = sys.ont.list("Project", (p) => p.state !== "closed");
+  assert.ok(projects.length >= 7);
+  for (const p of projects) assert.doesNotMatch(JSON.stringify(await run("project_status", { projectId: p.id }, mgr)), /\bP-\d+\b/, p.id);
+});
