@@ -174,6 +174,11 @@ as an MCP endpoint at `POST /mcp` on the same port as the console.
   each project page (`#/project/<id>`), with `GET /api/projects/:id/indicators` and `/api/projects/:id/snapshots`.
 - **Snapshots:** every project answer is written back into the KG as a `ProjectSnapshot` linked ABOUT the project. It is
   stored with the asker's clearance, not their identity, and the next answer says what changed since.
+- **Plant graph:** the Plant page opens on **Graph**, a Bloom-style view of the plant as the KG holds it (structures,
+  their machine positions, process lines), with **3D** one tab over (`#/plant/<id>` still opens 3D on that item).
+  Queries run through `/mcp` with the same KG tools the agents use, as the acting person: a word searches;
+  `upstream of …`, `downstream of …` and `neighbours of …` walk the graph; double-click or E expands a node. The Site
+  Agent's answers highlight their place in whichever view is open.
 
 ## Not in this build
 

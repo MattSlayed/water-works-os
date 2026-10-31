@@ -251,3 +251,41 @@ main:focus { outline: none; }
 .sw.green { color: var(--green); } .sw.amber { color: var(--amber); } .sw.red { color: var(--red); }
 .pchanged { color: var(--amber); } .snap { font-size: 12px; color: var(--text); }
 .icard .cite { font: 11px var(--mono); color: var(--violet); }
+
+/* Plant graph (Bloom): the KG as nodes and links; colour by type, always with a letter and the legend */
+.plantwrap > [hidden] { display: none !important; }
+.ptabs [aria-selected="true"] { border-color: var(--teal); color: var(--ink); }
+.bloom { position: relative; padding: 0; overflow: hidden; display: flex; flex-direction: column; }
+.bloombar { display: flex; gap: 8px; align-items: center; padding: 10px 12px 6px; }
+.bloombar label { font: 600 11px var(--mono); color: var(--muted); text-transform: uppercase; letter-spacing: .05em; white-space: nowrap; }
+.bloombar input { flex: 1; min-width: 0; background: var(--bg2); border: 1px solid var(--line); padding: 8px 10px; min-height: 40px; }
+.bloomchips { display: flex; gap: 6px; flex-wrap: wrap; padding: 0 12px 6px; }
+.bloomchips .chip { cursor: pointer; background: none; text-transform: none; font-size: 11px; padding: 4px 10px; }
+.bloomchips .chip:hover { color: var(--ink); border-color: var(--teal); }
+.bstat { margin: 0; padding: 0 12px 6px; font-size: 12px; color: var(--muted); min-height: 18px; }
+.bstat .mono { color: var(--violet); }
+.bloomsvg { flex: 1; min-height: 0; width: 100%; display: block; cursor: grab; touch-action: none; user-select: none; border-top: 1px solid var(--line); }
+.bloomsvg:active { cursor: grabbing; }
+.bloomlegend { position: absolute; left: 10px; bottom: 10px; display: flex; flex-wrap: wrap; gap: 4px 10px; max-width: calc(100% - 20px); padding: 6px 8px; background: rgba(10, 23, 42, 0.82); border: 1px solid var(--line); font-size: 11px; color: var(--text); pointer-events: none; }
+.bloomlegend span { display: inline-flex; align-items: center; gap: 4px; }
+.bloomlegend i { width: 14px; height: 14px; border-radius: 50%; display: inline-grid; place-items: center; font: 700 9px var(--mono); font-style: normal; color: #0a172a; }
+.bn { cursor: pointer; transition: opacity .2s var(--ease); }
+.bn circle { stroke: #0a172a; stroke-width: 2; transition: stroke .15s var(--ease); }
+.bn:hover circle, .bn:focus-visible circle { stroke: var(--ink); stroke-width: 2.5; }
+.bn:focus { outline: none; }
+.bn.hit circle { stroke: var(--amber); stroke-width: 3; }
+.bn.sel circle { stroke: var(--ink); stroke-width: 4; }
+.bn.dim { opacity: .22; }
+.bn .bl { font: 700 10px var(--mono); fill: #0a172a; pointer-events: none; }
+.bn .bt { font: 500 11px var(--font); fill: var(--text); paint-order: stroke; stroke: #0a172a; stroke-width: 3px; stroke-linejoin: round; pointer-events: none; }
+.bn.hit .bt, .bn.sel .bt { fill: var(--ink); font-weight: 700; }
+.be { stroke: rgba(148, 163, 184, 0.45); stroke-width: 1.4; vector-effect: non-scaling-stroke; transition: opacity .2s var(--ease); }
+.be.recycle { stroke-dasharray: 5 4; }
+.be.on { stroke: var(--amber); stroke-width: 2.2; }
+.be.dim { opacity: .15; }
+.bel { font-family: var(--mono); font-weight: 600; font-size: calc(10px * var(--z, 1)); fill: var(--amber); opacity: 0; pointer-events: none; paint-order: stroke; stroke: #0a172a; stroke-width: calc(3px * var(--z, 1)); }
+.bel.on { opacity: 1; }
+.linkbtn { background: none; border: 0; padding: 4px 0; color: var(--teal); cursor: pointer; text-align: left; display: inline-flex; align-items: center; gap: 4px; }
+.linkbtn:hover { text-decoration: underline; }
+@media (prefers-reduced-motion: reduce) { .bn, .be, .bn circle { transition: none; } }
+@media (max-width: 1100px) { .bloom { height: 520px; } }

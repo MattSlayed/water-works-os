@@ -271,3 +271,11 @@ test("kg tools: project_status output holds no person id at any depth", async ()
   assert.ok(projects.length >= 7);
   for (const p of projects) assert.doesNotMatch(JSON.stringify(await run("project_status", { projectId: p.id }, mgr)), /\bP-\d+\b/, p.id);
 });
+
+test("neighbors carries each item's type and label, so the Bloom view draws a hop in one call", async () => {
+  const zones = (await run("neighbors", { id: "SITE-RB", rel: "HAS_ZONE" }, tech)).items;
+  const z1 = zones.find((z) => z.id === "Z01");
+  assert.equal(z1.type, "Zone");
+  assert.equal(z1.label, sys.ont.get("Z01").name ?? "Z01");
+  assert.ok(!zones.some((z) => z.id === "Z06"), "a technician still never sees Z06");
+});

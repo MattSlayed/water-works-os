@@ -5,6 +5,7 @@ import { rank } from "../ontology.mjs";
 import { graphFrom, upstreamOf, downstreamOf, processPaths, travelWindow } from "../functions.mjs";
 import { currentPlantModel } from "../plant.mjs";
 import { lintCypher } from "./cypher-lint.mjs";
+import { labelOf } from "./backend-memory.mjs";
 import { projectIndicators } from "../project-indicators.mjs";
 
 const EVENT_KINDS = ["Alert", "WorkOrder", "Sample"];
@@ -117,12 +118,13 @@ export function createKgTools({ backend, ont, tel, crosswalk = {}, env = process
     },
     {
       name: "neighbors",
-      description: "The objects linked to an object, with the relationship and its direction.",
+      description: "The objects linked to an object, with the relationship, its direction, and each one's type and label.",
       inputSchema: schema({ id: str, rel: str }, ["id"]),
       async run({ id, rel }, viewer) {
         const view = ont.view(viewer), rid = resolve(view, id);
         if (!rid) return { found: false, items: [] };
-        return { items: kept(view, await backend.neighbors(rid, rel)).map((n) => ({ ...n, cite: n.id })) };
+        // type and label from WaterOS, so a reader can draw the hop without a get per neighbour
+        return { items: kept(view, await backend.neighbors(rid, rel)).map((n) => { const o = view.get(n.id); return { ...n, type: o.type, label: labelOf(o), cite: n.id }; }) };
       }
     },
     walkTool("upstream", upstreamOf),
