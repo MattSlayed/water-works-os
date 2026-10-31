@@ -5,6 +5,7 @@ import { PLAN } from "../layout.mjs";
 import { geometryRefs, ownerResolver } from "./geometry.mjs";
 import { chunkByHeading } from "./chunks.mjs";
 import { designBasis } from "./design-basis.mjs";
+import { seedProjects } from "./projects-seed.mjs";
 
 const load = (f) => JSON.parse(readFileSync(new URL(`../../data/riverbend/${f}`, import.meta.url), "utf8"));
 const prov = { source: "SYNTH-3D", source_uri: "data/riverbend/scene-meta.json", source_version: "v1", extracted_at: "2026-10-15T00:00:00Z", confidence: 1 };
@@ -34,5 +35,6 @@ export function seedKg(ont) {
   for (const [from, rel, to] of g.links) if (!ont.links(from, { rel, dir: "out" }).some((l) => l.to === to)) ont.link(from, rel, to, undefined, prov);
   for (const [id, anchor] of g.anchors) ont.upsert({ id, type: "Sensor", anchor });
   seedDesignBasis(ont);
+  seedProjects(ont);
   return g;
 }

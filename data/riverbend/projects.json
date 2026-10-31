@@ -1,0 +1,271 @@
+{
+  "procedures": [
+    {
+      "id": "PRC-CONFINED_SPACE-v1", "template": "confined_space", "title": "Confined-space entry: tank, chamber and wet-well work",
+      "steps": [
+        { "text": "Review the risk assessment and entry plan with every member of the entry team", "intrusive": false, "hazard": "Confined space", "requiresPermit": false, "requiresIsolation": false, "expectedMinutes": 20 },
+        { "text": "Isolate and lock out every inlet, outlet and mechanical drive, then verify the isolation", "intrusive": false, "hazard": "LOTO", "requiresPermit": true, "requiresIsolation": true, "expectedMinutes": 30 },
+        { "text": "Ventilate the space and test the atmosphere for oxygen, flammable gas, hydrogen sulphide and carbon monoxide", "intrusive": false, "hazard": "Confined space", "requiresPermit": true, "requiresIsolation": false, "expectedMinutes": 20 },
+        { "text": "Enter with a standby person at the opening and rescue gear in place", "intrusive": true, "hazard": "Confined space", "requiresPermit": true, "requiresIsolation": true, "expectedMinutes": 15 },
+        { "text": "Carry out the work, re-testing the atmosphere at every break", "intrusive": true, "hazard": "Confined space", "requiresPermit": true, "requiresIsolation": true, "expectedMinutes": 240 },
+        { "text": "Leave the space, count everyone out and close the entry permit", "intrusive": false, "hazard": "Confined space", "requiresPermit": true, "requiresIsolation": false, "expectedMinutes": 15 }
+      ]
+    },
+    {
+      "id": "PRC-HOT_WORK-v1", "template": "hot_work", "title": "Hot work: cutting, welding and grinding near plant",
+      "steps": [
+        { "text": "Clear the area and remove combustibles within 10 m", "intrusive": false, "hazard": "Hot work", "requiresPermit": false, "requiresIsolation": false, "expectedMinutes": 20 },
+        { "text": "Isolate the equipment and confirm it is de-energised before any work starts", "intrusive": false, "hazard": "LOTO", "requiresPermit": true, "requiresIsolation": true, "expectedMinutes": 30 },
+        { "text": "Confirm the hot-work permit is open and post a fire watch with an extinguisher", "intrusive": false, "hazard": "Hot work", "requiresPermit": true, "requiresIsolation": false, "expectedMinutes": 10 },
+        { "text": "Carry out the hot work", "intrusive": true, "hazard": "Hot work", "requiresPermit": true, "requiresIsolation": true, "expectedMinutes": 120 },
+        { "text": "Keep the fire watch for 60 minutes after the work stops", "intrusive": false, "hazard": "Hot work", "requiresPermit": true, "requiresIsolation": false, "expectedMinutes": 60 },
+        { "text": "Close the permit and record the area as clear", "intrusive": false, "hazard": "Hot work", "requiresPermit": true, "requiresIsolation": false, "expectedMinutes": 10 }
+      ]
+    }
+  ],
+  "projects": {
+    "PRJ-CL4": {
+      "zoneIds": ["Z04"],
+      "requiredCompetence": ["confined-space"],
+      "uses": ["PRC-CLARIFIER_DRIVE-v3"],
+      "crew": [
+        { "personId": "P-042", "role": "contractor", "onSite": true, "holds": [{ "competency": "confined-space", "validTo": "2027-06-30" }] },
+        { "personId": "P-028", "role": "millwright", "holds": [{ "competency": "confined-space", "validTo": "2027-06-30" }] }
+      ],
+      "reports": [
+        { "date": "2026-10-02", "title": "Clarifier 4 refurbishment: progress report, week ending 2 Oct 2026",
+          "summary": "Mobilisation is complete and the clarifier is isolated and drained. The programme is on track.",
+          "progress": "The access scaffold is erected and certified. The scraper drive isolation is applied and the permit to work is open.",
+          "safety": "Site induction done for all contractor staff. No incidents or near misses.",
+          "next": "Remove the scraper arms and the drive head." },
+        { "date": "2026-10-09", "title": "Clarifier 4 refurbishment: progress report, week ending 9 Oct 2026",
+          "summary": "The scraper arms and drive are out. The contractor claimed the milestone on 8 October and the works engineer has not confirmed it yet.",
+          "progress": "Both scraper arms and the drive head are on the laydown area. The gearbox oil seal leaked on removal and is logged as an issue.",
+          "safety": "A lifting plan was written for the drive head. One near miss: an unsecured guard rail on the scaffold, fixed the same day.",
+          "next": "Strip the slewing ring and measure the bearing wear for the replacement order." }
+      ],
+      "permits": [
+        { "kind": "general", "state": "open", "opened": "2026-10-01T07:00:00Z", "expires": "2026-10-31T17:00:00Z", "holder": "millwright",
+          "isolations": [{ "point": "MCC-4 feeder 3 (scraper drive)", "appliedBy": "millwright", "verifiedBy": "shift_supervisor" }] }
+      ],
+      "executions": [
+        { "procedureId": "PRC-CLARIFIER_DRIVE-v3", "by": "millwright", "state": "in-progress", "done": 2, "at": "2026-10-13T09:00:00Z" }
+      ],
+      "requirements": [
+        { "framework": "OHS Act Construction Regulations 2014", "criterion": "Contractor health and safety plan approved before mobilisation", "dueBy": "2026-09-28",
+          "evidence": { "kind": "evidence", "title": "Approved contractor health and safety plan, clarifier 4 refurbishment", "validTo": "2027-03-31", "text": "The contractor health and safety plan was approved by the works safety officer on 25 September 2026, ahead of mobilisation." } },
+        { "framework": "OHS Act Construction Regulations 2014", "criterion": "Scaffold inspected and tagged before use", "dueBy": "2026-10-02",
+          "evidence": { "kind": "certificate", "title": "Scaffold inspection certificate, clarifier 4 access scaffold", "validTo": "2026-11-06", "text": "The access scaffold was inspected by a competent person and tagged green on 1 October 2026." } }
+      ]
+    },
+    "PRJ-RWM": {
+      "zoneIds": ["Z13"],
+      "requiredCompetence": ["trade:fitter", "confined-space"],
+      "uses": ["PRC-CONFINED_SPACE-v1"],
+      "crew": [
+        { "personId": "P-033", "role": "fitter", "holds": [{ "competency": "confined-space", "validTo": "2027-06-30" }] },
+        { "personId": "P-034", "role": "fitter", "holds": [{ "competency": "confined-space", "validTo": "2027-06-30" }] }
+      ],
+      "reports": [
+        { "date": "2026-09-20", "title": "Raw-water main replacement: progress report, week ending 20 Sep 2026",
+          "summary": "The bypass barrel is in and being pressure tested. Work is on programme.",
+          "progress": "The bypass barrel is laid between the two valve chambers and the tie-ins are made.",
+          "safety": "Trench shoring checked daily. No incidents.",
+          "next": "Commission the bypass barrel and swing the flow across." },
+        { "date": "2026-09-27", "title": "Raw-water main replacement: progress report, week ending 27 Sep 2026",
+          "summary": "The bypass barrel is commissioned and the main is off. Section 1 excavation has started.",
+          "progress": "Intake is running at 100 ML/d through the bypass barrel. Excavation of section 1 is about half done.",
+          "safety": "A trench wall slipped in loose ground and no one was in the excavation. The shoring was upgraded.",
+          "next": "Complete the section 1 excavation and start laying new pipe." },
+        { "date": "2026-10-04", "title": "Raw-water main replacement: progress report, week ending 4 Oct 2026",
+          "summary": "Section 1 pipe laying is slower than planned because of rock in the trench line.",
+          "progress": "About 60 m of new pipe is laid in section 1. The pressure test is not yet done.",
+          "safety": "No incidents. The valve-chamber entry plan is under review before the chamber work starts.",
+          "next": "Finish laying section 1 and agree the pressure test date." }
+      ],
+      "permits": [],
+      "executions": [
+        { "procedureId": "PRC-CONFINED_SPACE-v1", "by": "fitter", "state": "in-progress", "done": 1, "at": "2026-10-02T09:00:00Z" }
+      ],
+      "requirements": [
+        { "framework": "OHS Act Construction Regulations 2014", "criterion": "Excavation and trenching method statement signed off", "dueBy": "2026-09-14",
+          "evidence": { "kind": "evidence", "title": "Signed excavation and trenching method statement, raw-water main", "validTo": "2026-11-20", "text": "The method statement was signed off by the project owner and the contractor before excavation started." } },
+        { "framework": "OHS Act Confined Space Regulations", "criterion": "Entry plan on file for each valve chamber", "dueBy": "2026-10-09",
+          "evidence": { "kind": "evidence", "title": "Valve chamber confined-space entry plan", "validTo": "2026-11-13", "text": "One entry plan covers both valve chambers, with the rescue arrangement and the atmosphere test points." } }
+      ]
+    },
+    "PRJ-RES2": {
+      "zoneIds": ["Z07"],
+      "requiredCompetence": ["confined-space"],
+      "uses": ["PRC-CONFINED_SPACE-v1"],
+      "crew": [
+        { "personId": "P-030", "role": "millwright", "holds": [{ "competency": "confined-space", "validTo": "2027-12-31" }] },
+        { "personId": "P-031", "role": "millwright", "holds": [{ "competency": "confined-space", "validTo": "2026-10-24" }] }
+      ],
+      "reports": [
+        { "date": "2026-09-25", "title": "RES-2 relining: progress report, week ending 25 Sep 2026",
+          "summary": "Cell B is drained, cleaned and signed off for stripping.",
+          "progress": "Sludge and silt are out of cell B. The old lining shows blistering over about a third of the floor.",
+          "safety": "Every entry was made under a confined-space permit with a standby person. No incidents.",
+          "next": "Start stripping the old lining." },
+        { "date": "2026-10-02", "title": "RES-2 relining: progress report, week ending 2 Oct 2026",
+          "summary": "The old lining is stripped, on the milestone date.",
+          "progress": "The floor and walls are stripped to the substrate and blasted. Concrete repairs have started.",
+          "safety": "Dust control at the access hatch was improved after a monitor reading. No injuries.",
+          "next": "Complete the concrete repairs and start laying the new liner." },
+        { "date": "2026-10-09", "title": "RES-2 relining: progress report, week ending 9 Oct 2026",
+          "summary": "Liner installation is under way. One seam test failed and is being re-welded.",
+          "progress": "About 70 percent of the floor liner is down. Panel 14 failed its seam test.",
+          "safety": "The entry permit for cell B was renewed to 13 October. The crew is working long days to recover the programme.",
+          "next": "Re-weld panel 14 and start the wall liner. Renew the entry permit." }
+      ],
+      "permits": [
+        { "kind": "confined-space", "state": "open", "opened": "2026-10-06T06:00:00Z", "expires": "2026-10-13T16:00:00Z", "holder": "millwright",
+          "isolations": [{ "point": "RES-2 cell B inlet valve", "appliedBy": "millwright", "verifiedBy": "shift_supervisor" }] }
+      ],
+      "executions": [
+        { "procedureId": "PRC-CONFINED_SPACE-v1", "by": "millwright", "state": "in-progress", "done": 4, "at": "2026-10-13T20:30:00Z" }
+      ],
+      "requirements": [
+        { "framework": "OHS Act Confined Space Regulations", "criterion": "Atmosphere test instruments calibrated", "dueBy": "2026-09-07",
+          "evidence": { "kind": "certificate", "title": "Calibration certificate, four-gas atmosphere monitor", "validTo": "2026-10-22", "text": "The four-gas monitor was calibrated and bump tested. The certificate runs for one month." } },
+        { "framework": "Blue Drop", "criterion": "Liner and coating products approved for drinking-water contact", "dueBy": "2026-09-21",
+          "evidence": { "kind": "certificate", "title": "Drinking-water contact approval, cell B liner and primer", "validTo": "2028-06-30", "text": "The liner sheet, the primer and the seam sealant carry current drinking-water contact approvals." } }
+      ]
+    },
+    "PRJ-FMR": {
+      "zoneIds": ["Z05"],
+      "requiredCompetence": ["trade:fitter"],
+      "uses": ["PRC-BLOWER-v3"],
+      "crew": [
+        { "personId": "P-032", "role": "fitter" },
+        { "personId": "P-033", "role": "fitter" },
+        { "personId": "P-034", "role": "fitter" }
+      ],
+      "reports": [
+        { "date": "2026-10-09", "title": "Filter media replacement: progress report, week ending 9 Oct 2026",
+          "summary": "F01 is out of service and emptied. The old media is being removed.",
+          "progress": "F01 is drained and about half of the old media is out. The underdrain nozzles are inspected.",
+          "safety": "Dust masks are used for all media handling. No incidents.",
+          "next": "Finish removing the old media and check the nozzles." },
+        { "date": "2026-10-13", "title": "Filter media replacement: progress report, week ending 13 Oct 2026",
+          "summary": "F01 is clean and the underdrain is checked. New media is due on site next week.",
+          "progress": "Four underdrain nozzles were replaced. The new media delivery is booked for 16 October.",
+          "safety": "Housekeeping in the filter gallery is good. No incidents.",
+          "next": "Receive and place the new media in F01 and start the backwash commissioning." }
+      ],
+      "permits": [
+        { "kind": "general", "state": "open", "opened": "2026-10-05T07:00:00Z", "expires": "2026-10-19T17:00:00Z", "holder": "fitter",
+          "isolations": [{ "point": "F01 inlet and backwash valves", "appliedBy": "fitter", "verifiedBy": "shift_supervisor" }] }
+      ],
+      "executions": [
+        { "procedureId": "PRC-BLOWER-v3", "by": "fitter", "state": "in-progress", "done": 1, "at": "2026-10-12T10:00:00Z" }
+      ],
+      "requirements": [
+        { "framework": "OHS Act Construction Regulations 2014", "criterion": "Dust exposure control plan for media handling", "dueBy": "2026-10-05",
+          "evidence": { "kind": "evidence", "title": "Dust exposure control plan, filter media handling", "validTo": "2026-11-30", "text": "The plan sets out wet handling, dust masks and a monitoring check each shift." } },
+        { "framework": "Blue Drop", "criterion": "Replacement media certified for drinking-water use", "dueBy": "2026-11-02" }
+      ]
+    },
+    "PRJ-INT": {
+      "zoneIds": ["Z01"],
+      "requiredCompetence": ["trade:millwright"],
+      "uses": ["PRC-CONFINED_SPACE-v1"],
+      "crew": [
+        { "personId": "P-028", "role": "millwright" },
+        { "personId": "P-030", "role": "millwright" }
+      ],
+      "reports": [
+        { "date": "2026-10-02", "title": "Intake screen upgrade: pre-start report, week ending 2 Oct 2026",
+          "summary": "The project is in procurement. Site work starts on 2 November.",
+          "progress": "The screen supplier confirmed the manufacturing slot. The method statement is in draft.",
+          "safety": "No site work yet. The confined-space entry plan for the screen channel is being written.",
+          "next": "Issue the order for the lifting equipment and finish the method statement." },
+        { "date": "2026-10-09", "title": "Intake screen upgrade: pre-start report, week ending 9 Oct 2026",
+          "summary": "Procurement is on track. The first screen ships at the end of October.",
+          "progress": "The lifting equipment is ordered. The construction work notification is being prepared.",
+          "safety": "A pre-start safety meeting is booked for 29 October.",
+          "next": "Submit the construction work notification and the health and safety plan." }
+      ],
+      "permits": [],
+      "executions": [],
+      "requirements": [
+        { "framework": "OHS Act Construction Regulations 2014", "criterion": "Construction work notification submitted", "dueBy": "2026-10-30" },
+        { "framework": "OHS Act Construction Regulations 2014", "criterion": "Contractor health and safety plan approved before mobilisation", "dueBy": "2026-10-30" }
+      ]
+    },
+    "PRJ-SLG": {
+      "zoneIds": ["Z08"],
+      "requiredCompetence": ["trade:fitter", "confined-space"],
+      "uses": ["PRC-CONFINED_SPACE-v1"],
+      "crew": [
+        { "personId": "P-032", "role": "fitter", "holds": [{ "competency": "confined-space", "validTo": "2027-06-30" }] }
+      ],
+      "reports": [
+        { "date": "2026-10-02", "title": "Sludge lagoon desludging: progress report, week ending 2 Oct 2026",
+          "summary": "Lagoon 1 desludging has started on schedule.",
+          "progress": "The first 12 tanker loads left site with manifests. The pump-out rate is steady.",
+          "safety": "The lagoon bank has edge protection. Tanker drivers were inducted. No incidents.",
+          "next": "Complete lagoon 1 and clean the outlet penstock." },
+        { "date": "2026-10-09", "title": "Sludge lagoon desludging: progress report, week ending 9 Oct 2026",
+          "summary": "Lagoon 1 is desludged, one day ahead of the milestone.",
+          "progress": "Lagoon 1 is empty and the floor is cleaned. The outlet penstock entry inspection is done.",
+          "safety": "The penstock chamber was entered under a confined-space permit with atmosphere tests. No incidents.",
+          "next": "Move the pump to lagoon 2." },
+        { "date": "2026-10-13", "title": "Sludge lagoon desludging: progress report, week ending 13 Oct 2026",
+          "summary": "Lagoon 2 desludging is under way and the project is nearly complete.",
+          "progress": "Lagoon 2 is about 60 percent empty. All haul-off manifests are filed.",
+          "safety": "No incidents. Spill kits are stocked on the haul road.",
+          "next": "Finish lagoon 2 and file the haul-off certificates." }
+      ],
+      "permits": [
+        { "kind": "confined-space", "state": "open", "opened": "2026-10-02T07:00:00Z", "expires": "2026-10-23T17:00:00Z", "holder": "fitter",
+          "isolations": [{ "point": "Lagoon 1 outlet penstock", "appliedBy": "fitter", "verifiedBy": "shift_supervisor" }] }
+      ],
+      "executions": [
+        { "procedureId": "PRC-CONFINED_SPACE-v1", "by": "fitter", "state": "done", "done": 6, "at": "2026-10-12T11:00:00Z" }
+      ],
+      "requirements": [
+        { "framework": "NEM:WA waste manifests", "criterion": "A waste manifest for every sludge load hauled off site", "dueBy": "2026-10-13",
+          "evidence": { "kind": "evidence", "title": "Waste manifests, sludge loads 1 to 30", "validTo": "2026-12-31", "text": "Every load has a signed manifest from the works to the licensed disposal site." } },
+        { "framework": "OHS Act Construction Regulations 2014", "criterion": "Edge protection and drowning-risk assessment for the lagoon banks", "dueBy": "2026-10-01",
+          "evidence": { "kind": "evidence", "title": "Lagoon bank edge-protection and drowning-risk assessment", "validTo": "2026-11-30", "text": "The assessment sets out edge protection, lifebuoys and a no-lone-working rule at the banks." } },
+        { "framework": "OHS Act Confined Space Regulations", "criterion": "Entry team trained and every entry logged in the permit register", "dueBy": "2026-10-02",
+          "evidence": { "kind": "evidence", "title": "Confined-space entry register, outlet penstock", "validTo": "2026-12-31", "text": "Each entry to the outlet penstock is logged with the atmosphere test result and the standby person." } }
+      ]
+    },
+    "PRJ-PS2": {
+      "zoneIds": ["Z15", "Z14"],
+      "requiredCompetence": ["trade:electrician"],
+      "uses": ["PRC-HOT_WORK-v1"],
+      "crew": [
+        { "personId": "P-035", "role": "electrician" },
+        { "personId": "P-036", "role": "electrician" }
+      ],
+      "reports": [
+        { "date": "2026-10-12", "title": "PS-2 MCC upgrade: mobilisation report, 12 Oct 2026",
+          "summary": "The electrical crew mobilised and the pump station is running on its standby pump.",
+          "progress": "Temporary supply to the standby pump is in. The MCC room is cleared for the new panels.",
+          "safety": "Lock-out points are tagged. No incidents.",
+          "next": "Strip out the old MCC incomer and prepare the plinth." },
+        { "date": "2026-10-13", "title": "PS-2 MCC upgrade: progress report, 13 Oct 2026",
+          "summary": "Strip-out has started. The new MCC panels are on site.",
+          "progress": "The old incomer cable is disconnected. Cutting of the cable trench cover is under way.",
+          "safety": "Hot work is in progress at the cable trench. The incomer isolation is applied and the supervisor verification is outstanding.",
+          "next": "Verify the incomer isolation and complete the trench works." }
+      ],
+      "permits": [
+        { "kind": "hot-work", "state": "open", "opened": "2026-10-12T07:00:00Z", "expires": "2026-10-30T17:00:00Z", "holder": "electrician",
+          "isolations": [{ "point": "PS-2 MCC incomer", "appliedBy": "electrician", "verifiedBy": null }] }
+      ],
+      "executions": [
+        { "procedureId": "PRC-HOT_WORK-v1", "by": "electrician", "state": "in-progress", "done": 2, "at": "2026-10-13T08:00:00Z" }
+      ],
+      "requirements": [
+        { "framework": "OHS Act Electrical Installation Regulations", "criterion": "Certificate of compliance for the new MCC", "dueBy": "2026-10-30" },
+        { "framework": "OHS Act Construction Regulations 2014", "criterion": "Lock-out and hot-work procedure approved by the engineer", "dueBy": "2026-10-12",
+          "evidence": { "kind": "evidence", "title": "Approved lock-out and hot-work procedure, PS-2 MCC room", "validTo": "2026-10-30", "text": "The engineer approved the lock-out and hot-work procedure for the MCC room on 9 October 2026." } }
+      ]
+    }
+  }
+}

@@ -24,7 +24,7 @@ test("performanceFor a person: their own jobs, issues and notes; nothing for som
   const sys = createSystem({ seed: 7 });
   const who = sys.ont.list("Execution")[0].personId;
   const p = perf(sys, { personId: who });
-  assert.equal(p.executions, sys.ont.list("Execution", (e) => e.personId === who).length);
+  assert.equal(p.executions, sys.ont.list("Execution", (e) => e.personId === who && e.state === "done").length);
   assert.ok(p.steps.every((s) => s.procedureId && s.median > 0));
   assert.equal(p.issuesRaised, sys.ont.list("Issue", (i) => i.raisedBy === who).length);
   assert.equal(p.notesContributed, sys.ont.list("KnowledgeNote", (n) => n.authorId === who).length);

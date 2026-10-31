@@ -85,7 +85,7 @@ test("an agent calling a human-only action is refused and the run still complete
   const run = sys.runtime.run("Rogue", { actingUser: mgr });
   assert.equal(run.status, "completed");
   assert.match(run.refusals[0].reason, /human-only/);
-  assert.equal(sys.ont.list("Permit", (p) => p.id !== "PTW-0412").length, 0);
+  assert.equal(sys.ont.list("Permit", (p) => p.id !== "PTW-0412" && !p.projectId).length, 0);
 });
 
 test("an action outside the agent's manifest is refused", () => {
