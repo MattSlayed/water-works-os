@@ -345,6 +345,12 @@ test("GET /api/projects/:id/snapshots lists newest first and hides a manager sna
   assert.deepEqual(asMgr.map((s) => s.id), [b.id, a.id]);
   assert.deepEqual(Object.keys(asMgr[0].areas), ["people", "plant", "procedures", "compliance"]);
   assert.ok(!("brief" in asMgr[0]));
+  assert.deepEqual(asMgr.map((s) => s.minClearance), [mgr.clearance, "technician"]);
+  assert.deepEqual(asMgr.map((s) => s.changed), [[], []], "the manager row is not diffed against the technician's");
+  const c = writeSnapshot(sys.ont, mgr, { ...ind(mgr), areas: { ...ind(mgr).areas, plant: { status: "red", summary: "x", items: [] } } }, { brief: "mgr2", citations: [], model: null, at: "2026-10-31T09:00:00Z" }).snapshot;
+  const again = (await call("/api/projects/PRJ-SLG/snapshots")).json;
+  assert.deepEqual(again.map((s) => s.id), [c.id, b.id, a.id]);
+  assert.deepEqual(again[0].changed, [{ area: "plant", from: asMgr[0].areas.plant.status, to: "red" }]);
   assert.deepEqual((await call("/api/projects/PRJ-SLG/snapshots", { as: "P-028" })).json.map((s) => s.id), [a.id]);
   assert.equal((await call("/api/projects/PRJ-NOPE/snapshots")).status, 404);
 });

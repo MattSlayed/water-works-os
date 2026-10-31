@@ -23,6 +23,7 @@ import { handleMcp } from "./mcp-server.mjs";
 import { createKgTools } from "./kg/tools.mjs";
 import { createSiteAgent } from "./site-agent.mjs";
 import { projectIndicators } from "./project-indicators.mjs";
+import { nOf, changedAreas } from "./project-snapshot.mjs";
 import { createMemoryBackend } from "./kg/backend-memory.mjs";
 import { connectMcp } from "./timebase/mcp.mjs";
 import { pulseToken } from "./timebase/pulse.mjs";
@@ -549,9 +550,13 @@ export function createServer(sys, { kgTools = createKgTools({ backend: createMem
     ["GET", /^\/api\/projects\/([^/]+)\/snapshots$/, (v, m) => {
       const view = ont.view(v), id = decodeURIComponent(m[1]);
       if (view.get(id)?.type !== "Project") throw new HttpError(404, "not found");
-      // ids end in the per-project count, which orders snapshots even when two share a plant-clock second
-      const n = (s) => Number(s.id.slice(s.id.lastIndexOf("-") + 1));
-      return view.list("ProjectSnapshot", (s) => s.projectId === id).sort((a, b) => n(b) - n(a)).map((s) => ({ id: s.id, at: s.at, model: s.model, areas: Object.fromEntries(Object.entries(s.areas).map(([k, a]) => [k, { status: a.status }])) }));
+      // each row is diffed against the previous snapshot of its own clearance, as the agent does when it writes one
+      const last = {};
+      return view.list("ProjectSnapshot", (s) => s.projectId === id).sort((a, b) => nOf(a) - nOf(b)).map((s) => {
+        const row = { id: s.id, at: s.at, minClearance: s.minClearance, model: s.model, areas: Object.fromEntries(Object.entries(s.areas).map(([k, a]) => [k, { status: a.status }])), changed: changedAreas(last[s.minClearance], s.areas) };
+        last[s.minClearance] = s;
+        return row;
+      }).reverse();
     }],
     ["GET", /^\/api\/performance\/person\/([^/]+)$/, (v, m) => {
       const id = decodeURIComponent(m[1]), p = ont.get(id);

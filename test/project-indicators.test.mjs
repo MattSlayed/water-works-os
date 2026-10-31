@@ -77,7 +77,7 @@ test("indicators: a technician sees PRJ-PS2 with no item citing a Z15 object", (
   const r = projectIndicators(ont, tel, tech, "PRJ-PS2");
   assert.equal(r.id, "PRJ-PS2");
   for (const i of items(r)) assert.notEqual(ont.get(i.cite)?.zoneId, "Z15", i.text);
-  assert.equal(r.areas.compliance.status, "none");
+  assert.equal(r.areas.compliance.status, "green"); // only the Z14 requirement and its evidence are visible; the Z15 certificate is not
   assert.equal(r.areas.procedures.status, "none"); // the execution sits in Z15, which the technician cannot see
   assert.equal(projectIndicators(ont, tel, tech, "PRJ-NOPE"), null);
 });
@@ -87,4 +87,33 @@ test("worst: red beats amber beats green; empty is none", () => {
   assert.equal(worst(["green", "amber"]), "amber");
   assert.equal(worst(["green"]), "green");
   assert.equal(worst([]), "none");
+});
+
+test("indicators: finished work stays green after its permit expires; work in progress on an expired permit is red", () => {
+  const later = { now: () => "2026-10-25T06:00:00Z", latest: (id) => tel.latest(id) }; // SLG's permit ran to 23 Oct
+  assert.equal(projectIndicators(ont, later, mgr, "PRJ-SLG").areas.procedures.status, "green");
+  const res2 = projectIndicators(ont, tel, mgr, "PRJ-RES2").areas.procedures;
+  assert.equal(res2.status, "red");
+  assert.match(res2.items[0].text, /started without/);
+});
+
+test("indicators: a done step needs a permit valid at its own time", () => {
+  const s = createSystem({ seed: 7 });
+  const p = s.ont.list("Permit", (x) => x.projectId === "PRJ-SLG")[0];
+  s.ont.upsert({ ...p, opened: "2026-10-12T09:00:00Z" }); // opened after the early steps were done
+  assert.equal(projectIndicators(s.ont, s.tel, mgr, "PRJ-SLG").areas.procedures.status, "red");
+});
+
+test("indicators: PRJ-PS2 spans Z15 and Z14, a technician sees the Z14 report and requirement but not the Z15 permit", () => {
+  const r = projectIndicators(ont, tel, tech, "PRJ-PS2");
+  assert.notEqual(r.areas.compliance.status, "none");
+  const cites = items(r).map((i) => i.cite);
+  const req = ont.list("Requirement", (q) => q.projectId === "PRJ-PS2" && q.zoneId === "Z14")[0];
+  assert.ok(req && cites.includes(req.id));
+  assert.ok(r.header.lastReportAt, "the Z14 progress reports reach a technician's header");
+  const permit = ont.list("Permit", (p) => p.projectId === "PRJ-PS2")[0];
+  assert.ok(!cites.includes(permit.id));
+  const sc = items(projectIndicators(ont, tel, sup, "PRJ-PS2")).map((i) => i.cite);
+  assert.ok(sc.includes(permit.id) && sc.includes(req.id));
+  assert.ok(sc.includes(ont.list("Requirement", (q) => q.projectId === "PRJ-PS2" && q.zoneId === "Z15")[0].id));
 });

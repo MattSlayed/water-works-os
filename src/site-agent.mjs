@@ -3,7 +3,7 @@
 // asker's tools; without it (or when the call fails) it briefs from the best-matching active alert.
 // Inference is cross-border and disclosed under POPIA s72 (NVT-PROJ-BBR-ARC-001 §4); the people tool is never offered.
 import { MODEL, llmEnabled } from "./llm.mjs";
-import { toolsFor } from "./kg/tools.mjs";
+import { toolsFor, PEOPLE } from "./kg/tools.mjs";
 import { currentPlantModel } from "./plant.mjs";
 import { projectIndicators } from "./project-indicators.mjs";
 import { projectsAsked } from "./agents.mjs";
@@ -34,10 +34,10 @@ export function plantFocus(ont, viewer, ids = []) {
   return [...out];
 }
 
-// [cite] ids in the answer that resolve for the viewer, labelled for the UI
+// [cite] ids in the answer that resolve for the viewer, labelled for the UI; never a person (POPIA)
 function citationsIn(view, text) {
   const ids = [...new Set([...String(text).matchAll(/\[([^\]\s]+)\]/g)].map((x) => x[1]))];
-  return ids.filter((c) => view.get(c.split(/[@#]/)[0])).map((c) => { const o = view.get(c.split(/[@#]/)[0]); return { id: c, label: o.title || o.name || o.heading || o.type }; });
+  return ids.filter((c) => { const o = view.get(c.split(/[@#]/)[0]); return o && !PEOPLE.has(o.type); }).map((c) => { const o = view.get(c.split(/[@#]/)[0]); return { id: c, label: o.title || o.name || o.heading || o.type }; });
 }
 
 // The deterministic brief: the active alert the question best matches (else the most severe, said as such), its live
@@ -74,7 +74,10 @@ function projectFocus(ont, viewer, p) {
 
 // The deterministic project brief: the header line, then one line per area that is not green.
 function projectBrief(ont, tel, viewer, question) {
-  const found = projectsAsked(ont.view(viewer), question).sort((a, b) => String(a.start).localeCompare(String(b.start)));
+  // a closed project is history, not what "how is the project going" means; the best title match leads, an id match beats any
+  const words = [...new Set(String(question).toLowerCase().match(/[a-z]{5,}/g) || [])];
+  const hits = (p) => words.filter((w) => p.title.toLowerCase().includes(w)).length + (String(question).includes(p.id) ? 99 : 0);
+  const found = projectsAsked(ont.view(viewer), question).filter((p) => p.state !== "closed").sort((a, b) => hits(b) - hits(a) || String(a.start).localeCompare(String(b.start)));
   const ind = found[0] && projectIndicators(ont, tel, viewer, found[0].id);
   if (!ind) return null;
   const { milestones: m, spendZar, budgetZar, daysSinceReport } = ind.header, overdue = Array.isArray(m.overdue) ? m.overdue.length : m.overdue;
@@ -145,7 +148,7 @@ If a few searches find nothing, stop and say you cannot find it among what you c
       catch (e) { console.warn(`[site-agent] ${e?.status ? `API error ${e.status}` : e?.message}; using the fallback brief`); }
     }
     r ??= projectBrief(ont, tel, viewer, question) || alertBrief(ont, tel, viewer, question);
-    if (r.project) r.changed = writeSnapshot(ont, viewer, r.project, { brief: r.answer, citations: r.citations, model: r.model, at: tel.now() }).changed;
+    if (r.project) r.changed = writeSnapshot(ont, viewer, r.project, { brief: r.answer, citations: r.citations, model: r.model ? MODEL : null, at: tel.now() }).changed;
     return r;
   }
 

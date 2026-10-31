@@ -29,7 +29,8 @@ export function projectIndicators(ont, tel, viewer, projectId) {
   const seenExecs = execs.filter((e) => zoneSeen(e.zoneId ?? zones[0]));
   const workActive = seenExecs.some((e) => e.steps.some((s) => s.state !== "todo" && s.at && Date.parse(s.at) > Date.parse(now) - DAY));
 
-  // People: the crew by role, against the competence the project requires.
+  // People: the crew by role, against the competence the project requires. The crew links and Competency are read
+  // through `ont`, not the view: they are people data hidden from lower clearances, yet only roles and counts leave here (as with Executions).
   const people = [];
   const crew = ont.links(projectId, { rel: "WORKS_ON", dir: "in" }).filter((l) => l.props?.planned);
   if (crew.length) {
@@ -71,9 +72,13 @@ export function projectIndicators(ont, tel, viewer, projectId) {
     const proc = view.get(l.to), mine = seenExecs.filter((e) => e.procedureId === l.to);
     if (!proc || (execs.some((e) => e.procedureId === l.to) && !mine.length)) continue;
     const doneN = new Set(mine.flatMap((e) => e.steps.filter((s) => s.state === "done").map((s) => s.step)));
+    // a done step is judged at its own time (a permit that has since expired still covered it); one in progress against now
+    const covered = (x, iso) => (x.state === "done" && x.at
+      ? permits.filter((p) => p.opened <= x.at && (!p.expires || p.expires >= x.at) && (p.state === "open" || p.closed >= x.at))
+      : openPermits).some((p) => !iso || verified(p));
     const gaps = proc.steps.filter((s) => {
-      const started = mine.some((e) => e.steps.some((x) => x.step === s.step && x.state !== "todo"));
-      return started && ((s.requiresIsolation || s.requires?.isolation) ? !openPermits.some(verified) : (s.requiresPermit || s.requires?.permit) && !openPermits.length);
+      const iso = s.requiresIsolation || s.requires?.isolation;
+      return (iso || s.requiresPermit || s.requires?.permit) && mine.some((e) => e.steps.some((x) => x.step === s.step && x.state !== "todo" && !covered(x, iso)));
     });
     const left = proc.steps.length - doneN.size;
     const status = gaps.length ? "red" : left && late ? "amber" : "green";

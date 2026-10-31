@@ -43,7 +43,7 @@ export function seedProjects(ont) {
   seedProcedures(ont);
   const cmpId = counter("CMP-PRJ"), prsId = counter("PRS-PRJ"), exeId = counter("EXE-PRJ"), ptwId = counter("PTW-PRJ"), reqId = counter("REQ-PRJ"), evId = counter("DOC-EV");
   for (const [pid, d] of Object.entries(data.projects)) {
-    const project = ont.get(pid), zone = d.zoneIds[0]; // the first zone is where the work happens; everything zone-bound below is stamped with it
+    const project = ont.get(pid), zone = d.zoneIds[0]; // the first zone is where the work happens; everything zone-bound below is stamped with it unless the item names its own `zoneId`
     ont.upsert({ id: pid, type: "Project", requiredCompetence: d.requiredCompetence, zoneIds: d.zoneIds });
     for (const z of d.zoneIds) linkOnce(ont, pid, "LOCATED_IN", z);
     for (const a of [...(project.assetIds || []), ...project.takesOutOfService.map((t) => t.id)]) if (ont.get(a)?.type === "Asset") linkOnce(ont, pid, "TARGETS", a);
@@ -61,7 +61,7 @@ export function seedProjects(ont) {
 
     for (const r of d.reports) {
       const body = [["Summary", r.summary], ["Progress", r.progress], ["Safety", r.safety], ["Next week", r.next]].map(([h, t]) => `## ${h}\n${t}`).join("\n\n");
-      addDocument(ont, { id: `DOC-PR-${pid}-${r.date.replaceAll("-", "")}`, kind: "progress-report", at: `${r.date}T15:00:00Z`, title: r.title, zoneId: zone, body }, pid);
+      addDocument(ont, { id: `DOC-PR-${pid}-${r.date.replaceAll("-", "")}`, kind: "progress-report", at: `${r.date}T15:00:00Z`, title: r.title, zoneId: r.zoneId ?? zone, body }, pid);
     }
 
     // zone-bound, with no assetId: an asset permit would cap agent writes on that asset (permit-holder) and lock its job steps
@@ -74,18 +74,18 @@ export function seedProjects(ont) {
     // It is people data, so only the person and the project owner see it, as with past jobs.
     for (const e of d.executions) {
       const n = ont.get(e.procedureId).steps.length;
-      const steps = Array.from({ length: n }, (_, i) => i < e.done ? { step: i + 1, state: "done", at: new Date(Date.parse(e.at) - (e.done - 1 - i) * 40 * 60000).toISOString() } : { step: i + 1, state: "todo", at: null });
+      const steps = Array.from({ length: n }, (_, i) => i < e.done ? { step: i + 1, state: "done", at: new Date(Date.parse(e.at) - (e.done - 1 - i) * 40 * 60000).toISOString(), minutes: ont.get(e.procedureId).steps[i].expectedMinutes } : { step: i + 1, state: "todo", at: null });
       const personId = who(ont, e.by, d.crew);
       ont.upsert({ id: exeId(), type: "Execution", projectId: pid, procedureId: e.procedureId, personId, state: e.state, steps, audience: [personId, project.ownerId], prov });
     }
 
     for (const q of d.requirements) {
       const id = reqId();
-      ont.upsert({ id, type: "Requirement", framework: q.framework, criterion: q.criterion, projectId: pid, zoneId: zone, dueBy: q.dueBy, prov });
+      ont.upsert({ id, type: "Requirement", framework: q.framework, criterion: q.criterion, projectId: pid, zoneId: q.zoneId ?? zone, dueBy: q.dueBy, prov });
       linkOnce(ont, pid, "REQUIRES", id);
       if (!q.evidence) continue;
       const ev = q.evidence, docId = evId();
-      addDocument(ont, { id: docId, kind: ev.kind, title: ev.title, zoneId: zone, validTo: ev.validTo, body: `## Evidence\n${ev.text}` }, pid);
+      addDocument(ont, { id: docId, kind: ev.kind, title: ev.title, zoneId: q.zoneId ?? zone, validTo: ev.validTo, body: `## Evidence\n${ev.text}` }, pid);
       linkOnce(ont, docId, "EVIDENCES", id);
     }
   }

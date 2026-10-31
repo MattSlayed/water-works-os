@@ -30,13 +30,15 @@ test("projects seed: every active project has a zone, a crew, 2+ progress report
   assert.equal(ont.get("PRJ-H2025-DOSE").zoneIds, undefined);
 });
 
-test("projects seed: report chunks and permits carry the project zone, so a technician cannot see PRJ-PS2's Z15 parts", () => {
+test("projects seed: PRJ-PS2 spans two zones, the permit and certificate stay in Z15 and the reports and one requirement are in Z14", () => {
   const { ont } = createSystem({ seed: 7 });
-  const z15 = (o) => o.zoneId === "Z15";
-  for (const t of ["Permit", "Document", "Chunk"]) assert.ok(ont.list(t, z15).length > 0, `${t} in Z15 exists`);
-  const tech = ont.view({ id: "P-028", clearance: "technician" });
-  for (const t of ["Permit", "Document", "Chunk"]) assert.deepEqual(tech.list(t, z15), [], t);
-  assert.ok(ont.view({ id: "P-008", clearance: "supervisor" }).list("Permit", z15).length > 0);
+  const z15 = (o) => o.zoneId === "Z15", z14 = (o) => o.zoneId === "Z14";
+  for (const t of ["Permit", "Requirement"]) assert.ok(ont.list(t, z15).length > 0, `${t} in Z15 exists`);
+  const tech = ont.view({ id: "P-028", clearance: "technician" }), sup = ont.view({ id: "P-008", clearance: "supervisor" });
+  for (const t of ["Permit", "Document", "Chunk", "Requirement"]) assert.deepEqual(tech.list(t, z15), [], t);
+  assert.ok(tech.list("Document", (d) => z14(d) && d.projectId === "PRJ-PS2").length >= 3, "two reports and the evidence");
+  assert.ok(tech.list("Requirement", (q) => z14(q) && q.projectId === "PRJ-PS2").length === 1 && tech.list("Chunk", z14).length > 0);
+  assert.ok(sup.list("Permit", z15).length > 0);
 });
 
 test("projects seed: running seedProjects twice changes nothing", () => {
@@ -90,6 +92,7 @@ test("projects seed: the seeded outcomes the dashboard demo depends on", () => {
     assert.ok(ev.some((d) => iso(d.validTo) > CLOCK), l.to);
   }
   for (const e of ont.list("Execution", (x) => x.projectId === "PRJ-SLG")) assert.ok(e.state === "done" && e.steps.length === ont.get(e.procedureId).steps.length && e.steps.every((s) => s.state === "done"));
+  assert.ok(ont.list("Execution", (x) => x.projectId === "PRJ-SLG").every((e) => e.steps.every((s) => s.minutes > 0)), "timing for performanceFor");
   // report recency: RWM is quiet (10 days), the rest are within a week
   const last = (id) => Math.max(...ont.list("Document", (d) => d.kind === "progress-report" && d.aboutId === id).map((d) => iso(d.at)));
   assert.equal(Math.round((CLOCK - last("PRJ-RWM")) / DAY), 10);

@@ -257,12 +257,12 @@ test("kg tools: documents with aboutId PRJ-RES2 returns its progress-report chun
   assert.ok(ids[0].startsWith("DOC-PR-PRJ-RES2-20261009"));
 });
 
-test("kg tools: a technician's project_status and documents for PRJ-PS2 hold nothing from Z15", async () => {
+test("kg tools: a technician's project_status and documents for PRJ-PS2 hold the Z14 parts and nothing from Z15", async () => {
   const out = [await run("project_status", { projectId: "PRJ-PS2" }, tech), await run("documents", { aboutId: "PRJ-PS2" }, tech), await run("documents", { q: "MCC" }, tech)];
   const cites = JSON.stringify(out).match(/"(?:cite|id)":"([^"]+)"/g)?.map((m) => m.slice(m.indexOf(":") + 2, -1)) ?? [];
   for (const id of cites) assert.notEqual(sys.ont.view(sup).zoneOf(id), "Z15", id);
-  assert.equal(out[0].header.lastReportAt, null, "the Z15 progress reports do not reach a technician's header");
-  assert.deepEqual(out[1], { items: [] });
+  assert.ok(out[0].header.lastReportAt, "the Z14 progress reports reach a technician's header");
+  assert.ok(out[1].items.length > 0, "and their documents");
   assert.ok((await run("documents", { aboutId: "PRJ-PS2" }, sup)).items.length > 0, "a supervisor does see them");
 });
 

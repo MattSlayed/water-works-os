@@ -4,6 +4,7 @@ import { createSystem } from "../src/system.mjs";
 import { createServer } from "../src/server.mjs";
 import { readFileSync } from "node:fs";
 import { createSiteAgent, plantFocus } from "../src/site-agent.mjs";
+import { MODEL } from "../src/llm.mjs";
 import { createKgTools } from "../src/kg/tools.mjs";
 import { createMemoryBackend } from "../src/kg/backend-memory.mjs";
 
@@ -144,7 +145,7 @@ test("site agent: with Claude, project_status is offered, its result fills proje
   assert.equal(r.project.areas.compliance.status, "red");
   const snaps = s.ont.list("ProjectSnapshot");
   assert.equal(snaps.length, 1);
-  assert.equal(snaps[0].model, true);
+  assert.equal(snaps[0].model, MODEL);
   assert.ok(s.ont.links(snaps[0].id, { rel: "ABOUT" }).some((l) => l.to === "PRJ-RES2"));
 });
 
@@ -154,4 +155,44 @@ test("site agent: a question naming no project returns no project and writes no 
   assert.equal(r.project, undefined);
   assert.equal(r.changed, undefined);
   assert.equal(s.ont.list("ProjectSnapshot").length, 0);
+});
+
+test("site agent: a manager asking after a technician on PRJ-PS2 is diffed only against manager snapshots (R12)", async () => {
+  const { s, agent, mgr } = projectAgent();
+  const tech = { id: "P-028", clearance: "technician" };
+  const q = "how is project PRJ-PS2 going?";
+  assert.equal((await agent.ask({ question: q, viewer: tech })).project.id, "PRJ-PS2");
+  assert.deepEqual((await agent.ask({ question: q, viewer: mgr })).changed, []);
+  assert.deepEqual((await agent.ask({ question: q, viewer: mgr })).changed, []);
+  assert.deepEqual(s.ont.list("ProjectSnapshot").map((x) => x.minClearance), ["technician", mgr.clearance, mgr.clearance]);
+});
+
+test("site agent: the fallback brief skips closed projects and ranks by words matched", async () => {
+  const { agent, mgr } = projectAgent();
+  const r = await agent.ask({ question: "how is the intake screen upgrade project going?", viewer: mgr });
+  assert.equal(r.project.id, "PRJ-INT");
+  assert.match(r.answer, /^Intake screen upgrade: /);
+  assert.ok(!r.answer.includes("Coagulant"), "the closed project is never briefed or listed");
+  assert.match(r.answer.split("\n").at(-1), /^Also matching: PS-2 MCC upgrade\.$/);
+});
+
+test("site agent: two equal matches brief the earlier start and list the other last", async () => {
+  const { agent, mgr } = projectAgent();
+  const r = await agent.ask({ question: "how is the water project going?", viewer: mgr });
+  assert.equal(r.project.id, "PRJ-RES2");
+  assert.equal(r.answer.split("\n").at(-1), "Also matching: Raw-water main section replacement.");
+});
+
+test("site agent: a Claude snapshot stores the model name and no person cite", async () => {
+  const replies = [
+    { stop_reason: "tool_use", content: [{ type: "tool_use", id: "t1", name: "project_status", input: { projectId: "PRJ-RES2" } }] },
+    { stop_reason: "end_turn", content: [{ type: "text", text: "Red [PRJ-RES2], crew [P-030]." }] }
+  ];
+  let n = 0;
+  const client = { beta: { messages: { create: async () => replies[n++] } } };
+  const { s, agent, mgr } = projectAgent(client);
+  await agent.ask({ question: "reservoir 2 status?", viewer: mgr });
+  const [snap] = s.ont.list("ProjectSnapshot");
+  assert.equal(snap.model, MODEL);
+  assert.deepEqual(snap.citations.map((c) => c.id), ["PRJ-RES2"]);
 });

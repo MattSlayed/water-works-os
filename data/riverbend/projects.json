@@ -124,7 +124,7 @@
           "isolations": [{ "point": "RES-2 cell B inlet valve", "appliedBy": "millwright", "verifiedBy": "shift_supervisor" }] }
       ],
       "executions": [
-        { "procedureId": "PRC-CONFINED_SPACE-v1", "by": "millwright", "state": "in-progress", "done": 4, "at": "2026-10-13T20:30:00Z" }
+        { "procedureId": "PRC-CONFINED_SPACE-v1", "by": "millwright", "state": "in-progress", "done": 4, "at": "2026-10-14T05:30:00Z" }
       ],
       "requirements": [
         { "framework": "OHS Act Confined Space Regulations", "criterion": "Atmosphere test instruments calibrated", "dueBy": "2026-09-07",
@@ -243,12 +243,12 @@
         { "personId": "P-036", "role": "electrician" }
       ],
       "reports": [
-        { "date": "2026-10-12", "title": "PS-2 MCC upgrade: mobilisation report, 12 Oct 2026",
+        { "date": "2026-10-12", "zoneId": "Z14", "title": "PS-2 MCC upgrade: mobilisation report, 12 Oct 2026",
           "summary": "The electrical crew mobilised and the pump station is running on its standby pump.",
           "progress": "Temporary supply to the standby pump is in. The MCC room is cleared for the new panels.",
           "safety": "Lock-out points are tagged. No incidents.",
           "next": "Strip out the old MCC incomer and prepare the plinth." },
-        { "date": "2026-10-13", "title": "PS-2 MCC upgrade: progress report, 13 Oct 2026",
+        { "date": "2026-10-13", "zoneId": "Z14", "title": "PS-2 MCC upgrade: progress report, 13 Oct 2026",
           "summary": "Strip-out has started. The new MCC panels are on site.",
           "progress": "The old incomer cable is disconnected. Cutting of the cable trench cover is under way.",
           "safety": "Hot work is in progress at the cable trench. The incomer isolation is applied and the supervisor verification is outstanding.",
@@ -263,7 +263,7 @@
       ],
       "requirements": [
         { "framework": "OHS Act Electrical Installation Regulations", "criterion": "Certificate of compliance for the new MCC", "dueBy": "2026-10-30" },
-        { "framework": "OHS Act Construction Regulations 2014", "criterion": "Lock-out and hot-work procedure approved by the engineer", "dueBy": "2026-10-12",
+        { "framework": "OHS Act Construction Regulations 2014", "criterion": "Lock-out and hot-work procedure approved by the engineer", "zoneId": "Z14", "dueBy": "2026-10-12",
           "evidence": { "kind": "evidence", "title": "Approved lock-out and hot-work procedure, PS-2 MCC room", "validTo": "2026-10-30", "text": "The engineer approved the lock-out and hot-work procedure for the MCC room on 9 October 2026." } }
       ]
     }
