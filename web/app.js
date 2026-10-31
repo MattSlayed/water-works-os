@@ -317,7 +317,10 @@ const views = {
         <div class="btns"><a class="btn" href="#/plantmodels">Revisions and review</a><a class="btn" href="#/map">Site map</a></div></div>
       <div class="plantwrap"><section class="panel stage3d plant" aria-label="3D plant"><div class="disclose badge">${esc(d.model.disclosure)}</div>
         <div class="plantbar" role="group" aria-label="View"><button class="btn" data-pmode="physical">Physical</button><button class="btn" data-pmode="blueprint">Blueprint</button><button class="btn" data-popt="xray">X-ray</button><button class="btn" data-popt="skeletal">Skeletal map</button><button class="btn" id="pclear">Clear</button></div></section>
-        <aside class="side"><section class="panel" id="psel" aria-live="polite">${plantSide(null)}</section></aside></div>`;
+        <aside class="side"><section class="panel" id="pagent"><h2>Site Agent</h2>
+          <form id="pask" class="btns" style="flex-wrap:nowrap"><label class="sr" for="pq">Ask the Site Agent</label><input id="pq" maxlength="500" placeholder="What is happening with the turbidity alert?" style="flex:1;background:var(--bg2);border:1px solid var(--line);padding:8px"><button class="btn primary">Ask</button></form>
+          <div id="pans" aria-live="polite"></div></section>
+        <section class="panel" id="psel" aria-live="polite">${plantSide(null)}</section></aside></div>`;
     const stage = $(".stage3d.plant"), side = $("#psel");
     const fallback = (why) => {
       state.plant?.dispose();
@@ -364,6 +367,20 @@ const views = {
     stage.querySelectorAll("[data-pmode]").forEach((b) => b.addEventListener("click", () => { state.plant.setMode(b.dataset.pmode); bar(); }));
     stage.querySelectorAll("[data-popt]").forEach((b) => b.addEventListener("click", () => { opts[b.dataset.popt] = !opts[b.dataset.popt]; state.plant.setOption(b.dataset.popt, opts[b.dataset.popt]); b.setAttribute("aria-pressed", String(opts[b.dataset.popt])); }));
     $("#pclear").addEventListener("click", () => { state.plant.highlight([]); state.plant.caption(null); $("#upinfo")?.remove(); });
+    // the Site Agent reads live data and documents, briefs, and flies the camera to the place it names
+    $("#pask").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const q = $("#pq").value.trim(), btn = $("#pask button"), out = $("#pans");
+      if (!q) return;
+      btn.disabled = true;
+      out.innerHTML = `<div class="msg me">${esc(q)}</div><div class="msg meta">Reading live data and documents…</div>`;
+      try {
+        const r = await api("/api/plant/ask", { method: "POST", body: { question: q } });
+        out.lastElementChild.outerHTML = `<div class="msg">${esc(r.answer)}${r.citations.length ? `<br><span class="cite">${r.citations.map((c) => esc(c.id)).join(" · ")}</span>` : ""}<br><span class="cite">${r.model ? "written by Claude from live data and documents" : "from the active alert and its live readings"}${r.focus.length ? "" : "; nothing to show on the map"}</span></div>`;
+        if (r.focus.length && state.plant) { state.plant.caption(null); state.plant.highlight(r.focus); state.plant.frame(r.focus, { min: 60, tilt: 0.9 }); }
+      } catch (err) { out.lastElementChild.remove(); toast(err.message); }
+      btn.disabled = false;
+    });
     bar();
     const hitOf = (x) => x.id === id || x.positionId === id;
     if (id && state.plant.flyTo(id)) {
