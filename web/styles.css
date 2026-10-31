@@ -238,3 +238,16 @@ main:focus { outline: none; }
 @media (max-width: 1100px) { .grid.console.intake-grid { grid-template-columns: 1fr; } }
 /* Spec changes (plan 4): the band inputs match the other fields */
 #view [data-lo], #view [data-hi] { background: var(--bg2); border: 1px solid var(--line); color: var(--ink); border-radius: var(--r); padding: 4px 6px; }
+
+/* project indicator cards: status is the word; the dot only repeats it */
+.icards { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin: 10px 0; }
+@media (max-width: 700px) { .icards { grid-template-columns: 1fr; } }
+.icard { background: var(--raise); border: 1px solid var(--line); border-left: 3px solid var(--muted); border-radius: var(--r); padding: 8px 10px; }
+.icard.green { border-left-color: var(--green); } .icard.amber { border-left-color: var(--amber); } .icard.red { border-left-color: var(--red); }
+.icard h3 { margin: 0 0 4px; font-size: 13px; } .icard p { margin: 4px 0; } .icard summary { cursor: pointer; font: 11px var(--mono); color: var(--muted); }
+.dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; background: var(--muted); margin-right: 4px; }
+.dot.green { background: var(--green); } .dot.amber { background: var(--amber); } .dot.red { background: var(--red); }
+.sw { font: 600 11px var(--mono); text-transform: uppercase; color: var(--muted); }
+.sw.green { color: var(--green); } .sw.amber { color: var(--amber); } .sw.red { color: var(--red); }
+.pchanged { color: var(--amber); } .snap { font-size: 12px; color: var(--text); }
+.icard .cite { font: 11px var(--mono); color: var(--violet); }

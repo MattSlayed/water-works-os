@@ -94,6 +94,22 @@ function specsHtml(d) {
     <h3 class="meta" style="margin:12px 0 4px">Corrections · ${d.corrections.length}</h3>${correctionsHtml(d.corrections)}`;
 }
 
+const AREAS = [["people", "People"], ["plant", "Plant & Process"], ["procedures", "Procedures"], ["compliance", "Compliance"]];
+const STATUS_WORD = { green: "Green", amber: "Amber", red: "Red", none: "No data" };
+const dot = (st) => `<span class="dot ${esc(st)}" aria-hidden="true"></span><span class="sw ${esc(st)}">${esc(STATUS_WORD[st] || st)}</span>`;
+const zar = (n) => (n == null ? "—" : `R${Number(n).toLocaleString("en-ZA")}`);
+// The four project indicator cards; the server rates them, this only renders. Status is always a word beside the dot.
+const indicatorCards = (p, changed = []) => {
+  const h = p.header, m = h.milestones;
+  const diff = changed.length ? `<p class="meta pchanged">Changed since last snapshot: ${changed.map((c) => `${esc((AREAS.find(([k]) => k === c.area) || [0, c.area])[1])} ${esc(c.from)} → ${esc(c.to)}`).join(", ")}</p>` : "";
+  return `<div class="pind"><p class="meta">${esc(p.title)} · ${esc(m.claimed)} of ${esc(m.total)} milestones claimed, ${esc(m.confirmed)} confirmed${m.overdue.length ? `, ${esc(m.overdue.length)} overdue` : ""} · ${zar(h.spendZar)} of ${zar(h.budgetZar)} spent · last report ${h.lastReportAt ? `${esc(h.daysSinceReport)} days ago` : "never"}</p>${diff}
+    <div class="icards">${AREAS.map(([k, name]) => {
+      const a = p.areas[k] || { status: "none", summary: "", items: [] };
+      return `<section class="icard ${esc(a.status)}" aria-label="${esc(name)}"><h3>${dot(a.status)} ${esc(name)}</h3>
+        ${a.status === "none" ? `<p class="meta">No data in the KG for this area</p>` : `<p>${esc(a.summary)}</p>${a.items.length ? `<details><summary>${esc(a.items.length)} items</summary><ul class="list">${a.items.map((i) => `<li><span class="sw ${esc(i.status)}">${esc(STATUS_WORD[i.status] || i.status)}</span> ${esc(i.text)} <span class="cite">${esc(i.cite)}</span></li>`).join("")}</ul></details>` : ""}`}</section>`;
+    }).join("")}</div></div>`;
+};
+
 const views = {
   async console() {
     const [c, m] = await Promise.all([api("/api/console"), api("/api/map")]);
@@ -377,6 +393,7 @@ const views = {
       try {
         const r = await api("/api/plant/ask", { method: "POST", body: { question: q } });
         out.lastElementChild.outerHTML = `<div class="msg">${esc(r.answer)}${r.citations.length ? `<br><span class="cite">${r.citations.map((c) => esc(c.id)).join(" · ")}</span>` : ""}<br><span class="cite">${r.model ? "written by Claude from live data and documents" : "from the active alert and its live readings"}${r.focus.length ? "" : "; nothing to show on the map"}</span></div>`;
+        if (r.project) out.insertAdjacentHTML("beforeend", indicatorCards(r.project, r.changed));
         if (r.focus.length && state.plant) { state.plant.caption(null); state.plant.highlight(r.focus); state.plant.frame(r.focus, { min: 60, tilt: 0.9 }); }
       } catch (err) { out.lastElementChild.remove(); toast(err.message); }
       btn.disabled = false;
@@ -827,10 +844,12 @@ const views = {
   },
 
   async project(id) {
-    const d = await api(`/api/projects/${encodeURIComponent(id)}`);
+    const enc = encodeURIComponent;
+    const [d, ind, snaps] = await Promise.all([api(`/api/projects/${enc(id)}`), api(`/api/projects/${enc(id)}/indicators`).catch(() => null), api(`/api/projects/${enc(id)}/snapshots`).catch(() => [])]);
     const p = d.project, st = d.status;
     const canConfirm = ["supervisor", "engineer", "manager"].includes(state.me.clearance);
     view.innerHTML = `<h2>11 / project</h2><h1>${esc(p.title)}</h1><p class="sub">${esc(p.contractorEmployer || "")} · ${esc(p.start)} to ${esc(p.end)} · last contractor report ${st.lastReportAt ? `${esc(st.daysSinceReport)} days ago` : "never"}${st.quiet ? ` ${pill("quiet", "medium")}` : ""}</p>
+      ${ind ? indicatorCards(ind) : ""}
       <div class="grid console">
         <section class="panel" aria-label="Milestones"><h2>Milestones</h2><table><thead><tr><th>Milestone</th><th>Due</th><th>State</th><th></th></tr></thead><tbody>${p.milestones.map((m) => `<tr><td>${esc(m.id)} ${esc(m.title)}</td><td>${esc(m.due)}${st.overdue.includes(m.id) ? ` ${pill("overdue", "high")}` : ""}</td><td>${m.confirmedAt ? pill("confirmed", "done") : m.claimedAt ? pill("claimed", "proposed") : pill("open")}</td><td>${m.claimedAt && !m.confirmedAt && canConfirm ? `<button class="btn decide" data-confirm="${esc(m.id)}">Confirm</button>` : ""}</td></tr>`).join("")}</tbody></table>
           <p class="meta">A claim is what the contractor said in the group. A milestone is done when a supervisor confirms it.</p></section>
@@ -838,6 +857,7 @@ const views = {
           <section class="panel" aria-label="Claims"><h2>Claims from the group · ${d.claims.length}</h2><ul class="list">${d.claims.slice().reverse().map((c) => `<li><div class="row"><b>${esc(c.milestoneId || "general")}</b>${c.confirmed ? pill("confirmed", "done") : pill("claim")}</div><div>${esc(c.text)}</div><div class="meta">${esc(c.by)} · ${time(c.at)}${c.evidence.length ? ` · ${c.evidence.map(esc).join(", ")}` : ""}</div></li>`).join("") || `<li class="empty">No claims yet.</li>`}</ul></section>
           <section class="panel" aria-label="Issues"><h2>Issues · ${d.issues.length}</h2><ul class="list">${d.issues.map((i) => `<li><div class="row"><b>${esc(i.title)}</b>${pill(i.state)}</div><div class="meta">${link(i.id)}</div></li>`).join("") || `<li class="empty">None.</li>`}</ul>${d.channel ? `<div class="btns"><a class="btn" href="#/chat/${encodeURIComponent(d.channel.id)}">Open the group chat</a></div>` : ""}</section>
           <section class="panel" aria-label="Corrections"><h2>Corrections · ${(d.corrections || []).length}</h2>${correctionsHtml(d.corrections || [])}</section>
+          <section class="panel" aria-label="Snapshots"><h2>Snapshots · ${snaps.length}</h2><ul class="list">${snaps.map((s) => `<li><div class="row"><b>${time(s.at)}</b><span class="meta">${esc(s.model || "no model")}</span></div><div class="snap">${AREAS.map(([k, name]) => `${esc(name)} <span class="sw ${esc(s.areas[k]?.status || "none")}">${esc(STATUS_WORD[s.areas[k]?.status] || "No data")}</span>`).join(" · ")}</div></li>`).join("") || `<li class="empty">None yet. Ask the Site Agent about this project.</li>`}</ul></section>
         </div>
       </div>`;
     view.querySelectorAll("[data-confirm]").forEach((b) => b.addEventListener("click", async () => {

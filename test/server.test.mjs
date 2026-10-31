@@ -2,6 +2,8 @@ import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { createSystem } from "../src/system.mjs";
 import { createServer } from "../src/server.mjs";
+import { projectIndicators } from "../src/project-indicators.mjs";
+import { writeSnapshot } from "../src/project-snapshot.mjs";
 
 let srv, base, sys;
 before(async () => {
@@ -318,4 +320,31 @@ test("harness routes (J23, J24): a technician cannot pause an agent; the stateme
   assert.equal((await call(`/api/rca/${r.json.id}`)).json.id, r.json.id);
   assert.equal((await call("/api/rca/NOPE")).status, 404);
   assert.equal((await call("/api/rca", { method: "POST", body: { targetId: "NOPE" } })).status, 404);
+});
+
+test("GET /api/projects/PRJ-CL4/indicators returns four areas; unknown is 404", async () => {
+  const r = await call("/api/projects/PRJ-CL4/indicators");
+  assert.equal(r.status, 200);
+  assert.deepEqual(Object.keys(r.json.areas), ["people", "plant", "procedures", "compliance"]);
+  assert.equal(r.json.id, "PRJ-CL4");
+  assert.equal((await call("/api/projects/PRJ-NOPE/indicators")).status, 404);
+});
+
+test("GET /api/projects/PRJ-PS2/indicators as a technician cites nothing in Z15", async () => {
+  const r = await call("/api/projects/PRJ-PS2/indicators", { as: "P-028" });
+  assert.equal(r.status, 200);
+  for (const i of Object.values(r.json.areas).flatMap((a) => a.items)) assert.notEqual(sys.ont.get(i.cite)?.zoneId, "Z15", i.text);
+});
+
+test("GET /api/projects/:id/snapshots lists newest first and hides a manager snapshot from a technician", async () => {
+  const mgr = sys.ont.get("P-001"), tech = sys.ont.get("P-028");
+  const ind = (v, at) => projectIndicators(sys.ont, sys.tel, v, "PRJ-SLG");
+  const a = writeSnapshot(sys.ont, tech, ind(tech), { brief: "tech", citations: [], model: null, at: "2026-10-30T08:00:00Z" }).snapshot;
+  const b = writeSnapshot(sys.ont, mgr, ind(mgr), { brief: "mgr", citations: [], model: null, at: "2026-10-31T08:00:00Z" }).snapshot;
+  const asMgr = (await call("/api/projects/PRJ-SLG/snapshots")).json;
+  assert.deepEqual(asMgr.map((s) => s.id), [b.id, a.id]);
+  assert.deepEqual(Object.keys(asMgr[0].areas), ["people", "plant", "procedures", "compliance"]);
+  assert.ok(!("brief" in asMgr[0]));
+  assert.deepEqual((await call("/api/projects/PRJ-SLG/snapshots", { as: "P-028" })).json.map((s) => s.id), [a.id]);
+  assert.equal((await call("/api/projects/PRJ-NOPE/snapshots")).status, 404);
 });
