@@ -37,7 +37,8 @@ export function atlasModel(ont, { domain = "riverbend" } = {}) {
   const props = (entries) => Object.fromEntries(entries.filter(([, v]) => v != null).map(([k, v]) => [O(k), [{ type: "StaticStrategy", value: unplaceholder(v) }]]));
   const mid = currentPlantModel(ont)?.id;
   // plant objects of older or draft model revisions would duplicate the released ones
-  const objs = ATLAS_TYPES.flatMap((t) => ont.list(t, (o) => !o.modelId || o.modelId === mid));
+  const objs = ATLAS_TYPES.flatMap((t) => ont.list(t, (o) => (!o.modelId || o.modelId === mid) && !o.projectId));
+  // project paperwork (progress reports, evidence) stays in WaterOS; only plant documents are loaded
   const loaded = new Set(objs.map((o) => o.id));
 
   // the least clearance that sees the object, as ont.view decides it: its own floor, its zone, every zone a line crosses

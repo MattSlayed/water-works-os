@@ -41,7 +41,7 @@ test("full URNs: types, property keys and edge endpoints", () => {
 });
 
 test("one instance per object, and slug is injective", () => {
-  const objs = ATLAS_TYPES.flatMap((t) => ont.list(t, (o) => !o.modelId || o.modelId === modelId));
+  const objs = ATLAS_TYPES.flatMap((t) => ont.list(t, (o) => (!o.modelId || o.modelId === modelId) && !o.projectId));
   assert.equal(model.instances.length, objs.length);
   assert.equal(new Set(objs.map((o) => slug(o.id))).size, objs.length);
   assert.equal(new Set([...model.instances, ...model.edges].map((x) => x.id)).size, model.instances.length + model.edges.length);

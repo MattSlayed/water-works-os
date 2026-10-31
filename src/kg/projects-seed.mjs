@@ -19,7 +19,7 @@ const who = (ont, role, crew) => {
 
 // A document, its chunks (stamped with the document's zone) and what each is about.
 function addDocument(ont, doc, projectId) {
-  ont.upsert({ ...doc, type: "Document", aboutId: projectId, prov });
+  ont.upsert({ ...doc, type: "Document", aboutId: projectId, projectId, prov });
   linkOnce(ont, doc.id, "ABOUT", projectId);
   for (const c of chunkByHeading(doc.id, doc.body)) {
     ont.upsert({ ...c, zoneId: doc.zoneId, prov });

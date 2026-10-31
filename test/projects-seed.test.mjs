@@ -106,9 +106,15 @@ test("projects seed: the new procedures flag the steps that need a permit or an 
   }
 });
 
-test("projects seed: no project people data is in the Atlas load", () => {
+test("projects seed: no project people data or project document is in the Atlas load", () => {
   const { ont } = createSystem({ seed: 7 });
   const m = atlasModel(ont);
   const types = new Set(m.instances.map((i) => i.type.split(":").pop()));
   for (const t of ["Person", "Competency", "Presence", "Participant", "Execution", "Permit", "Requirement", "Chunk"]) assert.ok(!types.has(t), t);
+  const names = m.instances.map((i) => i.name);
+  const projectDocs = ont.list("Document", (d) => d.projectId).map((d) => d.id);
+  assert.ok(projectDocs.length >= 28);
+  for (const id of projectDocs) assert.ok(!names.includes(id), id);
+  assert.ok(!names.some((n) => /^DOC-(PR|EV)-/.test(n)));
+  for (const id of ["DOC-DESIGN-BASIS", "DOC-CAL-FWTURB", "DOC-SOP-BLOWER"]) assert.ok(names.includes(id), id);
 });
