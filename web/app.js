@@ -130,7 +130,7 @@ const srcBtn = (n, picked, key) => `<button type="button" class="srcn${n === pic
 // button; a cite that did not resolve for the viewer is dropped.
 function askBullets(text, sources, picked) {
   const nOf = new Map(sources.map((s) => [s.id, s.n]));
-  const lines = String(text).replace(/\*\*/g, "").split(/\n+/).map((l) => l.replace(/^\s*[-*•]\s+/, "").trim()).filter(Boolean);
+  const lines = String(text).replace(/\*\*/g, "").replace(/\[([^\]]+)\]\([^)]*\)/g, "$1").split(/\n+/).map((l) => l.replace(/^\s*[-*•]\s+/, "").trim()).filter(Boolean);
   const parts = lines.length > 1 ? lines : lines.flatMap((l) => l.split(/(?<=[.!?])\s+(?=[A-Z])/));
   return parts.map((p, i) => {
     const refs = [];
@@ -139,7 +139,7 @@ function askBullets(text, sources, picked) {
       const n = nOf.get(x);
       if (!n) return "";
       refs.push(n);
-      return srcBtn(n, picked, `b${i}-${n}`);
+      return srcBtn(n, picked, `b${i}-${k}`);
     }).join("");
     return `<li class="${refs.includes(picked) ? "hit" : ""}">${html}</li>`;
   }).join("");
@@ -161,12 +161,12 @@ function askTimeline(sources, picked, today, width) {
     const rows = [];
     const html = mine.map((e) => {
       const label = e.label.length > 30 ? `${e.label.slice(0, 29)}…` : e.label;
-      const x = pct(e.at), w = ((58 + (dayMon(e.at).length + label.length) * 6.6) / width) * 100, flip = x + w > 100;
+      const x = pct(e.at), w = ((58 + (dayMon(e.at).length + label.length) * 6.6) / width) * 100, flip = x + w > 100 && x - w >= 0;
       const lo = flip ? x - w : x, hi = flip ? x : x + w;
       let k = rows.findIndex((r) => r.every(([p, q]) => hi <= p || lo >= q));
       if (k < 0) { k = rows.length; rows.push([]); }
       rows[k].push([lo, hi]);
-      return `<button type="button" class="tev${flip ? " flip" : ""}${e.s.n === picked ? " on" : ""}" style="left:${x.toFixed(2)}%;top:${6 + k * 32}px" data-src="${e.s.n}" data-key="t${e.s.n}-${e.j}" aria-pressed="${e.s.n === picked}" title="${esc(`${e.at} · ${e.s.title} · ${e.label}`)}"><i class="mk ${esc(e.s.status)}${e.done ? " done" : ""}" aria-hidden="true"></i><span class="srcn">${e.s.n}</span><span><span class="mono">${dayMon(e.at)}</span> ${esc(label)}</span></button>`;
+      return `<button type="button" class="tev${flip ? " flip" : ""}${e.s.n === picked ? " on" : ""}" style="left:${x.toFixed(2)}%;top:${6 + k * 32}px" data-src="${e.s.n}" data-key="t${e.s.n}-${e.j}" aria-pressed="${e.s.n === picked}" title="${esc(`${e.at} · ${e.s.title} · ${e.label} · ${STATUS_WORD[e.status || e.s.status] || "Not rated"}`)}"><i class="mk ${esc(e.status || e.s.status)}${e.done ? " done" : ""}" aria-hidden="true"></i><span class="sr">${esc(STATUS_WORD[e.status || e.s.status] || "Not rated")}</span><span class="srcn">${e.s.n}</span><span><span class="mono">${dayMon(e.at)}</span> ${esc(label)}</span></button>`;
     }).join("");
     return `<div class="tlane"><span>${name}</span><div class="ttrack" style="height:${12 + rows.length * 32}px">${grid}${html}</div></div>`;
   }).join("");
@@ -177,9 +177,9 @@ function askTimeline(sources, picked, today, width) {
 
 function askHtml(question, r, picked, today, width) {
   const src = r.sources, sel = src.find((s) => s.n === picked);
-  const half = Math.ceil(src.length / 2), area = (s) => (AREAS.find(([k]) => k === s.area) || [0, "cited"])[1];
-  const card = (s) => `<button type="button" class="acard${s.n === picked ? " on" : ""}" data-src="${s.n}" data-key="g${s.n}" aria-pressed="${s.n === picked}"><span class="srcn">${s.n}</span><span class="acbody"><span class="meta">${esc(s.type)}</span><b>${esc(s.title)}</b><span>${srcWord(s.status)}</span></span></button>`;
-  const edge = (s) => `<span class="aedge${s.n === picked ? " on" : ""}"><span>${esc(area(s))}</span></span>`;
+  const half = Math.ceil(src.length / 2), area = (s) => (AREAS.find(([k]) => k === s.area) || [0, s.area])[1];
+  const card = (s) => `<button type="button" class="acard${s.n === picked ? " on" : ""}" data-src="${s.n}" data-key="g${s.n}" aria-pressed="${s.n === picked}"><span class="srcn">${s.n}</span><span class="acbody"><span class="meta">${esc(s.type)}</span><b>${esc(s.title)}</b><span>${srcWord(s.status)}${s.area ? ` <span class="meta">${esc(area(s))}</span>` : ""}</span></span></button>`;
+  const edge = (s) => `<span class="aedge${s.n === picked ? " on" : ""}" aria-hidden="true"></span>`;
   const objLink = (s) => (s.type === "Record" ? `<span class="mono">${esc(s.id)}</span>` : link(s.id.split(/[@#]/)[0], s.id));
   const inspect = sel
     ? `<div class="row"><span class="meta"><span class="srcn">${sel.n}</span> ${esc(sel.type)}</span>${objLink(sel)}</div><h3>${esc(sel.title)}</h3>
@@ -192,7 +192,7 @@ function askHtml(question, r, picked, today, width) {
       <article class="panel" aria-label="Answer"><div class="row"><span class="meta">Site Agent · ${r.model ? "written by Claude from the knowledge graph" : "from the indicators and live readings"}</span><span class="meta">${src.length} sources</span></div>
         <h3 class="askq">${esc(question)}</h3><ul class="abullets">${askBullets(r.answer, src, picked) || `<li>${esc(r.answer)}</li>`}</ul>
         <div class="btns">${r.focus.length ? `<a class="btn" href="#/plant/${encodeURIComponent(r.focus[0])}">Show on plant</a>` : ""}${r.project ? `<a class="btn" href="#/project/${encodeURIComponent(r.project.id)}">Open project</a>` : ""}</div></article>
-      <section class="panel ainspect" aria-label="Selected source" aria-live="polite">${inspect}</section>
+      <section class="panel ainspect" aria-label="Selected source">${inspect}</section>
     </div>
     <section class="panel agraph" aria-label="Where the answer comes from"><div class="row"><h2>Where the answer comes from</h2><span class="meta">Pick a record to inspect it</span></div>
       ${src.length ? `<div class="agwrap"><div class="agcol left">${src.slice(0, half).map((s) => `<div class="agrow">${card(s)}${edge(s)}</div>`).join("")}</div>
@@ -209,7 +209,7 @@ const views = {
       <form id="askf" class="askbar" role="search"><label for="askq" class="sr">Ask about any project, permit or procedure</label><input id="askq" placeholder="Ask about any project, permit or procedure" autocomplete="off"><button class="btn primary">Ask</button></form>
       <div class="row askchips"><div class="btns" role="group" aria-label="Suggested questions">${ASK_SUGGEST.map((s) => `<button type="button" class="btn" data-suggest="${esc(s)}">${esc(s)}</button>`).join("")}</div>
         <span class="meta">Answers only use records your role can read. People show as roles and counts.</span></div>
-      <div id="askout"></div></div>`;
+      <p id="askannounce" class="sr" aria-live="polite"></p><div id="askout"></div></div>`;
     const out = $("#askout");
     let res = null, question = "", picked = 1;
     const draw = () => {
@@ -222,6 +222,8 @@ const views = {
       if (!b || !res) return;
       picked = Number(b.dataset.src);
       draw();
+      const s = res.sources.find((x) => x.n === picked);
+      $("#askannounce").textContent = s ? `Source ${s.n}: ${s.title}` : "The answer snapshot";
     });
     const run = async (text) => {
       question = text.trim();

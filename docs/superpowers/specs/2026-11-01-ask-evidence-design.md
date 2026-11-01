@@ -28,13 +28,18 @@ and the page reads only what the API returns.
    - **Dates** come from the record itself:
      - Project: each milestone's due date (done = confirmed).
      - Permit: opened, and expiry.
-     - Requirement: due date, and its latest valid evidence date.
+     - Requirement: when met, the date its latest valid evidence lapses; when unmet, its due date.
      - Alert: raised at.
-     - Document: its date. A Chunk uses its document's date.
+     - Document: its date and its valid-to date. A Chunk uses its document's date.
 2. **Write-back.** Every Site Agent answer upserts
    `Answer{at, minClearance, by: "Site Agent", model, answer, citations}`, with a `CITES` link to each cited
-   record. It stores the asker's clearance, never the asker and never the question text, because a question can
-   name a person. `ont.view` already hides it from lower clearances.
+   record. It stores a clearance, never the asker and never the question text, because a question can name a
+   person. `ont.view` already hides it from lower clearances.
+   - The clearance is normally the asker's.
+   - It is raised to manager when the asker is below manager and the answer may quote a record with an audience
+     (an Issue, a Draft): any Claude answer, or one that cites such a record. Otherwise peers at the asker's level
+     would read it. The cost: a technician cannot reopen their own Claude answer as a record.
+   - Ids count up and never reuse a number.
 3. **API.** `POST /api/plant/ask` gains `sources` and `answerId`. Old callers (the Plant panel) ignore them.
 4. **Page `#/ask`,** first in the rail, following B5's layout in the house design system (`web/styles.css` tokens):
    - **Ask:** an ask bar, three suggested questions, and a one-line note that answers only use records your role

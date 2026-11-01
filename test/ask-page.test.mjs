@@ -5,8 +5,8 @@ import { readFileSync } from "node:fs";
 // The Ask page's render helpers, lifted out of web/app.js (a browser module) and run against stubs.
 const app = readFileSync(new URL("../web/app.js", import.meta.url), "utf8");
 const block = app.slice(app.indexOf("// ---------- Ask:"), app.indexOf("const views = {"));
-const { askBullets, askTimeline } = new Function("esc", "dot", "link", "AREAS", `${block}; return { askBullets, askTimeline };`)(
-  (v) => String(v ?? "").replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`), (st) => `[${st}]`, (id) => id, []);
+const { askBullets, askTimeline } = new Function("esc", "dot", "link", "AREAS", "STATUS_WORD", `${block}; return { askBullets, askTimeline };`)(
+  (v) => String(v ?? "").replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`), (st) => `[${st}]`, (id) => id, [], { green: "Green", amber: "Amber", red: "Red", none: "No data" });
 
 const src = (n, id, dates = [], type = "Permit") => ({ n, id, type, title: id, status: "amber", dates });
 
@@ -29,4 +29,9 @@ test("ask page: events on nearby dates pack into separate rows; an event near th
   assert.match(html, /No date: source 3/);
   assert.match(html, /left:41\.94%">Today · 14 Oct/);
   assert.equal(askTimeline([src(1, "A")], 1, "2026-10-14", 900), `<p class="meta">None of the sources has a date.</p>`);
+});
+
+test("ask page: a Markdown link keeps its text; a timeline event names its status in words", () => {
+  assert.match(askBullets("See [the report](http://x) for more [PTW-1].", [src(1, "PTW-1")], 1), /See the report for more <button/);
+  assert.match(askTimeline([src(1, "A", [{ at: "2026-10-20", label: "Expires", done: false }])], 1, "2026-10-14", 900), /<span class="sr">Amber<\/span>/);
 });
