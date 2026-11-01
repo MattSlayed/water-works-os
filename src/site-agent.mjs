@@ -8,6 +8,7 @@ import { currentPlantModel } from "./plant.mjs";
 import { projectIndicators } from "./project-indicators.mjs";
 import { projectsAsked } from "./agents.mjs";
 import { writeSnapshot } from "./project-snapshot.mjs";
+import { answerEvidence, writeAnswer } from "./answer-evidence.mjs";
 
 const MAX_TURNS = 8;
 const SEVERITY = { high: 3, medium: 2, low: 1 };
@@ -149,6 +150,8 @@ If a few searches find nothing, stop and say you cannot find it among what you c
     }
     r ??= projectBrief(ont, tel, viewer, question) || alertBrief(ont, tel, viewer, question);
     if (r.project) r.changed = writeSnapshot(ont, viewer, r.project, { brief: r.answer, citations: r.citations, model: r.model ? MODEL : null, at: tel.now() }).changed;
+    r.answerId = writeAnswer(ont, viewer, { answer: r.answer, citations: r.citations, model: r.model ? MODEL : null }, tel.now()).id;
+    r.sources = answerEvidence(ont, tel, viewer, r.citations);
     return r;
   }
 

@@ -196,3 +196,16 @@ test("site agent: a Claude snapshot stores the model name and no person cite", a
   assert.equal(snap.model, MODEL);
   assert.deepEqual(snap.citations.map((c) => c.id), ["PRJ-RES2"]);
 });
+
+test("site agent: every answer is written back as an Answer citing its sources, at the asker's clearance, with numbered sources", async () => {
+  const s = createSystem({ seed: 7 }), mgr = { id: "P-001", clearance: "manager" };
+  const client = { beta: { messages: { create: async () => ({ stop_reason: "end_turn", content: [{ type: "text", text: "RES-2 is red [PRJ-RES2]: its permit expired [PTW-PRJ-2], read at [SEN-RAW-turb@2026-10-14T05:00Z..2026-10-14T06:00Z]." }] }) } } };
+  const r = await createSiteAgent({ ont: s.ont, tel: s.tel, tools: [], client }).ask({ question: "reservoir 2 status?", viewer: mgr });
+  const a = s.ont.get(r.answerId);
+  assert.deepEqual([a.type, a.minClearance, a.by, a.answer], ["Answer", "manager", "Site Agent", r.answer]);
+  assert.ok(!JSON.stringify(a).includes("P-001") && !JSON.stringify(a).includes("reservoir 2 status"), "never the asker or the question");
+  assert.deepEqual(s.ont.links(a.id, { rel: "CITES", dir: "out" }).map((l) => l.to).sort(), [...new Set(r.citations.map((c) => c.id.split(/[@#]/)[0]))].sort());
+  assert.deepEqual(r.sources.map((x) => [x.n, x.id]), r.citations.map((c, k) => [k + 1, c.id]));
+  assert.deepEqual(r.sources.map((x) => [x.id.split("@")[0], x.status]), [["PRJ-RES2", "red"], ["PTW-PRJ-2", "red"], ["SEN-RAW-turb", "none"]]);
+  assert.equal(s.ont.view({ id: "P-028", clearance: "technician" }).get(a.id), null);
+});
