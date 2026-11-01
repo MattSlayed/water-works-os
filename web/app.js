@@ -118,7 +118,127 @@ const indicatorCards = (p, changed = []) => {
     }).join("")}</div></div>`;
 };
 
+// ---------- Ask: the answer, the records it rests on, and when they fall due (ask-evidence design) ----------
+const ASK_SUGGEST = ["What needs me today?", "Why is RES-2 red?", "What lapses in the next two weeks?"];
+const ASK_LANES = [["Programme", ["Project"]], ["Permits", ["Permit"]], ["Requirements", ["Requirement"]], ["Plant", ["Alert", "Asset", "Sensor"]], ["Documents", ["Document", "Chunk"]]];
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const dayMon = (d) => `${Number(d.slice(8, 10))} ${MONTHS[Number(d.slice(5, 7)) - 1]}`;
+const srcWord = (st) => (st === "none" ? `<span class="sw">Not rated</span>` : dot(st));
+const srcBtn = (n, picked, key) => `<button type="button" class="srcn${n === picked ? " on" : ""}" data-src="${n}" data-key="${key}" aria-pressed="${n === picked}" aria-label="Source ${n}">${n}</button>`;
+
+// The answer as bullets: one per line, or per sentence when it is one paragraph. Each [cite] becomes its numbered source
+// button; a cite that did not resolve for the viewer is dropped.
+function askBullets(text, sources, picked) {
+  const nOf = new Map(sources.map((s) => [s.id, s.n]));
+  const lines = String(text).replace(/\*\*/g, "").split(/\n+/).map((l) => l.replace(/^\s*[-*•]\s+/, "").trim()).filter(Boolean);
+  const parts = lines.length > 1 ? lines : lines.flatMap((l) => l.split(/(?<=[.!?])\s+(?=[A-Z])/));
+  return parts.map((p, i) => {
+    const refs = [];
+    const html = p.split(/\[([^\]\s]+)\]/).map((x, k) => {
+      if (k % 2 === 0) return esc(x);
+      const n = nOf.get(x);
+      if (!n) return "";
+      refs.push(n);
+      return srcBtn(n, picked, `b${i}-${n}`);
+    }).join("");
+    return `<li class="${refs.includes(picked) ? "hit" : ""}">${html}</li>`;
+  }).join("");
+}
+
+// Lanes by record type over whole months, today marked; labels on nearby dates are packed into rows so none overlap.
+function askTimeline(sources, picked, today, width) {
+  const evs = sources.flatMap((s) => s.dates.map((d, j) => ({ ...d, s, j })));
+  if (!evs.length) return `<p class="meta">None of the sources has a date.</p>`;
+  const ds = [...evs.map((e) => e.at), today].filter(Boolean).sort(), a = ds[0], z = ds.at(-1);
+  const t0 = Date.UTC(+a.slice(0, 4), +a.slice(5, 7) - 1, 1), t1 = Date.UTC(+z.slice(0, 4), +z.slice(5, 7), 1);
+  const pct = (d) => ((Date.parse(`${d}T00:00:00Z`) - t0) / (t1 - t0)) * 100;
+  const ticks = [];
+  for (let t = t0; t < t1; t = Date.UTC(new Date(t).getUTCFullYear(), new Date(t).getUTCMonth() + 1, 1)) ticks.push(new Date(t).toISOString().slice(0, 10));
+  const grid = ticks.slice(1).map((d) => `<i class="tgrid" style="left:${pct(d).toFixed(2)}%"></i>`).join("") + (today ? `<i class="ttoday" style="left:${pct(today).toFixed(2)}%"></i>` : "");
+  const lanes = [...ASK_LANES, ["Other", []]].map(([name, types]) => {
+    const mine = evs.filter((e) => (types.length ? types.includes(e.s.type) : !ASK_LANES.some(([, ts]) => ts.includes(e.s.type)))).sort((x, y) => x.at.localeCompare(y.at));
+    if (!mine.length) return "";
+    const rows = [];
+    const html = mine.map((e) => {
+      const label = e.label.length > 30 ? `${e.label.slice(0, 29)}…` : e.label;
+      const x = pct(e.at), w = ((58 + (dayMon(e.at).length + label.length) * 6.6) / width) * 100, flip = x + w > 100;
+      const lo = flip ? x - w : x, hi = flip ? x : x + w;
+      let k = rows.findIndex((r) => r.every(([p, q]) => hi <= p || lo >= q));
+      if (k < 0) { k = rows.length; rows.push([]); }
+      rows[k].push([lo, hi]);
+      return `<button type="button" class="tev${flip ? " flip" : ""}${e.s.n === picked ? " on" : ""}" style="left:${x.toFixed(2)}%;top:${6 + k * 32}px" data-src="${e.s.n}" data-key="t${e.s.n}-${e.j}" aria-pressed="${e.s.n === picked}" title="${esc(`${e.at} · ${e.s.title} · ${e.label}`)}"><i class="mk ${esc(e.s.status)}${e.done ? " done" : ""}" aria-hidden="true"></i><span class="srcn">${e.s.n}</span><span><span class="mono">${dayMon(e.at)}</span> ${esc(label)}</span></button>`;
+    }).join("");
+    return `<div class="tlane"><span>${name}</span><div class="ttrack" style="height:${12 + rows.length * 32}px">${grid}${html}</div></div>`;
+  }).join("");
+  const undated = sources.filter((s) => !s.dates.length).map((s) => s.n);
+  return `<div class="tlane thead"><span></span><div class="ttrack">${ticks.map((d) => `<span style="left:${pct(d).toFixed(2)}%">${dayMon(d)}</span>`).join("")}</div></div>${lanes}
+    <div class="tlane tfoot"><span class="meta">${undated.length ? `No date: source ${undated.join(", ")}` : "Every source is dated"}</span><div class="ttrack">${today ? `<span style="left:${pct(today).toFixed(2)}%">Today · ${dayMon(today)}</span>` : ""}</div></div>`;
+}
+
+function askHtml(question, r, picked, today, width) {
+  const src = r.sources, sel = src.find((s) => s.n === picked);
+  const half = Math.ceil(src.length / 2), area = (s) => (AREAS.find(([k]) => k === s.area) || [0, "cited"])[1];
+  const card = (s) => `<button type="button" class="acard${s.n === picked ? " on" : ""}" data-src="${s.n}" data-key="g${s.n}" aria-pressed="${s.n === picked}"><span class="srcn">${s.n}</span><span class="acbody"><span class="meta">${esc(s.type)}</span><b>${esc(s.title)}</b><span>${srcWord(s.status)}</span></span></button>`;
+  const edge = (s) => `<span class="aedge${s.n === picked ? " on" : ""}"><span>${esc(area(s))}</span></span>`;
+  const objLink = (s) => (s.type === "Record" ? `<span class="mono">${esc(s.id)}</span>` : link(s.id.split(/[@#]/)[0], s.id));
+  const inspect = sel
+    ? `<div class="row"><span class="meta"><span class="srcn">${sel.n}</span> ${esc(sel.type)}</span>${objLink(sel)}</div><h3>${esc(sel.title)}</h3>
+      <dl class="adl"><dt>Status</dt><dd>${srcWord(sel.status)}${sel.area ? ` <span class="meta">${esc(area(sel))}</span>` : ""}</dd>${sel.dates.map((d) => `<dt class="mono">${esc(d.at)}</dt><dd>${esc(d.label)}${d.done ? " · done" : ""}</dd>`).join("")}</dl>
+      ${sel.note ? `<p class="anote">${esc(sel.note)}</p>` : ""}`
+    : `<div class="row"><span class="meta">Answer snapshot</span>${link(r.answerId)}</div><h3>${esc(question)}</h3>
+      <p class="anote">Saved to the knowledge graph with a link to each of its ${src.length} sources. It keeps your clearance, not your name or the question.</p>`;
+  return `<div class="askgrid">
+    <div class="askcol">
+      <article class="panel" aria-label="Answer"><div class="row"><span class="meta">Site Agent · ${r.model ? "written by Claude from the knowledge graph" : "from the indicators and live readings"}</span><span class="meta">${src.length} sources</span></div>
+        <h3 class="askq">${esc(question)}</h3><ul class="abullets">${askBullets(r.answer, src, picked) || `<li>${esc(r.answer)}</li>`}</ul>
+        <div class="btns">${r.focus.length ? `<a class="btn" href="#/plant/${encodeURIComponent(r.focus[0])}">Show on plant</a>` : ""}${r.project ? `<a class="btn" href="#/project/${encodeURIComponent(r.project.id)}">Open project</a>` : ""}</div></article>
+      <section class="panel ainspect" aria-label="Selected source" aria-live="polite">${inspect}</section>
+    </div>
+    <section class="panel agraph" aria-label="Where the answer comes from"><div class="row"><h2>Where the answer comes from</h2><span class="meta">Pick a record to inspect it</span></div>
+      ${src.length ? `<div class="agwrap"><div class="agcol left">${src.slice(0, half).map((s) => `<div class="agrow">${card(s)}${edge(s)}</div>`).join("")}</div>
+        <div class="agmid"><button type="button" class="ahub${picked === 0 ? " on" : ""}" data-src="0" data-key="g0" aria-pressed="${picked === 0}"><span class="meta">Answer · ${esc(r.answerId)}</span><b>${esc(question)}</b><span class="meta">${src.length} sources · saved</span></button></div>
+        <div class="agcol right">${src.slice(half).map((s) => `<div class="agrow">${edge(s)}${card(s)}</div>`).join("")}</div></div>` : `<p class="empty">The answer cites no record you can see.</p>`}
+    </section>
+  </div>
+  <section class="panel atime" aria-label="When it happens"><h2>When it happens</h2>${askTimeline(src, picked, today, width)}</section>`;
+}
+
 const views = {
+  async ask(q) {
+    view.innerHTML = `<div id="askv"><div class="row"><div><h2>00 / ask the site agent</h2><h1>Ask</h1></div></div>
+      <form id="askf" class="askbar" role="search"><label for="askq" class="sr">Ask about any project, permit or procedure</label><input id="askq" placeholder="Ask about any project, permit or procedure" autocomplete="off"><button class="btn primary">Ask</button></form>
+      <div class="row askchips"><div class="btns" role="group" aria-label="Suggested questions">${ASK_SUGGEST.map((s) => `<button type="button" class="btn" data-suggest="${esc(s)}">${esc(s)}</button>`).join("")}</div>
+        <span class="meta">Answers only use records your role can read. People show as roles and counts.</span></div>
+      <div id="askout"></div></div>`;
+    const out = $("#askout");
+    let res = null, question = "", picked = 1;
+    const draw = () => {
+      const key = document.activeElement?.dataset?.key;
+      out.innerHTML = askHtml(question, res, picked, $("#clock").textContent.slice(0, 10), Math.max(400, out.clientWidth - 200));
+      if (key) out.querySelector(`[data-key="${key}"]`)?.focus();
+    };
+    out.addEventListener("click", (e) => {
+      const b = e.target.closest("[data-src]");
+      if (!b || !res) return;
+      picked = Number(b.dataset.src);
+      draw();
+    });
+    const run = async (text) => {
+      question = text.trim();
+      if (!question) return;
+      $("#askq").value = question;
+      history.replaceState(null, "", `#/ask/${encodeURIComponent(question)}`);
+      const btns = view.querySelectorAll("#askf button, [data-suggest]");
+      btns.forEach((b) => { b.disabled = true; });
+      out.innerHTML = `<p class="meta" role="status">Reading the knowledge graph…</p>`;
+      try { res = await api("/api/plant/ask", { method: "POST", body: { question } }); picked = res.sources.length ? 1 : 0; draw(); }
+      catch (err) { out.innerHTML = ""; toast(err.message); }
+      btns.forEach((b) => { b.disabled = false; });
+    };
+    $("#askf").addEventListener("submit", (e) => { e.preventDefault(); run($("#askq").value); });
+    view.querySelectorAll("[data-suggest]").forEach((b) => b.addEventListener("click", () => run(b.dataset.suggest)));
+    if (q) run(q);
+  },
   async console() {
     const [c, m] = await Promise.all([api("/api/console"), api("/api/map")]);
     const train = c.train.map((s) => `<div class="stage"><h3>${esc(s.name)}</h3>
