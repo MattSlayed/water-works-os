@@ -343,3 +343,16 @@ button.srcn:hover { border-color: var(--teal); }
 .mk { width: 12px; height: 12px; flex: none; border: 2px solid var(--muted); border-radius: 50%; }
 .mk.red { border-color: var(--red); } .mk.amber { border-color: var(--amber); } .mk.green { border-color: var(--green); }
 .mk.done { background: var(--muted); } .mk.red.done { background: var(--red); } .mk.amber.done { background: var(--amber); } .mk.green.done { background: var(--green); }
+
+/* Lean shell: seven menu items, and a tab bar for the pages a section groups */
+.mainwrap { grid-area: main; display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+.mainwrap > main { flex: 1; min-height: 0; }
+.subnav { display: flex; gap: 2px; padding: 0 20px; border-bottom: 1px solid var(--line); background: var(--panel); overflow-x: auto; }
+.subnav[hidden] { display: none; }
+.subnav a { padding: 10px 14px; color: var(--muted); font-weight: 600; font-size: 13px; white-space: nowrap; border-bottom: 2px solid transparent; }
+.subnav a:hover { color: var(--ink); text-decoration: none; }
+.subnav a[aria-current="page"] { color: var(--ink); border-bottom-color: var(--teal); }
+.convos { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0 12px; }
+.convos a { padding: 4px 10px; border: 1px solid var(--line); font-size: 13px; color: var(--muted); }
+.convos a[aria-current="page"] { color: var(--ink); border-color: var(--teal); }
+.sect { margin: 18px 0 8px; }

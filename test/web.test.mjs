@@ -17,7 +17,18 @@ test("web assets are served with the right types", async () => {
 
 test("index wires the app, the nav and the three.js import map", async () => {
   const html = await (await fetch(base + "/")).text();
-  for (const s of ['src="/app.js"', 'data-nav="console"', 'data-nav="agents"', 'data-nav="proposals"', "three@0.160.0", 'id="role"', 'data-nav="chat"', 'data-nav="issues"', 'data-nav="projects"', 'data-nav="procedures"', 'data-nav="mywork"', 'data-nav="ask"']) assert.ok(html.includes(s), s);
+  for (const s of ['src="/app.js"', "three@0.160.0", 'id="role"', 'id="subnav"', 'id="prop-count"']) assert.ok(html.includes(s), s);
+  assert.deepEqual([...html.matchAll(/data-nav="(\w+)"/g)].map((m) => m[1]), ["ask", "console", "plant", "work", "projects", "records", "agents"], "seven menu items");
+});
+
+test("lean nav: every page belongs to a section, so old links still land and light their menu item", async () => {
+  const js = await (await fetch(base + "/app.js")).text();
+  const pages = [...js.matchAll(/^  async (\w+)\(/gm)].map((m) => m[1]).filter((v) => !v.startsWith("refresh"));
+  const block = js.slice(js.indexOf("const SECTIONS = ["), js.indexOf("const sectionOf"));
+  const SECTIONS = new Function(`${block}; return SECTIONS;`)();
+  for (const v of pages) assert.ok(SECTIONS.some((x) => x.tabs.some(([r]) => r === v) || x.also.includes(v)), `${v} has a section`);
+  assert.ok(js.includes('if (!el) { location.replace("#/work"); return; }'), "#/issues lands on Work");
+  assert.ok(js.includes('location.hash = `#/ask/${encodeURIComponent(q)}`'), "a question in the top bar opens Ask");
 });
 
 test("static files cannot escape the web folder", async () => {
@@ -92,7 +103,7 @@ test("region: Leaflet 1.9.4 is vendored with its licence and images, wired throu
   assert.match(png.headers.get("content-type"), /image\/png/);
   await png.arrayBuffer();
   const html = await (await fetch(base + "/")).text();
-  for (const s of ['data-nav="region"', '"leaflet": "/vendor/leaflet@1.9.4/leaflet-src.esm.js"', 'href="/vendor/leaflet@1.9.4/leaflet.css"']) assert.ok(html.includes(s), s);
+  for (const s of ['"leaflet": "/vendor/leaflet@1.9.4/leaflet-src.esm.js"', 'href="/vendor/leaflet@1.9.4/leaflet.css"']) assert.ok(html.includes(s), s);
 });
 
 test("region: the view carries the 07:00 cards, honest labels, offline and Enter plant", async () => {
@@ -123,7 +134,9 @@ test("harness and root cause: agent cards with switches and promotion; the repor
 test("the studio, the IT catalogue and document review are on the console", async () => {
   const app = await (await fetch(base + "/app.js")).text(), html = await (await fetch(base + "/")).text();
   for (const x of ["async studio(", "async catalogue(", "async intakes(", "Rule, agent or person", "Start in shadow", "Suggested for you", "needs IT approval", "Claude is off", "data-sentence"]) assert.ok(app.includes(x), x);
-  for (const x of ['href="#/studio"', 'href="#/intakes"', 'href="#/catalogue"']) assert.ok(html.includes(x), x);
+  // reached through the Agents and Records sections' tabs
+  assert.ok(html.includes('href="#/intakes"'));
+  for (const x of ['["studio", "Studio"]', '["catalogue", "Permissions"]', '["intakes", "Documents"]']) assert.ok(app.includes(x), x);
 });
 
 test("browser walk (plan 3b): the document's review buttons fit beside it, and catalogue role boxes are readable", async () => {

@@ -205,7 +205,10 @@ function askHtml(question, r, picked, today, width) {
 
 const views = {
   async ask(q) {
-    view.innerHTML = `<div id="askv"><div class="row"><div><h2>00 / ask the site agent</h2><h1>Ask</h1></div></div>
+    // your own chat and the group chats; a manager can read every person's chat, which stays one link away
+    const chans = await api("/api/channels").catch(() => []), mine = chans.filter((c) => c.groupName || c.personId === state.user || (c.members || []).includes(state.user));
+    view.innerHTML = `<div id="askv"><div class="row"><div><h1>Ask</h1></div></div>
+      <nav class="convos" aria-label="Conversations"><a href="#/ask" aria-current="page">Site Agent</a>${mine.map((c) => `<a href="#/chat/${encodeURIComponent(c.id)}">${esc(c.label)}</a>`).join("")}${chans.length > mine.length ? `<a href="#/chat">All chats · ${chans.length}</a>` : ""}</nav>
       <form id="askf" class="askbar" role="search"><label for="askq" class="sr">Ask about any project, permit or procedure</label><input id="askq" placeholder="Ask about any project, permit or procedure" autocomplete="off"><button class="btn primary">Ask</button></form>
       <div class="row askchips"><div class="btns" role="group" aria-label="Suggested questions">${ASK_SUGGEST.map((s) => `<button type="button" class="btn" data-suggest="${esc(s)}">${esc(s)}</button>`).join("")}</div>
         <span class="meta">Answers only use records your role can read. People show as roles and counts.</span></div>
@@ -233,7 +236,7 @@ const views = {
       const btns = view.querySelectorAll("#askf button, [data-suggest]");
       btns.forEach((b) => { b.disabled = true; });
       out.innerHTML = `<p class="meta" role="status">Reading the knowledge graph…</p>`;
-      try { res = await api("/api/plant/ask", { method: "POST", body: { question } }); picked = res.sources.length ? 1 : 0; draw(); }
+      try { res = state.lastAsk?.question === question ? state.lastAsk.res : await api("/api/plant/ask", { method: "POST", body: { question } }); state.lastAsk = null; picked = res.sources.length ? 1 : 0; draw(); }
       catch (err) { out.innerHTML = ""; toast(err.message); }
       btns.forEach((b) => { b.disabled = false; });
     };
@@ -249,7 +252,7 @@ const views = {
     const people = Object.entries(c.people).sort((a, b) => b[1].count - a[1].count).map(([z, p]) => `<li class="row"><span>${esc(z)} ${esc(m.zones.find((x) => x.id === z)?.name || "")}</span><span class="val">${p.count}</span></li>`).join("");
     const handover = c.drafts.find((d) => d.kind === "handover");
     view.innerHTML = `
-      <div class="row"><div><h2>01 / the works now</h2><h1>Riverbend works console</h1></div><span class="meta">${c.specChanges != null ? `<a href="#/proposals">Spec changes waiting: ${esc(c.specChanges)}</a> · ` : ""}demonstrable · synthetic data</span></div>
+      <div class="row"><div><h2>the works now</h2><h1>Riverbend works console</h1></div><span class="meta">${c.specChanges != null ? `<a href="#/proposals">Spec changes waiting: ${esc(c.specChanges)}</a> · ` : ""}demonstrable · synthetic data</span></div>
       <section class="panel" aria-label="Process train" style="margin:12px 0"><div class="train">${train}</div></section>
       <div class="grid console">
         <div class="grid">
@@ -274,7 +277,7 @@ const views = {
     const L = state.layers;
     const roll = m.muster.on ? `<section class="panel"><h2>Muster roll · started ${time(m.muster.since)}</h2><p><b>${m.muster.people.filter((p) => p.checkedIn).length} of ${m.muster.people.length}</b> accounted for</p>
       <ul class="list">${m.muster.people.map((p) => `<li class="row"><span>${esc(p.id)} · ${esc(p.role)}<br><span class="meta">last zone ${esc(p.zoneId)}</span></span>${p.checkedIn ? pill("checked in", "done") : `<button class="btn" data-checkin="${esc(p.id)}">Mark found</button>`}</li>`).join("")}</ul></section>` : "";
-    view.innerHTML = `<div class="row"><div><h2>02 / where everything is</h2><h1>Site map</h1></div>
+    view.innerHTML = `<div class="row"><div><h2>where everything is</h2><h1>Site map</h1></div>
       <div class="btns"><button class="btn ${m.muster.on ? "" : "primary"}" id="muster">${m.muster.on ? "End muster" : "Start muster"}</button></div></div>
       <div class="layers" role="group" aria-label="Layers">${Object.keys(L).map((k) => `<label><input type="checkbox" data-layer="${k}" ${L[k] ? "checked" : ""}> ${k}</label>`).join("")}</div>
       <div class="grid console"><section class="panel map">${mapSvg(m)}<p class="meta">Dots: green running, blue standby, grey isolated. Red rings: active alert. Amber numbers: people by zone. Dashed amber: open permit.</p></section><div class="grid">${roll}
@@ -318,7 +321,7 @@ const views = {
     const tabs = `<section class="panel rtabs"><div id="rpanel" aria-live="polite"></div><div class="btns" role="tablist"><button class="btn" role="tab" data-rtab="projects" aria-selected="true">Projects (${d.projects.length})</button><button class="btn" role="tab" data-rtab="ops" aria-selected="false">Operations (${ops.length})</button></div>
       <ul class="rlist" id="rtab-projects">${d.projects.map((p) => `<li><button class="linkish" data-proj="${esc(p.id)}">${esc(p.title)}</button> ${p.status.overdue.length ? pill("overdue", "amber") : ""}<small class="meta">${esc(p.start)} to ${esc(p.end)}</small></li>`).join("")}</ul>
       <ul class="rlist" id="rtab-ops" hidden>${ops.map((o) => `<li><button class="linkish" data-op="${esc(o.kind)}|${esc(o.id)}">${esc(o.label)}</button> <small class="meta">${esc(o.kind)}</small></li>`).join("") || "<li>No operations running.</li>"}</ul></section>`;
-    view.innerHTML = `<div id="regionv"><div class="row"><div><h2>03 / the region · ${esc(d.clock.slice(0, 16).replace("T", " "))} plant · synthetic works</h2><h1>Region</h1></div><div class="btns"><a class="btn" href="#/map">Site map</a><a class="btn" href="#/plant">Plant</a><button class="btn" id="clearfocus" hidden>Clear focus</button></div></div>
+    view.innerHTML = `<div id="regionv"><div class="row"><div><h2>the region · ${esc(d.clock.slice(0, 16).replace("T", " "))} plant · synthetic works</h2><h1>Region</h1></div><div class="btns"><a class="btn" href="#/map">Site map</a><a class="btn" href="#/plant">Plant</a><button class="btn" id="clearfocus" hidden>Clear focus</button></div></div>
       <div class="rcards">${cards}</div>${phone ? "" : timeline}
       <div class="rgrid ${phone ? "phone" : ""}">${phone ? "" : rail}<section class="panel rmap" aria-label="Region map">${phone ? `<button class="btn primary" id="showmap">Show on map</button>` : ""}</section>${tabs}</div></div>`;
 
@@ -450,7 +453,7 @@ const views = {
   async assets() {
     const assets = await api("/api/objects?type=Asset");
     const rows = assets.sort((a, b) => String(a.positionTag).localeCompare(String(b.positionTag))).map((a) => `<tr><td><a href="#/asset/${encodeURIComponent(a.id)}"><b>${esc(a.positionTag || a.name)}</b></a></td><td>${esc(a.name)}</td><td>${esc(a.assetClass)}</td><td>${pill(a.state)}</td><td>${a.hero ? pill("3D model", "agent") : ""}</td><td class="meta">${esc(a.zoneId)}</td></tr>`).join("");
-    view.innerHTML = `<h2>03 / every machine, ontologised</h2><h1>Assets and twin</h1><p class="sub">Hero assets open in the Asset Workbench with a 3D breakdown and the Technician Copilot.</p>
+    view.innerHTML = `<h2>every machine, ontologised</h2><h1>Assets and twin</h1><p class="sub">Hero assets open in the Asset Workbench with a 3D breakdown and the Technician Copilot.</p>
       <section class="panel"><table><thead><tr><th>Tag</th><th>Name</th><th>Class</th><th>State</th><th>Model</th><th>Zone</th></tr></thead><tbody>${rows}</tbody></table></section>`;
   },
 
@@ -464,7 +467,7 @@ const views = {
     const enc = encodeURIComponent;
     const contact = d.structures.find((s) => s.kind === "contact_tank") || d.structures[d.structures.length - 1];
     const chips = ["chlorine", contact && `upstream of ${contact.tag}`, "neighbours of SITE-RB", "turbidity"].filter(Boolean);
-    view.innerHTML = `<div class="row"><div><h2>03 / the works as drawn · plant model rev ${esc(d.model.rev)} · released ${time(d.model.release && d.model.release.at)} by ${esc(d.model.release && d.model.release.by)}</h2><h1>Plant</h1></div>
+    view.innerHTML = `<div class="row"><div><h2>the works as drawn · plant model rev ${esc(d.model.rev)} · released ${time(d.model.release && d.model.release.at)} by ${esc(d.model.release && d.model.release.by)}</h2><h1>Plant</h1></div>
         <div class="btns"><span class="btns ptabs" role="tablist" aria-label="Plant view"><button class="btn" role="tab" data-ptab="graph" aria-controls="pgraph">Graph</button><button class="btn" role="tab" data-ptab="3d" aria-controls="p3d">3D</button></span><a class="btn" href="#/plantmodels">Revisions and review</a><a class="btn" href="#/map">Site map</a></div></div>
       <div class="plantwrap"><section class="panel bloom" id="pgraph" role="tabpanel" aria-label="Plant knowledge graph">
           <form id="bq" class="bloombar"><label for="bqi">Query the graph</label><input id="bqi" maxlength="200" autocomplete="off" placeholder="chlorine · upstream of 16UGH01 · neighbours of SITE-RB"><button class="btn primary">Run</button><button type="button" class="btn" id="breset">Reset</button></form>
@@ -614,6 +617,8 @@ const views = {
         const r = await api("/api/plant/ask", { method: "POST", body: { question: q } });
         out.lastElementChild.outerHTML = `<div class="msg">${esc(r.answer)}${r.citations.length ? `<br><span class="cite">${r.citations.map((c) => esc(c.id)).join(" · ")}</span>` : ""}<br><span class="cite">${r.model ? "written by Claude from live data and documents" : "from the active alert and its live readings"}${r.focus.length ? "" : "; nothing to show on the map"}</span></div>`;
         if (r.project) out.insertAdjacentHTML("beforeend", indicatorCards(r.project, r.changed));
+        state.lastAsk = { question: q, res: r };
+        out.insertAdjacentHTML("beforeend", `<div class="btns"><a class="btn" href="#/ask/${encodeURIComponent(q)}">Open in Ask with its evidence</a></div>`);
         if (r.focus.length && state.plant) { state.plant.caption(null); state.plant.highlight(r.focus); state.plant.frame(r.focus, { min: 60, tilt: 0.9 }); }
         if (r.focus.length && tab === "graph") { state.bloom.highlight(r.focus); state.bloom.frame(r.focus); state.bloom.select(r.focus[0]); }
       } catch (err) { out.lastElementChild.remove(); toast(err.message); }
@@ -639,7 +644,7 @@ const views = {
     if (!id) {
       const [ms, dws] = await Promise.all([api("/api/plant/models"), api("/api/objects?type=Drawing")]);
       const received = dws.filter((d) => d.status === "received");
-      view.innerHTML = `<div class="row"><div><h2>03 / drawing set → plant model</h2><h1>Plant model revisions</h1></div>
+      view.innerHTML = `<div class="row"><div><h2>drawing set → plant model</h2><h1>Plant model revisions</h1></div>
           <div class="btns"><a class="btn" href="#/plant">Plant</a>${eng && received.length ? `<button class="btn primary" id="ingest">Ingest received drawings (${received.length})</button>` : ""}</div></div>
         <section class="panel"><table><thead><tr><th>Model</th><th>Status</th><th>Cells</th><th>Unreviewed</th><th>Released</th><th>Drawings</th></tr></thead><tbody>${ms.map((m) => `<tr><td><a href="#/plantmodels/${enc(m.id)}"><b>${esc(m.id)}</b></a></td><td>${pill(m.status, m.status === "released" ? "done" : m.status === "superseded" ? "noted" : "proposed")}</td><td class="val">${m.cells}</td><td>${Object.entries(m.unreviewed).map(([g, n]) => `${esc(g)} ${n}`).join(" · ") || "none"}</td><td class="meta">${m.release ? `${time(m.release.at)} by ${esc(m.release.by)}` : ""}</td><td class="meta">${m.sources.map((x) => `${esc(x.number)} ${esc(x.rev)}`).join(", ")}</td></tr>`).join("")}</tbody></table></section>
         <section class="panel" style="margin-top:12px"><h2>Received, not yet ingested</h2><ul class="list">${received.map((d) => `<li>${link(d.id, d.name)}</li>`).join("") || `<li class="empty">None.</li>`}</ul></section>`;
@@ -660,7 +665,7 @@ const views = {
     const val = (v) => (typeof v === "string" ? v : JSON.stringify(v));
     const row = (c) => `<tr class="${c.grade === "AMBIGUOUS" ? "amb" : c.grade === "INFERRED" ? "inf" : ""}" data-key="${esc(c.key)}"><td class="mono">${esc(c.key)}</td><td class="meta">${esc(c.sheet)}</td><td>${pill(c.grade, c.grade === "AMBIGUOUS" ? "medium" : c.grade === "INFERRED" ? "agent" : "low")}</td><td class="mono cv">${esc(val(c.value)).slice(0, 80)}</td><td class="why">${esc(c.reasoning)}</td>
       <td>${c.reviewed ? `<span class="meta">${esc(c.reviewed.by)} ${time(c.reviewed.at)}</span>` : open && eng ? `<div class="btns"><button class="btn" data-accept="${esc(c.key)}">Accept</button><button class="btn" data-correct="${esc(c.key)}">Correct</button>${c.field === "presence" ? `<button class="btn" data-exclude="${esc(c.key)}" title="Not on site: left out of the released model">Exclude</button>` : ""}</div>` : ""}</td></tr>`;
-    view.innerHTML = `<div id="review"><div class="row"><div><h2>03 / review · ${esc(m.status)} · ${m.cells} cells · hash ${esc(m.packageHash.slice(0, 12))}</h2><h1>${esc(m.id)}</h1></div>
+    view.innerHTML = `<div id="review"><div class="row"><div><h2>review · ${esc(m.status)} · ${m.cells} cells · hash ${esc(m.packageHash.slice(0, 12))}</h2><h1>${esc(m.id)}</h1></div>
         <div class="btns"><a class="btn" href="#/plantmodels">All revisions</a><a class="btn" href="#/plant">Plant</a>${open && eng ? `<button class="btn primary" id="release" title="${canRelease ? "Four eyes: someone other than the last reviewer releases" : "You do not hold c-model; the server will refuse"}">Release</button>` : ""}</div></div>
       <p class="sub">${esc(m.disclosure)} · ${todo.length} cells to review (${todo.filter((c) => c.grade === "AMBIGUOUS").length} ambiguous, ${todo.filter((c) => c.grade === "INFERRED").length} inferred). Extracted cells may be accepted per sheet; inferred and ambiguous cells one by one. Release needs a second person who holds c-model.</p>
       <div id="relmsg" role="status"></div>
@@ -814,16 +819,18 @@ const views = {
   async work() {
     const [wos, drafts] = await Promise.all([api("/api/objects?type=WorkOrder"), api("/api/objects?type=Draft")]);
     const open = wos.filter((w) => !["closed", "cancelled"].includes(w.state));
-    view.innerHTML = `<h2>04 / work</h2><h1>Work orders and drafts</h1>
+    view.innerHTML = `<h1>Work orders and issues</h1>
       <div class="grid console"><section class="panel"><h2>Open work · ${open.length}</h2><table><thead><tr><th>Order</th><th>Title</th><th>State</th><th>Priority</th><th>Assignee</th></tr></thead><tbody>${open.map((w) => `<tr><td>${link(w.id)}</td><td>${esc(w.title)}</td><td>${pill(w.state)}</td><td>${esc(w.priority)}</td><td>${w.assigneeId ? link(w.assigneeId) : "—"}</td></tr>`).join("")}</tbody></table></section>
-      <section class="panel"><h2>Agent drafts</h2><ul class="list">${drafts.slice().reverse().map((d) => `<li><details><summary><b>${esc(d.title)}</b> <span class="meta">${esc(d.kind)}</span></summary><pre>${esc(d.body)}</pre></details></li>`).join("") || `<li class="empty">No drafts.</li>`}</ul></section></div>`;
+      <section class="panel"><h2>Agent drafts</h2><ul class="list">${drafts.slice().reverse().map((d) => `<li><details><summary><b>${esc(d.title)}</b> <span class="meta">${esc(d.kind)}</span></summary><pre>${esc(d.body)}</pre></details></li>`).join("") || `<li class="empty">No drafts.</li>`}</ul></section></div>
+      <div id="workissues"></div>`;
+    await views.issues(null, $("#workissues"));
   },
 
   async agents() {
     const [agents, runs] = await Promise.all([api("/api/agents"), api("/api/runs")]);
     const canDial = ["engineer", "manager"].includes(state.me?.clearance);
     const lv = ["read", "draft", "notify", "propose", "act"];
-    view.innerHTML = `<h2>05 / agents on the same ontology as people</h2><h1>Agent Hub</h1><p class="sub">${canDial ? "You can change each agent's autonomy dial." : "Engineer clearance is needed to change the autonomy dial."} The effective level is the lower of the dial and the action's ceiling.</p>
+    view.innerHTML = `<h2>agents on the same ontology as people</h2><h1>Agent Hub</h1><p class="sub">${canDial ? "You can change each agent's autonomy dial." : "Engineer clearance is needed to change the autonomy dial."} The effective level is the lower of the dial and the action's ceiling.</p>
       <section class="panel" style="overflow-x:auto"><table><thead><tr><th>Agent</th><th>Trigger</th><th>Autonomy per action</th><th>Runs</th><th>Accepted</th><th></th></tr></thead><tbody>
       ${agents.map((a) => `<tr><td><b>${esc(a.name)}</b><div class="meta">${esc(a.purpose)}</div></td><td class="meta">${esc(a.trigger.kind)}${a.trigger.every ? " · " + esc(a.trigger.every) : ""}${a.trigger.on ? " · " + esc(a.trigger.on) : ""}</td>
         <td class="dial">${a.tools.map((t) => `<label style="display:flex;gap:6px;align-items:center;margin-bottom:4px"><span class="mono" style="font-size:12px;min-width:170px">${esc(t)}</span><select data-agent="${esc(a.name)}" data-action="${esc(t)}" ${canDial ? "" : "disabled"}>${lv.map((l) => `<option ${a.autonomy[t] === l ? "selected" : ""}>${l}</option>`).join("")}</select></label>`).join("") || `<span class="meta">read-only</span>`}</td>
@@ -915,7 +922,7 @@ const views = {
     };
     // unsure sources stay listed until someone deals with them, whether or not a change is open
     const unsure = (await api("/api/objects?type=SpecCandidate").catch(() => [])).filter((c) => c.grade === "AMBIGUOUS" && c.status === "suggested");
-    view.innerHTML = `<h2>06 / agents propose, people decide</h2><h1>Proposals</h1>
+    view.innerHTML = `<h2>agents propose, people decide</h2><h1>Proposals</h1>
       ${specP.length ? `<h2>Spec changes · ${specP.length}</h2>${specP.map(specCard).join("")}` : ""}${unsure.length ? `<section class="panel" style="margin-bottom:12px"><h2>Read these yourself</h2><p class="meta">Triage could not read these, so it proposes nothing from them.</p><ul class="list">${unsure.map((c) => `<li>${esc(c.source.title)} <span class="meta">${link(c.subject)} · ${esc(String(c.source.at || "").slice(0, 10))}</span></li>`).join("")}</ul></section>` : ""}
       ${open.map((p) => `<section class="panel" style="margin-bottom:12px"><div class="row"><b>${esc(p.action)}</b><span class="meta">${esc(p.id)} · ${esc(p.actorId)}${p.runId ? ` · <a href="#/run/${esc(p.runId)}">${esc(p.runId)}</a>` : ""}</span></div>
         <pre>${esc(JSON.stringify(p.params, null, 2))}</pre>${p.evidence?.length ? `<p class="meta">Evidence: ${p.evidence.map((e) => esc(typeof e === "string" ? e : JSON.stringify(e))).join(" · ")}</p>` : ""}
@@ -956,14 +963,14 @@ const views = {
 
   async knowledge() {
     const k = await api("/api/knowledge");
-    view.innerHTML = `<h2>07 / tribal knowledge as a governed loop</h2><h1>Knowledge Hub</h1>
+    view.innerHTML = `<h2>tribal knowledge as a governed loop</h2><h1>Knowledge Hub</h1>
       <div class="grid console"><section class="panel"><h2>Findings · ${k.findings.length}</h2><ul class="list">${k.findings.slice().reverse().map((f) => `<li><div class="row"><b>${link(f.id)}</b>${f.verified ? pill("verified", "done") : pill("unverified", "medium")}</div><div>${esc(f.text)}</div><div class="meta">${f.partId ? link(f.partId) : ""} · ${esc(f.authorRole || f.authorId || "")} · ${esc(f.at)}</div></li>`).join("")}</ul></section>
       <section class="panel"><h2>Feedback on agents · ${k.feedback.length}</h2><ul class="list">${k.feedback.slice().reverse().map((f) => `<li><div class="row"><b>${esc(f.verdict)}</b><span class="meta">${link(f.targetId)}</span></div><div>${esc(f.comment || "")}</div><div class="meta">${esc(f.authorId)} · ${time(f.at)}</div></li>`).join("") || `<li class="empty">No feedback yet. Reject or edit a proposal with a reason to add some.</li>`}</ul></section></div>`;
   },
 
   async compliance() {
     const c = await api("/api/compliance");
-    view.innerHTML = `<h2>08 / compliance as a workflow</h2><h1>Blue Drop evidence</h1>
+    view.innerHTML = `<h2>compliance as a workflow</h2><h1>Blue Drop evidence</h1>
       <section class="panel"><table><thead><tr><th>Requirement</th><th>Status</th><th>Evidence</th></tr></thead><tbody>${c.items.map((i) => `<tr><td>${link(i.requirementId)}</td><td>${pill(i.status)}</td><td>${esc(i.detail)}${i.refs.length ? `<div class="meta">${i.refs.slice(0, 8).map((r) => link(r)).join(" · ")}</div>` : ""}</td></tr>`).join("")}</tbody></table>
       <div class="btns"><button class="btn" data-run="Drop Pack">Refresh with the Drop Pack agent</button><button class="btn primary" id="submit">Submit pack (named person)</button></div></section>`;
     $("#submit").addEventListener("click", async () => { try { await api("/api/actions/submit_compliance_pack", { method: "POST", body: { params: { framework: "Blue Drop" } } }); toast("Submitted and recorded."); } catch (e) { toast(e.message); } });
@@ -971,7 +978,7 @@ const views = {
 
   async ontology() {
     const s = await api("/api/schema");
-    view.innerHTML = `<h2>09 / the connective tissue</h2><h1>Ontology</h1><p class="sub">Object types and counts visible to you. Search any object.</p>
+    view.innerHTML = `<h2>the connective tissue</h2><h1>Ontology</h1><p class="sub">Object types and counts visible to you. Search any object.</p>
       <form id="os" class="btns"><label class="sr" for="oq">Search objects</label><input id="oq" placeholder="HLP-B, F07, P-023, WO-…" style="flex:1;max-width:420px;background:var(--bg2);border:1px solid var(--line);padding:8px"><button class="btn primary">Search</button></form>
       <div id="ores"></div><section class="panel" style="margin-top:12px"><table><thead><tr><th>Type</th><th>Objects</th></tr></thead><tbody>${Object.entries(s.types).sort((a, b) => b[1] - a[1]).map(([t, n]) => `<tr><td><a href="#/search/type:${encodeURIComponent(t)}">${esc(t)}</a></td><td class="val">${n}</td></tr>`).join("")}</tbody></table></section>`;
     $("#os").addEventListener("submit", (e) => { e.preventDefault(); location.hash = `#/search/${encodeURIComponent($("#oq").value)}`; });
@@ -1018,9 +1025,9 @@ const views = {
     }
     const who = (m) => (m.direction === "out" ? m.sentBy || "Works number" : m.fromName);
     const bubble = (m) => `<div class="msg ${m.direction === "in" && m.from === state.user ? "me" : ""} ${esc(m.direction)}"><div class="meta">${esc(who(m))} · ${time(m.at)}${m.direction === "in" && m.outcome ? ` ${pill(m.outcome)}` : ""}</div>${esc(m.text)}${m.media && m.media.length ? `<div class="cite">${m.media.map(esc).join(" · ")}</div>` : ""}</div>`;
-    view.innerHTML = `<h2>09 / the works number</h2><h1>Chat</h1><p class="sub">A stand-in for WhatsApp: a message here does what a message to the works number does.${ch.groupName ? " The works number reads this group and only posts the Friday status." : ""}</p>
+    view.innerHTML = `<h2>the works number</h2><h1>Chat</h1><p class="sub">A stand-in for WhatsApp: a message here does what a message to the works number does.${ch.groupName ? " The works number reads this group and only posts the Friday status." : ""}</p>
       <div class="grid chatgrid">
-        <section class="panel" aria-label="Chats"><h2>Chats</h2><ul class="list">${chans.map((c) => `<li><a href="#/chat/${encodeURIComponent(c.id)}"${c.id === ch.id ? ' aria-current="page"' : ""}><b>${esc(c.label)}</b></a><div class="meta">${c.last ? esc(c.last.text.slice(0, 60)) : "no messages"}</div></li>`).join("")}</ul></section>
+        <section class="panel" aria-label="Conversations"><h2>Conversations</h2><ul class="list"><li><a href="#/ask"><b>Site Agent</b></a><div class="meta">ask about any project, permit or procedure</div></li>${chans.map((c) => `<li><a href="#/chat/${encodeURIComponent(c.id)}"${c.id === ch.id ? ' aria-current="page"' : ""}><b>${esc(c.label)}</b></a><div class="meta">${c.last ? esc(c.last.text.slice(0, 60)) : "no messages"}</div></li>`).join("")}</ul></section>
         <div class="grid">${job}
           <section class="panel" aria-label="Messages"><h2>${esc(ch.label)}${ch.groupName ? ` ${pill("listening", "medium")}` : ""}</h2><div class="chat phone" id="thread">${msgs.map(bubble).join("") || `<p class="empty">No messages yet. Try "start".</p>`}</div>
             ${member ? `<form id="compose" class="btns"><label class="sr" for="say">Message</label><input id="say" autocomplete="off" style="flex:1" placeholder="${ch.groupName ? "Post to the group" : "Try start, done, or ask a question"}"><button class="btn primary">Send</button></form>` : `<p class="meta">Read only: you are not in this chat.</p>`}</section>
@@ -1049,20 +1056,22 @@ const views = {
     th.scrollTop = th.scrollHeight;
   },
 
-  async issues() {
+  // Issues have no page of their own: the board sits under the work orders, and #/issues lands there.
+  async issues(_, el) {
+    if (!el) { location.replace("#/work"); return; }
     const iss = await api("/api/issues");
     const next = { open: "triaged", triaged: "in_work", in_work: "done" };
     const card = (i) => `<li><b>${esc(i.title)}</b><div class="meta">${link(i.id)}${i.assetId ? ` · ${link(i.assetId)}` : ""}${i.projectId ? ` · <a href="#/project/${encodeURIComponent(i.projectId)}">${esc(i.projectId)}</a>` : ""}${i.procedureId ? ` · <a href="#/procedure/${encodeURIComponent(i.procedureId)}">step ${esc(i.step)}</a>` : ""} · ${esc(i.raisedBy)} · ${time(i.at)}</div>${next[i.state] ? `<div class="btns"><button class="btn" data-move="${esc(i.id)}" data-to="${next[i.state]}">Move to ${esc(next[i.state].replace("_", " "))}</button></div>` : ""}</li>`;
-    view.innerHTML = `<h2>10 / what stopped the work</h2><h1>Issues</h1>
+    el.innerHTML = `<h2 class="sect">Issues · what stopped the work</h2>
       <div class="grid board">${[["open", "Open"], ["triaged", "Triaged"], ["in_work", "In work"], ["done", "Done"]].map(([k, label]) => { const xs = iss.filter((i) => i.state === k); return `<section class="panel" aria-label="${label}"><h2>${label} · ${xs.length}</h2><ul class="list">${xs.map(card).join("") || `<li class="empty">None.</li>`}</ul></section>`; }).join("")}</div>`;
-    view.querySelectorAll("[data-move]").forEach((b) => b.addEventListener("click", async () => {
-      try { await api("/api/actions/update_issue", { method: "POST", body: { params: { issueId: b.dataset.move, patch: { state: b.dataset.to } } } }); toast(`${b.dataset.move} moved to ${b.dataset.to.replace("_", " ")}.`); views.issues(); } catch (e) { toast(e.message); }
+    el.querySelectorAll("[data-move]").forEach((b) => b.addEventListener("click", async () => {
+      try { await api("/api/actions/update_issue", { method: "POST", body: { params: { issueId: b.dataset.move, patch: { state: b.dataset.to } } } }); toast(`${b.dataset.move} moved to ${b.dataset.to.replace("_", " ")}.`); views.issues(null, el); } catch (e) { toast(e.message); }
     }));
   },
 
   async projects() {
     const ps = await api("/api/projects");
-    view.innerHTML = `<h2>11 / projects and contracts</h2><h1>Projects</h1>${ps.map((p) => `<section class="panel"><div class="row"><a href="#/project/${encodeURIComponent(p.id)}"><b>${esc(p.title)}</b></a>${p.status.quiet ? pill(`quiet ${p.status.daysSinceReport} days`, "medium") : pill("reporting", "low")}</div>
+    view.innerHTML = `<h2>projects and contracts</h2><h1>Projects</h1>${ps.map((p) => `<section class="panel"><div class="row"><a href="#/project/${encodeURIComponent(p.id)}"><b>${esc(p.title)}</b></a>${p.status.quiet ? pill(`quiet ${p.status.daysSinceReport} days`, "medium") : pill("reporting", "low")}</div>
       <p class="meta">${esc(p.id)} · ${esc(p.kind)} · ends ${esc(p.end)} · ${esc(p.status.milestones.claimed)} of ${esc(p.status.milestones.total)} milestones claimed, ${esc(p.status.milestones.confirmed)} confirmed · ${esc(p.status.openIssues)} open issue(s)</p></section>`).join("") || `<p class="empty">No projects are visible to you.</p>`}`;
   },
 
@@ -1071,7 +1080,7 @@ const views = {
     const [d, ind, snaps] = await Promise.all([api(`/api/projects/${enc(id)}`), api(`/api/projects/${enc(id)}/indicators`).catch(() => null), api(`/api/projects/${enc(id)}/snapshots`).catch(() => [])]);
     const p = d.project, st = d.status;
     const canConfirm = ["supervisor", "engineer", "manager"].includes(state.me.clearance);
-    view.innerHTML = `<h2>11 / project</h2><h1>${esc(p.title)}</h1><p class="sub">${esc(p.contractorEmployer || "")} · ${esc(p.start)} to ${esc(p.end)} · last contractor report ${st.lastReportAt ? `${esc(st.daysSinceReport)} days ago` : "never"}${st.quiet ? ` ${pill("quiet", "medium")}` : ""}</p>
+    view.innerHTML = `<h2>project</h2><h1>${esc(p.title)}</h1><p class="sub">${esc(p.contractorEmployer || "")} · ${esc(p.start)} to ${esc(p.end)} · last contractor report ${st.lastReportAt ? `${esc(st.daysSinceReport)} days ago` : "never"}${st.quiet ? ` ${pill("quiet", "medium")}` : ""}</p>
       ${ind ? indicatorCards(ind) : ""}
       <div class="grid console">
         <section class="panel" aria-label="Milestones"><h2>Milestones</h2><table><thead><tr><th>Milestone</th><th>Due</th><th>State</th><th></th></tr></thead><tbody>${p.milestones.map((m) => `<tr><td>${esc(m.id)} ${esc(m.title)}</td><td>${esc(m.due)}${st.overdue.includes(m.id) ? ` ${pill("overdue", "high")}` : ""}</td><td>${m.confirmedAt ? pill("confirmed", "done") : m.claimedAt ? pill("claimed", "proposed") : pill("open")}</td><td>${m.claimedAt && !m.confirmedAt && canConfirm ? `<button class="btn decide" data-confirm="${esc(m.id)}">Confirm</button>` : ""}</td></tr>`).join("")}</tbody></table>
@@ -1090,7 +1099,7 @@ const views = {
 
   async procedures() {
     const ps = await api("/api/procedures");
-    view.innerHTML = `<h2>12 / digitised SOPs</h2><h1>Procedures</h1><section class="panel"><table><thead><tr><th>Procedure</th><th>Version</th><th>State</th><th>Steps</th><th>Source</th></tr></thead><tbody>${ps.map((p) => `<tr><td><a href="#/procedure/${encodeURIComponent(p.id)}">${esc(p.title)}</a></td><td>v${esc(p.version)}</td><td>${pill(p.state, p.state === "released" ? "done" : p.state === "draft" ? "proposed" : "noted")}</td><td>${esc(p.steps)}</td><td>${p.sourceRef ? `${esc(p.sourceRef.system)} rev ${esc(p.sourceRef.revision)}` : ""}${p.sourceBehind ? ` ${pill("source copy behind", "medium")}` : ""}</td></tr>`).join("")}</tbody></table></section>`;
+    view.innerHTML = `<h2>digitised SOPs</h2><h1>Procedures</h1><section class="panel"><table><thead><tr><th>Procedure</th><th>Version</th><th>State</th><th>Steps</th><th>Source</th></tr></thead><tbody>${ps.map((p) => `<tr><td><a href="#/procedure/${encodeURIComponent(p.id)}">${esc(p.title)}</a></td><td>v${esc(p.version)}</td><td>${pill(p.state, p.state === "released" ? "done" : p.state === "draft" ? "proposed" : "noted")}</td><td>${esc(p.steps)}</td><td>${p.sourceRef ? `${esc(p.sourceRef.system)} rev ${esc(p.sourceRef.revision)}` : ""}${p.sourceBehind ? ` ${pill("source copy behind", "medium")}` : ""}</td></tr>`).join("")}</tbody></table></section>`;
   },
 
   async procedure(id) {
@@ -1105,7 +1114,7 @@ const views = {
         ${notes.length ? `<details><summary class="meta">${notes.length} field note(s)</summary><ul class="list">${notes.map((x) => `<li>${esc(x.text)} <span class="meta">${link(x.id)}</span></li>`).join("")}</ul></details>` : ""}</td>
         <td>${esc(s.expectedMinutes)} min</td>${perf ? `<td>${f && f.median != null ? `${num(f.median)} min${f.ratio >= 1.5 ? ` ${pill(`${f.ratio}x`, "high")}` : ""}` : "—"}</td>` : ""}<td>${notes.length} / ${issues.length}</td></tr>`;
     };
-    view.innerHTML = `<h2>12 / procedure</h2><h1>${esc(p.title)} v${esc(p.version)}</h1>
+    view.innerHTML = `<h2>procedure</h2><h1>${esc(p.title)} v${esc(p.version)}</h1>
       <p class="sub">${pill(p.state, p.state === "released" ? "done" : "proposed")} · from ${d.document ? link(d.document.id, d.document.title) : esc(p.documentId)}${d.document && d.document.sourceBehind ? ` ${pill("SharePoint copy behind", "medium")}` : ""} · versions: ${d.versions.map((v) => `<a href="#/procedure/${encodeURIComponent(v.id)}">v${esc(v.version)}</a> ${esc(v.state)}`).join(" · ")}</p>
       <section class="panel"><table><thead><tr><th>#</th><th>Step</th><th>Expected</th>${perf ? "<th>Median</th>" : ""}<th>Notes / issues</th></tr></thead><tbody>${p.steps.map(row).join("")}</tbody></table>
         ${canEdit ? `<label class="field">Reason for the new version<textarea id="reason" rows="2"></textarea></label><div class="btns"><button class="btn primary" id="propose">Propose the next version</button></div>` : ""}
@@ -1127,7 +1136,7 @@ const views = {
     const pct = (x) => (x == null ? "—" : `${Math.round(x * 100)}%`);
     const bar = (s) => `<div class="bar" role="img" aria-label="Median ${esc(s.median)} minutes against ${esc(s.expected)} expected"><span class="${s.ratio >= 1.5 ? "long" : ""}" style="width:${Math.min(100, Math.round((Number(s.ratio) || 0) * 50))}%"></span></div>`;
     const done = perf.steps.filter((s) => s.median != null);
-    view.innerHTML = `<h2>13 / my work</h2><h1>My work</h1><p class="sub">Your own numbers, for you first. Your supervisor and the engineers see them too. Nobody sees a ranking.</p>
+    view.innerHTML = `<h2>my work</h2><h1>My work</h1><p class="sub">Your own numbers, for you first. Your supervisor and the engineers see them too. Nobody sees a ranking.</p>
       <div class="grid console">
         <section class="panel" aria-label="Time per step"><h2>Time per step against the procedure · ${esc(perf.executions)} job(s)</h2>
           ${done.length ? `<table><thead><tr><th>Step</th><th>Median</th><th>Expected</th><th><span class="sr">Against expected</span></th></tr></thead><tbody>${done.map((s) => `<tr><td><a href="#/procedure/${encodeURIComponent(s.procedureId)}">${esc(s.step)}. ${esc(s.text)}</a></td><td>${num(s.median)} min</td><td>${esc(s.expected)} min</td><td style="min-width:90px">${bar(s)}</td></tr>`).join("")}</tbody></table><p class="meta">The line marks the expected time.</p>` : `<p class="empty">No finished jobs on record yet.</p>`}</section>
@@ -1147,7 +1156,7 @@ const views = {
   async studio() {
     const [sugs, docs] = await Promise.all([api("/api/suggestions"), api("/api/intakes").catch(() => [])]);
     const ev = (id) => (/^DRV-/.test(id) ? `<span class="mono">${esc(id)}</span>` : link(id));
-    view.innerHTML = `<h2>07 / agents people build</h2><h1>Agent Studio</h1>
+    view.innerHTML = `<h2>agents people build</h2><h1>Agent Studio</h1>
       <p class="sub">Describe something you do by hand. The studio says whether it is a rule, an agent or a person's job, builds a statement only from what IT lets your role use, replays it on your last 14 days, and starts it in shadow, where it changes nothing until someone else promotes it.</p>
       ${state.llm ? "" : `<p class="meta" id="claude-off">Claude is off: the keyword planner builds a document digester, a watch, a weekly report, a chaser or a supplier tidy-up.</p>`}
       <section class="panel" id="suggested"><h2>Suggested for you</h2><p class="meta">Only you see these. Each comes from your own work in the last 30 days; nothing you view or search is recorded.</p>
@@ -1242,7 +1251,7 @@ const views = {
   // ---------- IT's connector catalogue (agents design §7) ----------
   async catalogue() {
     const cat = await api("/api/catalogue"), lvls = ["read", "draft", "notify", "propose", "act"];
-    view.innerHTML = `<h2>08 / what agents may touch</h2><h1>IT catalogue</h1>
+    view.innerHTML = `<h2>what agents may touch</h2><h1>IT catalogue</h1>
       <p class="sub">${cat.canEdit ? "You are an IT administrator: you set which roles may use each connector, the most an agent may do with it, and sign lines off for a role." : "Read only: IT administrators change the catalogue."} A studio agent never does more than its builder's role allows here.</p>
       ${cat.connectors.map((c) => `<section class="panel" style="margin-bottom:12px"><h2>${esc(c.kind)}</h2><table><thead><tr><th>Operation</th><th>Action</th><th>Roles</th><th>Most an agent may do</th><th>IT sign-off</th></tr></thead><tbody>
         ${c.lines.map((l) => `<tr><td class="mono">${esc(l.op)}</td><td class="mono">${esc(l.action || "—")}</td>
@@ -1272,7 +1281,7 @@ const views = {
   async intakes(id) {
     if (!id) {
       const ds = await api("/api/intakes");
-      view.innerHTML = `<h2>09 / documents the digester read</h2><h1>Documents</h1><p class="sub">Only the agent's builder and its approver see these. Unsure fields are reviewed beside the document.</p>
+      view.innerHTML = `<h2>documents the digester read</h2><h1>Documents</h1><p class="sub">Only the agent's builder and its approver see these. Unsure fields are reviewed beside the document.</p>
         <section class="panel"><table><thead><tr><th>Document</th><th>Supplier</th><th>Total</th><th>Verdict</th><th>Issues</th><th>Received</th></tr></thead><tbody>${ds.map((d) => `<tr><td><a href="#/intakes/${encodeURIComponent(d.id)}"><b>${esc(d.name)}</b></a></td><td>${esc(d.supplier || "unreadable")}</td><td class="val">${d.total == null ? "?" : num(d.total)}</td><td>${pill(d.verdict, d.verdict === "file" ? "done" : d.verdict === "person" ? "high" : "medium")} <span class="meta">${esc(d.state)}</span></td><td class="meta">${esc(d.issues.join(", "))}</td><td class="meta">${time(d.receivedAt)}</td></tr>`).join("") || `<tr><td colspan="6" class="empty">No documents yet.</td></tr>`}</tbody></table></section>`;
       return;
     }
@@ -1281,7 +1290,7 @@ const views = {
     // lines and bank details read as they do on the document, not as JSON
     const val = (v) => (v == null ? "" : typeof v === "string" ? v : Array.isArray(v) ? v.map((l) => `${l.qty} × ${l.desc} @ ${l.price}`).join("; ") : v.account ? `${v.account} / ${v.branch}` : JSON.stringify(v));
     const page = d.preview.textLayer ? esc(d.preview.textLayer).replace(/\?+(\.\?+)?/g, (m) => `<mark>${m}</mark>`) : `<span class="meta">No text layer: this image could not be read${state.llm ? "" : " while Claude is off"}.</span>`;
-    view.innerHTML = `<div id="intake"><div class="row"><div><h2>09 / ${esc(d.id)} · ${esc(d.state)}</h2><h1>${esc(d.preview.name)}</h1></div><div class="btns"><a class="btn" href="#/intakes">All documents</a></div></div>
+    view.innerHTML = `<div id="intake"><div class="row"><div><h2>${esc(d.id)} · ${esc(d.state)}</h2><h1>${esc(d.preview.name)}</h1></div><div class="btns"><a class="btn" href="#/intakes">All documents</a></div></div>
       <p class="sub">${pill(d.verdict, d.verdict === "file" ? "done" : d.verdict === "person" ? "high" : "medium")} ${d.match.issues.map((i) => esc(i.detail)).join(" · ") || "Matches its PO and goods receipt."} ${d.verdict === "file" ? `Files to <span class="mono">${esc(d.destination.path)}</span>.` : ""}</p>
       <div class="grid console intake-grid"><section class="panel"><h2>The document · ${esc(d.preview.quality || "")}</h2><pre class="docpage">${page}</pre></section>
       <section class="panel"><h2>Fields</h2><table class="cells"><thead><tr><th>Field</th><th>Grade</th><th>Value</th><th>Reasoning</th><th></th></tr></thead><tbody>
@@ -1304,15 +1313,29 @@ const views = {
 
   async audit() {
     const a = await api("/api/audit");
-    view.innerHTML = `<h2>10 / every action, chained</h2><h1>Audit log</h1><p class="sub">Hash chain ${a.verified ? pill("verified", "done") : pill("broken", "gap")}</p>
+    view.innerHTML = `<h2>every action, chained</h2><h1>Audit log</h1><p class="sub">Hash chain ${a.verified ? pill("verified", "done") : pill("broken", "gap")}</p>
       <section class="panel" style="overflow-x:auto"><table><thead><tr><th>#</th><th>Actor</th><th>Action</th><th>Outcome</th><th>Ref</th><th>Hash</th></tr></thead><tbody>${a.entries.map((e) => `<tr><td class="val">${e.seq}</td><td>${esc(e.actor)} <span class="meta">${esc(e.actorKind || "")}</span></td><td class="mono">${esc(e.action)}</td><td>${pill(e.outcome || "done")}${e.reason ? `<div class="meta">${esc(e.reason)}</div>` : ""}</td><td>${e.ref ? link(e.ref) : ""}</td><td class="meta">${esc(e.hash)}</td></tr>`).join("")}</tbody></table></section>`;
   }
 };
 
 // ---------- router, shell, live events ----------
+// The seven menu items. A section's tabs are the pages it groups; every older route still works and lights its section.
+const SECTIONS = [
+  { nav: "ask", tabs: [], also: ["ask", "chat"] },
+  { nav: "console", tabs: [], also: ["console"] },
+  { nav: "plant", tabs: [["plant", "Plant"], ["map", "Site"], ["region", "Region"], ["assets", "Assets"]], also: ["plantmodels", "asset"] },
+  { nav: "work", tabs: [["mywork", "Mine"], ["work", "Work orders and issues"], ["proposals", "Approvals"], ["procedures", "Procedures"]], also: ["issues", "procedure"] },
+  { nav: "projects", tabs: [], also: ["projects", "project"] },
+  { nav: "records", tabs: [["intakes", "Documents"], ["knowledge", "Knowledge"], ["compliance", "Compliance"], ["ontology", "Ontology"]], also: ["search", "object"] },
+  { nav: "agents", tabs: [["agents", "Agents"], ["studio", "Studio"], ["catalogue", "Permissions"], ["audit", "Audit log"]], also: ["run", "rca"] }
+];
+const sectionOf = (name) => SECTIONS.find((x) => x.tabs.some(([r]) => r === name) || x.also.includes(name));
 async function route() {
   const [, name = "console", arg] = location.hash.match(/^#\/([^/]+)\/?(.*)$/) || [];
-  document.querySelectorAll("[data-nav]").forEach((a) => a.classList.toggle("active", a.dataset.nav === name || a.dataset.nav === `${name}s` || (name === "plantmodels" && a.dataset.nav === "plant") || (name === "run" && a.dataset.nav === "agents")));
+  const sec = sectionOf(name), sub = $("#subnav");
+  document.querySelectorAll("[data-nav]").forEach((a) => { const on = a.dataset.nav === sec?.nav; a.classList.toggle("active", on); if (on) a.setAttribute("aria-current", "page"); else a.removeAttribute("aria-current"); });
+  sub.hidden = !sec?.tabs.length;
+  sub.innerHTML = sec?.tabs.map(([r, label]) => `<a href="#/${r}"${r === name ? ' aria-current="page"' : ""}>${esc(label)}</a>`).join("") || "";
   if (name !== "asset") { state.twin?.dispose(); state.twin = null; state.copilot = null; }
   if (name !== "plant") { state.plant?.dispose(); state.plant = null; state.bloom?.dispose(); state.bloom = null; }
   if (name !== "region") { state.region?.dispose(); state.region = null; state.regionRefresh = null; }
@@ -1339,7 +1362,7 @@ $("#cmd").addEventListener("submit", async (e) => {
   if (!q) return;
   const run = q.match(/^run\s+(.+)$/i);
   if (run) { try { const r = await api(`/api/agents/${encodeURIComponent(run[1])}/run`, { method: "POST", body: {} }); location.hash = `#/run/${r.id}`; } catch (err) { toast(err.message); } return; }
-  if (q.includes("?")) { const r = await api(`/api/agents/Ask/run`, { method: "POST", body: { mission: q } }); toast((r.outputs[0] && r.outputs[0].text) || "No answer."); return; }
+  if (q.includes("?")) { location.hash = `#/ask/${encodeURIComponent(q)}`; return; }
   location.hash = `#/search/${encodeURIComponent(q)}`;
 });
 document.addEventListener("keydown", (e) => { if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") { e.preventDefault(); $("#cmd-input").focus(); } });
@@ -1375,7 +1398,7 @@ function connect() {
     // refresh live views only; forms on other views are left alone
     pending = setTimeout(async () => {
       const [, name = "console", arg] = location.hash.match(/^#\/([^/]+)\/?(.*)$/) || [];
-      const live = e.kind === "clock" ? ["console", "map"] : ["console", "map", "chat", "issues"];
+      const live = e.kind === "clock" ? ["console", "map"] : ["console", "map", "chat", "work"];
       const typing = document.activeElement.closest?.("form") || $("#say")?.value || $("#stepval")?.value;
       if (live.includes(name) && !typing) views[name](arg ? decodeURIComponent(arg) : undefined);
       if (name === "plant" && state.plant) views.refreshPlant().catch(() => {});
