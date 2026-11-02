@@ -716,7 +716,7 @@ const views = {
         <div class="btns">${pill(a.state)}${alarmed ? pill("sensor above alarm", "high") : ""}<a class="btn" href="#/object/${encodeURIComponent(a.id)}">Object view</a>${["supervisor", "engineer", "manager"].includes(state.me.clearance) ? `<button class="btn" id="permit">Open permit and isolate</button>` : ""}</div></div>
       <div class="work">
         <nav class="panel tree" aria-label="Components"><label class="field">Filter components<input id="pf" type="search"></label><div id="tree">${tree || `<p class="empty">No part breakdown for this asset yet.</p>`}</div></nav>
-        <section class="panel stage3d" aria-label="3D model"><div class="disclose">TEMPLATE 3D · built from the released asset model · not the OEM's geometry</div>
+        <section class="panel stage3d${m.figure ? " fig" : ""}" aria-label="Asset model">${m.figure ? `<iframe class="figure" title="${esc(a.positionTag)} figure. Click a part to open it here." sandbox="allow-scripts" src="${esc(m.figure.page)}"></iframe><button class="btn modesw" id="modesw">3D model</button>` : ""}<div class="disclose">TEMPLATE 3D · built from the released asset model · not the OEM's geometry</div>
           <div class="ctl"><label style="flex:1;display:flex;gap:8px;align-items:center">Explode <input id="ex" type="range" min="0" max="100" value="0" style="flex:1"></label>
           <button class="btn" id="iso">Isolate</button><button class="btn" id="loc">Locate</button><button class="btn" id="reset">Reset</button></div></section>
         <aside class="side">
@@ -766,6 +766,7 @@ const views = {
       selected = pid;
       view.querySelectorAll("[data-part]").forEach((b) => b.classList.toggle("sel", b.dataset.part === pid));
       state.twin?.select(pid);
+      if (m.figure?.lights[pid]) $(".figure")?.contentWindow.postMessage({ type: "anatomy:select", part: m.figure.lights[pid] }, "*");
       state.copilot = null; // a new part scopes a new Copilot session
       tab = "part";
       view.querySelectorAll("[data-tab]").forEach((x) => x.classList.toggle("on", x.dataset.tab === "part"));
@@ -776,14 +777,30 @@ const views = {
 
     state.twin?.dispose();
     state.twin = null;
-    if (m.parts.length) {
+    const mountModel = async () => {
+      if (!m.parts.length) return;
       try {
         const { mountTwin } = await import("/twin.js");
         state.twin = mountTwin($(".stage3d"), m.parts, { onSelect: (pid) => pid && select(pid) });
+        if (selected) state.twin.select(selected);
       } catch (e) {
         $(".stage3d").insertAdjacentHTML("afterbegin", `<p class="empty" style="padding:40px">3D view unavailable (${esc(e.message)}). The part tree and Copilot still work.</p>`);
       }
-    }
+    };
+    // a re-render must not leave the last asset's handler listening
+    window.removeEventListener("message", state.figureMsg);
+    state.figureMsg = (e) => {
+      if (e.source === $(".figure")?.contentWindow && e.data?.type === "anatomy:pick" && partById[m.figure.parts[e.data.part]]) select(m.figure.parts[e.data.part]);
+    };
+    window.addEventListener("message", state.figureMsg);
+    if (m.figure) {
+      // the 3D model mounts on first use: a canvas sizes itself when it mounts, and a hidden one would size to nothing
+      $("#modesw").addEventListener("click", async (e) => {
+        const fig = $(".stage3d").classList.toggle("fig");
+        e.currentTarget.textContent = fig ? "3D model" : "Figure";
+        if (!fig && !state.twin) await mountModel();
+      });
+    } else await mountModel();
     $("#ex").addEventListener("input", (e) => state.twin?.setExplode(e.target.value / 100));
     $("#iso").addEventListener("click", () => state.twin?.isolate(selected));
     $("#loc").addEventListener("click", () => selected && state.twin?.locate(selected));
