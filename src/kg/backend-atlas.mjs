@@ -51,7 +51,7 @@ export function createAtlasBackend({ atlas, historian, domain = "riverbend", bra
       }));
     },
     // Historian's window is [from, to) and it stores changes only; the tools treat a missing minute as the value held
-    readings: async (sensor, fromIso, toIso) => HISTORIAN_READ.points(await historian.callTool(HISTORIAN_READ.tool, HISTORIAN_READ.args(sensor.tag, fromIso, toIso))),
+    readings: (sensor, fromIso, toIso) => HISTORIAN_READ.read((tool, args) => historian.callTool(tool, args), sensor.tag, fromIso, toIso),
     cypher
   };
 }

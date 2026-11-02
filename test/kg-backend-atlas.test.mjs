@@ -73,7 +73,7 @@ test("no data is not zero", async () => {
   assert.deepEqual(await run("readings", { sensorId: "SEN-F07-turb", from, to }, tech), { id: "SEN-F07-turb", points: [], note: "no data", cite: `SEN-F07-turb@${from}..${now}` }, "to is clamped to the plant clock");
   const sent = historianReplies.at(-1);
   assert.equal(JSON.parse(sent.tagNamesJson)[0], "AIT-157", "Historian is keyed by the ISA tag");
-  assert.equal(sent.endTime, new Date(now).toISOString(), "the Atlas path is clamped to the plant clock too");
+  assert.equal(sent.endTime, new Date(Date.parse(now) + 1).toISOString(), "the Atlas path is clamped to the plant clock too (the tool's end is exclusive)");
   // a quality-0 row starts a gap (it is not held over), and the values are read on the 1-minute grid
   historianText = "## AIT-157 - 3 point(s)\n- 2026-10-01T00:00:00Z  v=0.2  q=192\n- 2026-10-01T00:05:00Z  v=0  q=0\n- 2026-10-01T00:10:00Z  v=0.4  q=192\n";
   const s = await run("readings", { sensorId: "SEN-F07-turb", from: "2026-10-01T00:00:00Z", to: "2026-10-01T00:20:00Z" }, tech);
