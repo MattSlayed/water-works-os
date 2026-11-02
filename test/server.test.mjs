@@ -56,6 +56,8 @@ test("asset model returns parts with geometry", async () => {
   assert.equal(r.status, 200);
   assert.ok(r.json.parts.length >= 12);
   assert.ok(r.json.parts[0].geom);
+  assert.match(r.json.figure.page, /^\/figures\/hlp-b-split-case-pump\//, "the Workbench gets the figure from the same route");
+  assert.equal(r.json.figure.parts["motor"], "PRT-HLP-B-02");
 });
 
 test("running an agent returns its run; unknown agent is 404", async () => {

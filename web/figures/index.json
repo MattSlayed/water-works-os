@@ -1,0 +1,142 @@
+{
+ "AST-94421": {
+  "positionTag": "BLW-A",
+  "page": "/figures/blw-a-rotary-lobe-blower/blw-a-rotary-lobe-blower.html",
+  "parts": {
+   "inlet-filter": "PRT-BLW-A-08",
+   "guard": "PRT-BLW-A-04",
+   "belts": "PRT-BLW-A-03",
+   "motor": "PRT-BLW-A-02",
+   "relief": "PRT-BLW-A-09",
+   "bearings": "PRT-BLW-A-07",
+   "rotors": "PRT-BLW-A-06",
+   "casing": "PRT-BLW-A-05",
+   "skid": "PRT-BLW-A-01"
+  },
+  "lights": {
+   "PRT-BLW-A-09": "relief",
+   "PRT-BLW-A-08": "inlet-filter",
+   "PRT-BLW-A-05": "casing",
+   "PRT-BLW-A-06": "rotors",
+   "PRT-BLW-A-01": "skid",
+   "PRT-BLW-A-03": "belts",
+   "PRT-BLW-A-04": "guard",
+   "PRT-BLW-A-07": "bearings",
+   "PRT-BLW-A-02": "motor"
+  }
+ },
+ "AST-76091": {
+  "positionTag": "CL-4",
+  "page": "/figures/cl-4-clarifier-scraper-drive/cl-4-clarifier-scraper-drive.html",
+  "parts": {
+   "motor": "PRT-CL-4-02",
+   "gearbox": "PRT-CL-4-03",
+   "limiter": "PRT-CL-4-04",
+   "ring": "PRT-CL-4-05",
+   "column": "PRT-CL-4-06",
+   "platform": "PRT-CL-4-01"
+  },
+  "lights": {
+   "PRT-CL-4-01": "platform",
+   "PRT-CL-4-04": "limiter",
+   "PRT-CL-4-06": "column",
+   "PRT-CL-4-05": "ring",
+   "PRT-CL-4-03": "gearbox",
+   "PRT-CL-4-02": "motor"
+  }
+ },
+ "AST-74253": {
+  "positionTag": "DP-1",
+  "page": "/figures/dp-1-diaphragm-dosing-pump/dp-1-diaphragm-dosing-pump.html",
+  "parts": {
+   "motor.foot": "PRT-DP-1-02",
+   "motor.foot#2": "PRT-DP-1-02",
+   "motor.body": "PRT-DP-1-02",
+   "motor.cowl": "PRT-DP-1-02",
+   "motor.shield": "PRT-DP-1-02",
+   "motor.spigot": "PRT-DP-1-02",
+   "motor.pad": "PRT-DP-1-02",
+   "motor.terminal": "PRT-DP-1-02",
+   "gearbox.cover": "PRT-DP-1-03",
+   "pump.stop": "PRT-DP-1-04",
+   "pump.spindle": "PRT-DP-1-04",
+   "pump.scale": "PRT-DP-1-04",
+   "pump.knob": "PRT-DP-1-04",
+   "pump.pointer": "PRT-DP-1-04",
+   "gearbox.back": "PRT-DP-1-03",
+   "gearbox.floor": "PRT-DP-1-03",
+   "gearbox.left": "PRT-DP-1-03",
+   "gearbox.right": "PRT-DP-1-03",
+   "gearbox.boss": "PRT-DP-1-03",
+   "pump.insert": "PRT-DP-1-05",
+   "pump.diaphragm-rim": "PRT-DP-1-05",
+   "pump.diaphragm": "PRT-DP-1-05",
+   "pump.head": "PRT-DP-1-06",
+   "pump.suction-body": "PRT-DP-1-07",
+   "pump.suction-ball": "PRT-DP-1-07",
+   "pump.suction-pin": "PRT-DP-1-07",
+   "pump.discharge-body": "PRT-DP-1-08",
+   "pump.discharge-ball": "PRT-DP-1-08",
+   "pump.discharge-pin": "PRT-DP-1-08",
+   "pump.suction-nut": "PRT-DP-1-07",
+   "pump.discharge-nut": "PRT-DP-1-08",
+   "damper.body": "PRT-DP-1-09",
+   "damper.charge-valve": "PRT-DP-1-09",
+   "skid": "PRT-DP-1-01"
+  },
+  "lights": {
+   "PRT-DP-1-03": "gearbox.cover",
+   "PRT-DP-1-08": "pump.discharge-ball",
+   "PRT-DP-1-07": "pump.suction-ball",
+   "PRT-DP-1-04": "pump.stop",
+   "PRT-DP-1-09": "damper.body",
+   "PRT-DP-1-02": "motor.body",
+   "PRT-DP-1-05": "pump.diaphragm",
+   "PRT-DP-1-06": "pump.head",
+   "PRT-DP-1-01": "skid"
+  }
+ },
+ "AST-85704": {
+  "positionTag": "HLP-B",
+  "page": "/figures/hlp-b-split-case-pump/hlp-b-split-case-pump.html",
+  "parts": {
+   "baseplate": "PRT-HLP-B-01",
+   "motor": "PRT-HLP-B-02",
+   "coupling-motor": "PRT-HLP-B-03",
+   "guard": "PRT-HLP-B-04",
+   "coupling-pump": "PRT-HLP-B-03",
+   "de-bearing": "PRT-HLP-B-06",
+   "de-housing": "PRT-HLP-B-05",
+   "shaft": "PRT-HLP-B-08",
+   "seal-cover-de": "PRT-HLP-B-11",
+   "sleeve-de": "PRT-HLP-B-09",
+   "seal-de": "PRT-HLP-B-10",
+   "wear-ring-de": "PRT-HLP-B-13",
+   "impeller": "PRT-HLP-B-12",
+   "wear-ring-nde": "PRT-HLP-B-13",
+   "seal-nde": "PRT-HLP-B-10",
+   "sleeve-nde": "PRT-HLP-B-09",
+   "seal-cover-nde": "PRT-HLP-B-11",
+   "nde-bearing": "PRT-HLP-B-07",
+   "casing": "PRT-HLP-B-14",
+   "suction-nozzle": "PRT-HLP-B-16"
+  },
+  "lights": {
+   "PRT-HLP-B-07": "nde-bearing",
+   "PRT-HLP-B-14": "casing",
+   "PRT-HLP-B-03": "coupling-pump",
+   "PRT-HLP-B-13": "wear-ring-de",
+   "PRT-HLP-B-05": "de-housing",
+   "PRT-HLP-B-09": "sleeve-de",
+   "PRT-HLP-B-06": "de-bearing",
+   "PRT-HLP-B-11": "seal-cover-de",
+   "PRT-HLP-B-10": "seal-de",
+   "PRT-HLP-B-16": "suction-nozzle",
+   "PRT-HLP-B-04": "guard",
+   "PRT-HLP-B-01": "baseplate",
+   "PRT-HLP-B-12": "impeller",
+   "PRT-HLP-B-08": "shaft",
+   "PRT-HLP-B-02": "motor"
+  }
+ }
+}

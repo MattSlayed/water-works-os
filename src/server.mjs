@@ -23,6 +23,7 @@ import { handleMcp } from "./mcp-server.mjs";
 import { createKgTools } from "./kg/tools.mjs";
 import { createSiteAgent } from "./site-agent.mjs";
 import { projectIndicators } from "./project-indicators.mjs";
+import { figureFor } from "./figures.mjs";
 import { nOf, changedAreas } from "./project-snapshot.mjs";
 import { createMemoryBackend } from "./kg/backend-memory.mjs";
 import { connectMcp } from "./timebase/mcp.mjs";
@@ -344,7 +345,7 @@ export function createServer(sys, { kgTools = createKgTools({ backend: createMem
       const view = ont.view(v);
       const a = view.get(decodeURIComponent(m[1]));
       if (!a || a.type !== "Asset") throw new HttpError(404, "not found");
-      return { asset: a, parts: view.list("Part", (p) => p.assetId === a.id), sensors: tel.sensorsFor(a.id).filter((s) => view.get(s.id)).map(latest), procedure: (currentProcedure(view.list("Procedure"), a.template) || { steps: [] }).steps, procedureId: (currentProcedure(view.list("Procedure"), a.template) || {}).id || null, findings: view.list("Finding", (f) => f.assetId === a.id) };
+      return { asset: a, parts: view.list("Part", (p) => p.assetId === a.id), sensors: tel.sensorsFor(a.id).filter((s) => view.get(s.id)).map(latest), procedure: (currentProcedure(view.list("Procedure"), a.template) || { steps: [] }).steps, procedureId: (currentProcedure(view.list("Procedure"), a.template) || {}).id || null, findings: view.list("Finding", (f) => f.assetId === a.id), figure: figureFor(a.id) };
     }],
     ["GET", /^\/api\/telemetry\/([^/]+)$/, (v, m, url) => { const id = decodeURIComponent(m[1]); if (!ont.view(v).get(id)) throw new HttpError(404, "not found"); return { id, now: tel.now(), values: tel.history(id, Math.min(20160, Number(url.searchParams.get("n")) || 240)) }; }],
     ["GET", /^\/api\/agents$/, () => runtime.specs().map((s) => {
