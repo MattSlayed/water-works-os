@@ -11,5 +11,3 @@ data/geo/
 data/geo/**
 !web/
 !web/**
-web/figures/
-web/figures/**

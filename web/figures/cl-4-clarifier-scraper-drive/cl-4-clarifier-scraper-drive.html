@@ -1208,6 +1208,8 @@ const nodes = [...topLayer.children].map((el) => {
 });
 let order = nodes.map((_, index) => index);
 const shareOf = (id) => (piece[id] ? piece[id].x : 0);
+// Depth uses the spring clamped to its audited ends: overshoot varies with refresh rate, and the audit replays at 60 fps.
+const springDepth = (id) => Math.min(1, Math.max(0, shareOf(id)));
 const screen = (m, s) => [(D_.EX[0] * m[0] + D_.EY[0] * m[1] + D_.EZ[0] * m[2]) * s, (D_.EX[1] * m[0] + D_.EY[1] * m[1] + D_.EZ[1] * m[2]) * s];
 const shift = (m, s) => { if (s === 0) return ""; const [x, y] = screen(m, s); return `translate(${x.toFixed(2)} ${y.toFixed(2)})`; };
 let slotShown = "";
@@ -1272,7 +1274,7 @@ function place() {
     slotShown = rotor;
     for (const slot of [slots.A, slots.B]) rotor ? slot.setAttribute("transform", rotor) : slot.removeAttribute("transform");
   }
-  const keyOf = (i) => nodes[i].key + nodes[i].lift * shareOf(nodes[i].piece);
+  const keyOf = (i) => nodes[i].key + nodes[i].lift * springDepth(nodes[i].piece);
   const next = nodes.map((_, i) => i).sort((a, b) => keyOf(a) - keyOf(b));
   if (next.some((i, at) => i !== order[at])) {
     const fragment = document.createDocumentFragment();
@@ -1457,7 +1459,20 @@ if (still.matches) touring = false;
 describe();
 // The Asset Workbench lights a part it has selected; added to the page by water-works-os/src/figures.mjs's bridge.
 window.anatomySelect = (key) => { if (!apart && !arming) toggleApart(); pick(key); };
-</script><script>
+</script><style>
+.iso{--anatomy-page:#0a2e5c;--anatomy-card:#0d3b73;--anatomy-text:#bcd6f2;--anatomy-strong:#f2f8ff;--anatomy-muted:#8fb3d9;
+--anatomy-paper:#0d3b73;--anatomy-face:#114681;--anatomy-top:#134c8b;
+--anatomy-shade-0:#0b3364;--anatomy-shade-1:#0d3a70;--anatomy-shade-2:#0f407a;--anatomy-shade-3:#114684;
+--anatomy-lit-top:#1a5ba3;--anatomy-lit-shade:#15508f;
+--anatomy-hi:#eaf4ff;--anatomy-mid:#9cc3ea;--anatomy-lo:#6293c8;--anatomy-faint:#2f6299;--anatomy-lit:#ffffff;
+--anatomy-halo:#061f42;--anatomy-halo-opacity:.7;--anatomy-dot:#eaf4ff;
+--anatomy-red:#ff9d9d;--anatomy-green:#86efbb;--anatomy-blue:#9fdcff;
+--blw-oil:#0a2b55;--hlp-void:#07264d;--hlp-cage:#0b3364;
+--dp-wet:#2b78bd;--dp-dry:#07244a;--dp-glass-0:#1a5590;--dp-glass-1:#1d5c99;--dp-glass-2:#2063a2;--dp-glass-3:#236aab;--dp-glass-top:#2a74b8}
+.iso .cl{--cl-water:#2a6aa8;--cl-sludge:#1c4f87;--cl-sludge-top:#15457a;--cl-mound:#174a80;--cl-hopper:#0a2f5c;--cl-cut:#114684;--cl-weir:#134c8b;
+--cl-hi:#eaf4ff;--cl-mid:#9cc3ea;--cl-lo:#6293c8;--cl-top:#134c8b;--cl-shade:#0f407a}
+.iso-plate{background-image:linear-gradient(#ffffff14 1px,transparent 1px),linear-gradient(90deg,#ffffff14 1px,transparent 1px),linear-gradient(#ffffff09 1px,transparent 1px),linear-gradient(90deg,#ffffff09 1px,transparent 1px);background-size:120px 120px,120px 120px,24px 24px,24px 24px}
+</style><script>
 addEventListener("message",(e)=>{if(e.source===parent&&e.data&&e.data.type==="anatomy:select"&&window.anatomySelect)window.anatomySelect(e.data.part)});
 function anatomyReport(){const on=document.querySelector("[data-part][data-on]");if(on)parent.postMessage({type:"anatomy:pick",part:on.dataset.part},"*")}
 addEventListener("click",anatomyReport);

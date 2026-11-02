@@ -8,7 +8,7 @@ Private test deployment in project `se-project-49281`, region `africa-south1`. S
 - No API key, so agents give deterministic answers.
 - Anonymous requests get 403. Project owners can reach it after signing in with Google.
 - Scales to zero. **Everything changed at runtime is lost when the instance stops**, including approvals.
-- `.gcloudignore` is an allowlist. `web/figures/` and `data/geo/` stay on this machine, so anatomy figures show as missing.
+- `.gcloudignore` is an allowlist. `data/geo/` stays on this machine. The anatomy figures in `web/figures/` are uploaded, in their blueprint colours, except CHL-A and CHL-B: sync refuses a zone above technician clearance.
 
 `x-acting-user` is still trusted as sent. Anyone with access can act as any person. Real sign-in must replace it before real people or data go in.
 
