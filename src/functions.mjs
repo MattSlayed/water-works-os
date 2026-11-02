@@ -78,6 +78,13 @@ export function competenceCheck(person, competencies, required, onDate) {
   return { ok: true, reasons: [] };
 }
 
+// OKF v0.2 §5 fields on procedures and notes. `by` holds a role, never a person's id, so a later export names no one (POPIA).
+// shortcut: one 24-month review cycle is a starting guess; set it per procedure once procedures have a named owner.
+export const staleAfter = (iso) => { const d = new Date(iso); d.setUTCMonth(d.getUTCMonth() + 24); return d.toISOString(); };
+export const isStale = (o, now) => !!o.stale_after && Date.parse(now) >= Date.parse(o.stale_after);
+export const reviewEvent = (person, at) => ({ by: `human:${(person && person.role) || "unknown"}`, at });
+export const releasedOkf = (at, sources) => ({ status: "stable", verified: [reviewEvent({ role: "works_manager" }, at)], stale_after: staleAfter(at), sources });
+
 // The released procedure for an asset template.
 export const currentProcedure = (procedures, template) => procedures.find((p) => p.template === template && p.state === "released") || null;
 

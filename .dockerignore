@@ -1,0 +1,15 @@
+# Allowlist: only what the image needs leaves this machine.
+*
+!Dockerfile
+!package.json
+!package-lock.json
+!src/
+!src/**
+!data/
+!data/**
+data/geo/
+data/geo/**
+!web/
+!web/**
+web/figures/
+web/figures/**

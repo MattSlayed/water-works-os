@@ -104,6 +104,19 @@ test("WWOS_KG_BACKEND=atlas that cannot connect logs one line without secrets an
   assert.equal((await tools.find((t) => t.name === "get").run({ id: CLB }, { id: personWith("supervisor"), clearance: "supervisor" })).found, true);
 });
 
+test("WWOS_KG_BACKEND=hybrid that cannot connect names itself, leaks no secret, and only falls back when allowed", async () => {
+  const env = { WWOS_KG_BACKEND: "hybrid", TIMEBASE_CLIENT_ID: "c", TIMEBASE_SECRET_FILE: "/nope/hunter2.secret" };
+  const lines = [], orig = console.error;
+  console.error = (...a) => lines.push(a.join(" "));
+  let tools;
+  try { tools = await kgToolsFor(sys, env); } finally { console.error = orig; }
+  assert.equal(lines.length, 1);
+  assert.match(lines[0], /^KG backend hybrid unavailable, using memory/);
+  assert.ok(!/hunter2/.test(lines[0]));
+  assert.ok(tools.some((t) => t.name === "readings"));
+  await assert.rejects(kgToolsFor(sys, env, { fallback: false }), /KG backend hybrid unavailable/);
+});
+
 test("/mcp refuses a foreign Origin (DNS rebinding), allows its own and none, and ignores ?as=", async () => {
   const port = new URL(base).port, who = personWith("manager");
   const post = (headers, qs = "") => fetch(`${base}/mcp${qs}`, { method: "POST", headers: { "content-type": "application/json", ...headers }, body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "ping" }) });

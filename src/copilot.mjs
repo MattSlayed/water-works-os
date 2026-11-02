@@ -3,7 +3,7 @@
 // same insight, and the structured checks, citations and look-here stay deterministic.
 import { assetInsight } from "./agents.mjs";
 import { askClaude } from "./llm.mjs";
-import { bandCheck } from "./functions.mjs";
+import { bandCheck, isStale } from "./functions.mjs";
 
 const SYSTEM = `You are the Technician Copilot at a water treatment works. You talk to an artisan standing at the asset.
 Answer in short, plain sentences. Use only the context provided; cite record ids in brackets, for example [FND-001].
@@ -83,7 +83,7 @@ export function createCopilot({ ont, tel, actions, runtime, llm = askClaude }) {
       }
     } else if (/before|history|happened|last time|previous/.test(ql)) {
       const ins = (s.insight = assetInsight(ctxFor(s.user), s.assetId, s.partId));
-      const lines = [...ins.findings.map((f) => `${f.id} (${f.at}, ${f.authorRole}) on ${ont.get(f.assetId) ? ont.get(f.assetId).positionTag : f.assetId}: ${f.text}`), ...ins.notes.map((n) => `${n.id} (${n.at.slice(0, 10)}, field note${n.verified ? ", verified" : ""}): ${n.text}`), ...ins.history.map((w) => `${w.id} ${w.title} (${w.state}${w.closed ? `, closed ${w.closed}` : ""})`)];
+      const lines = [...ins.findings.map((f) => `${f.id} (${f.at}, ${f.authorRole}) on ${ont.get(f.assetId) ? ont.get(f.assetId).positionTag : f.assetId}: ${f.text}`), ...ins.notes.map((n) => `${n.id} (${n.at.slice(0, 10)}, field note${n.verified ? ", verified" : ""}${isStale(n, tel.now()) ? ", past its review date" : ""}): ${n.text}`), ...ins.history.map((w) => `${w.id} ${w.title} (${w.state}${w.closed ? `, closed ${w.closed}` : ""})`)];
       res = { answer: lines.length ? lines.join("\n") : "No earlier work or findings on record for this asset or its siblings.", citations: [...ins.findings.map((f) => ({ id: f.id, label: "Finding" })), ...ins.notes.map((n) => ({ id: n.id, label: "Field note" })), ...ins.history.map((w) => ({ id: w.id, label: "Work order" }))], lookHere: ins.findings.map((f) => f.partId).filter((p) => p && ont.get(p) && ont.get(p).assetId === s.assetId) };
     } else if (/stock|spare|part number|parts/.test(ql)) {
       const parts = ont.list("Part", (p) => p.assetId === s.assetId);

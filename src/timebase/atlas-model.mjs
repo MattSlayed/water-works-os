@@ -94,6 +94,20 @@ const canon = (v) => Array.isArray(v) ? `[${v.map(canon).join(",")}]`
 
 // What to POST, PATCH (always the full property set; the vendor PATCH merges, so a dropped property is not cleared) and DELETE to make existing match desired.
 // shortcut: dropped properties are not cleared; send clear:["properties"] — verify on the first licensed run
+// Atlas counts well beyond nodes and edges against its Instances entitlement (500 unlicensed; Types is limited to 100)
+// (556 with all 37 structures, whatever properties they kept). This keeps the structures that have flow
+// and the flow between them, with only what the backend's queries read, so the Atlas route can be proven without a licence.
+// shortcut: flow only, no assets or sensors; delete once the install is licensed and the full model compiles.
+export function slimModel(model, { domain = "riverbend" } = {}) {
+  const O = (n) => `urn:atlas:ontology:${domain}:${n}`;
+  const only = (x, names) => ({ ...x, properties: Object.fromEntries(names.filter((n) => x.properties?.[O(n)]).map((n) => [O(n), x.properties[O(n)]])) });
+  const feeds = model.edges.filter((e) => e.type === O("feeds"));
+  const keep = new Set(feeds.flatMap((e) => [e.source, e.target]));
+  const instances = model.instances.filter((x) => x.type === O("Structure") && keep.has(x.instanceId)).map((x) => only(x, ["wosId", "kind"]));
+  const edges = feeds.map((e) => only(e, ["kind"]));
+  return { ...model, relationshipTypes: model.relationshipTypes.filter((r) => r.name === "feeds"), instances, edges };
+}
+
 export function planLoad(desired, existing) {
   const have = new Map(existing.map((x) => [x.id, x])), want = new Set(desired.map((x) => x.id));
   const create = [], update = [];

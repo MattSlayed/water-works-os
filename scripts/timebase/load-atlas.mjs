@@ -6,11 +6,11 @@ import { seedPlant, currentPlantModel } from "../../src/plant.mjs";
 import { seedKg } from "../../src/kg/seed.mjs";
 import { pulseToken } from "../../src/timebase/pulse.mjs";
 import { restCall } from "../../src/timebase/rest.mjs";
-import { atlasModel, planLoad, ATLAS_TYPES } from "../../src/timebase/atlas-model.mjs";
+import { atlasModel, slimModel, planLoad, ATLAS_TYPES } from "../../src/timebase/atlas-model.mjs";
 
 const BR = process.argv[2], DOM = "riverbend", MAP = "plant";
 if (!BR || !/^[\w.-]+$/.test(BR)) throw new Error("Usage: load-atlas.mjs <branch>");
-if (BR !== "riverbend") throw new Error(`Refusing branch "${BR}": REST writes go to branch "riverbend" only`);
+if (!["riverbend", "riverbend-slim"].includes(BR)) throw new Error(`Refusing branch "${BR}": REST writes go to branch "riverbend" or "riverbend-slim" only`);
 const env = process.env;
 if (!env.TIMEBASE_CLIENT_ID || !env.TIMEBASE_SECRET_FILE) throw new Error("Set TIMEBASE_CLIENT_ID and TIMEBASE_SECRET_FILE");
 const base = env.TIMEBASE_ATLAS_URL ?? "https://localhost:4552";
@@ -35,7 +35,8 @@ const define = async (kind, { name, ...rest }) => {
 const ont = createOntology(generateWorks(7));
 seedPlant(ont);
 seedKg(ont);
-const model = atlasModel(ont, { domain: DOM });
+const full = atlasModel(ont, { domain: DOM });
+const model = BR === "riverbend-slim" ? slimModel(full, { domain: DOM }) : full;
 
 ok("branch", await call("POST", "/api/v1/branches", { name: BR, from: "main" }), [409]);
 ok("domain", await call("POST", "/api/v1/domains", { name: DOM, branch: BR, libraries: ["atlas-common"] }), [409]);

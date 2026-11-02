@@ -1,5 +1,5 @@
 // Claude over the KG tools on data/eval-questions.json, graded by the rule grader (src/kg/grade.mjs).
-// Usage: node scripts/kg/eval-claude.mjs [--backend memory|atlas] [--out file]
+// Usage: node scripts/kg/eval-claude.mjs [--backend memory|hybrid|atlas] [--out file]
 // Each question runs as its asker (a Person's clearance), with only the tools that clearance may call, in a manual
 // tool-use loop. Pass bar: 90 % right, 100 % of citations valid, 0 leaks, 0 invented tags. Exit 0 on pass, 1 on a miss.
 // Inference is cross-border and disclosed under POPIA s72 (NVT-PROJ-BBR-ARC-001 §4); the questions carry no people data.
@@ -14,7 +14,7 @@ import { MODEL } from "../../src/llm.mjs";
 const MAX_TURNS = 12; // model calls per question; a question still asking for tools after this is graded on no answer
 const { values: { backend, out } } = parseArgs({ options: { backend: { type: "string", default: "memory" }, out: { type: "string" } } });
 const stop = (msg) => { console.error(msg); process.exit(2); };
-if (!["memory", "atlas"].includes(backend)) stop(`--backend must be memory or atlas, not ${backend}`);
+if (!["memory", "hybrid", "atlas"].includes(backend)) stop(`--backend must be memory, hybrid or atlas, not ${backend}`);
 if (!(process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_AUTH_TOKEN)) stop("eval-claude: set ANTHROPIC_API_KEY or ANTHROPIC_AUTH_TOKEN to run Claude; nothing was run.");
 let Anthropic;
 try { ({ default: Anthropic } = await import("@anthropic-ai/sdk")); } catch { stop("eval-claude: the optional @anthropic-ai/sdk is not installed (npm install); nothing was run."); }

@@ -1,7 +1,7 @@
 // Synthetic Riverbend Water Treatment Works (BRD Appendix B). Every name, tag and number is invented.
 // generateWorks(seed) -> { objects, links, clock } — deterministic for a given seed.
 import { createHash } from "node:crypto";
-import { stepRequires } from "./functions.mjs";
+import { stepRequires, releasedOkf, staleAfter } from "./functions.mjs";
 import { ZONES, toLonLat, CAPACITY_MLD } from "./layout.mjs";
 import { assignTags } from "./crosswalk.mjs";
 import { makeScenes } from "./scenes.mjs";
@@ -281,7 +281,7 @@ export function generateWorks(seed = 7) {
         expectedMinutes: hazard === "Heavy lift" ? 45 : intrusive ? 25 : 10
       };
     });
-    add({ id, type: "Procedure", template: tpl, documentId: docsByTemplate[tpl], title: `${t.label}: inspection and overhaul`, version: 3, state: "released", steps, releasedBy: "P-001", releasedAt: "2025-02-01T00:00:00Z", reason: "Converted from SOP revision C" }, "SYNTH-DOCS");
+    add({ id, type: "Procedure", template: tpl, documentId: docsByTemplate[tpl], title: `${t.label}: inspection and overhaul`, version: 3, state: "released", steps, releasedBy: "P-001", releasedAt: "2025-02-01T00:00:00Z", reason: "Converted from SOP revision C", ...releasedOkf("2025-02-01T00:00:00Z", [{ id: "sop", resource: docsByTemplate[tpl], title: "SOP revision C" }]) }, "SYNTH-DOCS");
     link(id, "PART_OF", docsByTemplate[tpl]);
   }
   // The raw-water sample point at the intake jetty and its one-step round (Region design §5.4): Geo Watch's sampling
@@ -292,7 +292,7 @@ export function generateWorks(seed = 7) {
     link("AST-SMP-RAW", "HAS_PART", "PRT-SMP-RAW-01");
     const step = { id: "PRC-RAW_SAMPLING-v1-S01", step: 1, text: "Take a raw-water grab sample at the intake jetty and measure its turbidity", intrusive: false, partNames: ["Grab sample"], hazard: "Working near water", documentId: null,
       requires: { permit: false, isolation: false, reading: { measure: "turbidity", unit: "NTU", partName: "Grab sample" } }, expectedMinutes: 20 };
-    add({ id: "PRC-RAW_SAMPLING-v1", type: "Procedure", template: "raw_sampling", documentId: null, title: "Raw-water grab sample", version: 1, state: "released", steps: [step], releasedBy: "P-001", releasedAt: "2025-02-01T00:00:00Z", reason: "Raw-water sampling round (Region design §5.4)" }, "SYNTH-DOCS");
+    add({ id: "PRC-RAW_SAMPLING-v1", type: "Procedure", template: "raw_sampling", documentId: null, title: "Raw-water grab sample", version: 1, state: "released", steps: [step], releasedBy: "P-001", releasedAt: "2025-02-01T00:00:00Z", reason: "Raw-water sampling round (Region design §5.4)", ...releasedOkf("2025-02-01T00:00:00Z", [{ id: "design", resource: "Region design §5.4", title: "Raw-water sampling round" }]) }, "SYNTH-DOCS");
   }
 
   // Filters and process sensors
@@ -540,7 +540,7 @@ export function generateWorks(seed = 7) {
   issue("ISS-H06", { title: "Wrong gasket size on the HLP-A drawing", state: "done", raisedBy: millwrights[0].id, assetId: astOf("HLP-A").id, at: "2026-06-18T13:00:00Z" });
   const note = (id, tag, partName, procedureId, step, authorId, at, text) => {
     const part = partOf(tag, partName);
-    add({ id, type: "KnowledgeNote", text, authorId, partId: part ? part.id : null, assetId: astOf(tag).id, procedureId, step, executionId: null, messageId: null, verified: false, at }, "APP");
+    add({ id, type: "KnowledgeNote", text, authorId, partId: part ? part.id : null, assetId: astOf(tag).id, procedureId, step, executionId: null, messageId: null, status: "draft", stale_after: staleAfter(at), sources: [{ id: "field", resource: part ? part.id : astOf(tag).id, title: "Field observation" }], at }, "APP");
     link(id, "ABOUT", part ? part.id : astOf(tag).id);
   };
   note("KN-H01", "HLP-A", "Shaft sleeve", "PRC-CENTRIFUGAL_PUMP-v3", 8, millwrights[0].id, "2025-08-06T14:00:00Z", "Scoring sits under the seal face; wipe and check there before measuring the OD.");
