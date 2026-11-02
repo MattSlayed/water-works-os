@@ -147,7 +147,7 @@ test("historian adapter", () => {
   const a = HISTORIAN_READ.args("AIT-157", "2026-10-08T00:00:00Z", "2026-10-08T01:00:00Z");
   assert.equal(HISTORIAN_READ.tool, "GetDataForMultipleTags");
   assert.deepEqual(a, { datasetName: "Riverbend", tagNamesJson: '["AIT-157"]', startTime: "2026-10-08T00:00:00Z", endTime: "2026-10-08T01:00:00Z" });
-  const pts = HISTORIAN_READ.points(fixture);
+  const { pts } = HISTORIAN_READ.page(fixture);
   // The Historian drops consecutive repeated values, so one hour of 1-minute data holds fewer than 60 points (56 captured).
   assert.ok(pts.length >= 50 && pts.length <= 61, `got ${pts.length}`);
   assert.equal(pts.length, Number(/(\d+) point\(s\)/.exec(fixture.content[0].text)[1]));
@@ -173,16 +173,16 @@ const asResult = (text) => ({ content: [{ type: "text", text }] });
 
 test("historian adapter throws when the reply does not add up", () => {
   const text = JSON.parse(fixtureText());
-  assert.throws(() => HISTORIAN_READ.points(asResult(JSON.stringify(text.replace("56 point(s)", "57 point(s)")))), /parsed 56 of 57 points/);
-  assert.throws(() => HISTORIAN_READ.points(asResult(text.replace("q=192", "q=bad"))), /parsed 55 of 56 points/);
-  assert.throws(() => HISTORIAN_READ.points(asResult(text.replace("v=0.109", "v=abc"))), /non-finite/);
-  assert.throws(() => HISTORIAN_READ.points(asResult(text.replace("- 2026-10-08T00:00:00.0000000Z", "- 2026-10-08T00:00:00.0000000"))), /parsed 55 of 56 points/);
-  assert.throws(() => HISTORIAN_READ.points(asResult("Tag not found")), /no point\(s\) header/);
-  assert.throws(() => HISTORIAN_READ.points({ content: [] }), /no point\(s\) header/);
+  assert.throws(() => HISTORIAN_READ.page(asResult(JSON.stringify(text.replace("56 point(s)", "57 point(s)")))), /parsed 56 of 57 points/);
+  assert.throws(() => HISTORIAN_READ.page(asResult(text.replace("q=192", "q=bad"))), /parsed 55 of 56 points/);
+  assert.throws(() => HISTORIAN_READ.page(asResult(text.replace("v=0.109", "v=abc"))), /non-finite/);
+  assert.throws(() => HISTORIAN_READ.page(asResult(text.replace("- 2026-10-08T00:00:00.0000000Z", "- 2026-10-08T00:00:00.0000000"))), /parsed 55 of 56 points/);
+  assert.throws(() => HISTORIAN_READ.page(asResult("Tag not found")), /no point\(s\) header/);
+  assert.throws(() => HISTORIAN_READ.page({ content: [] }), /no point\(s\) header/);
 });
 
 test("historian adapter: a 0 point(s) reply is an empty series", () => {
-  assert.deepEqual(HISTORIAN_READ.points(asResult("Data for 1 tag(s) in dataset 'Riverbend' (a .. b):\n## AIT-157 - 0 point(s)\n")), []);
+  assert.deepEqual(HISTORIAN_READ.page(asResult("Data for 1 tag(s) in dataset 'Riverbend' (a .. b):\n## AIT-157 - 0 point(s)\n")).pts, []);
 });
 
 test("load-atlas refuses any branch but riverbend before a network call", async () => {
@@ -193,4 +193,36 @@ test("load-atlas refuses any branch but riverbend before a network call", async 
     assert.notEqual(r.status, 0, br);
     assert.match(r.stderr, /Refusing branch .*riverbend. only/, br);
   }
+});
+
+// The live tool's shape: at most 100 points listed, then "... and N more point(s)", and the header counts the whole window.
+const replyFor = (minutes, fromMin = 0) => {
+  const shown = minutes.filter((m) => m >= fromMin), lines = shown.slice(0, 100).map((m) => `- ${new Date(Date.UTC(2026, 9, 14, 0, m)).toISOString().replace("Z", "0000Z")}  v=${m}  q=192`);
+  if (shown.length > 100) lines.push(`- ... and ${shown.length - 100} more point(s) (showing first 100).`);
+  return asResult(`Data for 1 tag(s) in dataset 'Riverbend'\n\n## FIT-805 - ${shown.length} point(s)\n${lines.join("\n")}`);
+};
+
+test("historian read walks a long window page by page and misses no point", async () => {
+  const minutes = Array.from({ length: 250 }, (_, i) => i), calls = [];
+  const callTool = async (tool, args) => {
+    calls.push(args.startTime);
+    assert.equal(tool, "GetDataForMultipleTags");
+    assert.equal(args.endTime, "2026-10-14T04:10:00.001Z", "the end is exclusive, so a point at toIso is still read");
+    return replyFor(minutes, (Date.parse(args.startTime) - Date.UTC(2026, 9, 14)) / 60000);
+  };
+  const pts = await HISTORIAN_READ.read(callTool, "FIT-805", "2026-10-14T00:00:00.000Z", "2026-10-14T04:10:00.000Z");
+  assert.deepEqual(pts.map((p) => p.v), minutes);
+  assert.equal(calls.length, 3);
+  assert.equal(calls[1], "2026-10-14T01:39:00.000Z");
+  assert.deepEqual(await HISTORIAN_READ.read(async () => replyFor([1, 2]), "FIT-805", "2026-10-14T00:00:00.000Z", "2026-10-14T01:00:00.000Z").then((p) => p.map((x) => x.v)), [1, 2]);
+});
+
+test("historian read throws rather than return a short window", async () => {
+  // a page that promises more but lists nothing must not loop forever
+  await assert.rejects(HISTORIAN_READ.read(async () => asResult("## T - 5 point(s)\n- ... and 5 more point(s) (showing first 100)."), "T", "2026-10-14T00:00:00Z", "2026-10-14T01:00:00Z"), /no new ones/);
+  // the window shrinks between pages: the total no longer matches the first reply's count
+  let n = 0;
+  await assert.rejects(HISTORIAN_READ.read(async () => (n++ ? replyFor([]) : replyFor(Array.from({ length: 150 }, (_, i) => i))), "T", "2026-10-14T00:00:00.000Z", "2026-10-14T03:00:00.000Z"), /got 100 of 150/);
+  // a listed-points count that does not add up still throws
+  assert.throws(() => HISTORIAN_READ.page(asResult("## T - 150 point(s)\n- ... and 49 more point(s) (showing first 100).")), /parsed 0 of 150/);
 });
