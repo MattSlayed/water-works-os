@@ -304,6 +304,7 @@ const LOGIC = {
           return outcome("recorded");
         }
         if (awaiting && awaiting.kind === "submit") { ctx.output({ kind: "submit", draftId: awaiting.draftId }); return outcome("recorded"); }
+        if (awaiting && awaiting.kind === "reading") { ctx.output({ kind: "question", text: "yes", assetId: awaiting.assetId, partId: awaiting.partId, workOrderId: awaiting.workOrderId, step: null, offerIssue: null }); return outcome("recorded"); }
         say("Noted.");
         return outcome("recorded");
       }

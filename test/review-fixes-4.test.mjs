@@ -54,7 +54,8 @@ test("final: a paused Technician Copilot records nothing and says so", async () 
   assert.equal(act(s, "P-003", "set_agent_state", { agent: "Technician Copilot", state: "paused" }).status, "done");
   const before = s.ont.list("Decision", (d) => d.actorId === "Technician Copilot").length;
   const c = s.copilot.open({ assetId: hlpb.id, partId: "PRT-HLP-B-05", user: { id: "P-023", clearance: "technician", kind: "person" } });
-  const r = await c.ask("Can I reuse the housing? bore reads 110.065");
+  await c.ask("Can I reuse the housing? bore reads 110.065");
+  const r = await c.ask("yes");
   assert.equal(s.ont.list("Decision", (d) => d.actorId === "Technician Copilot").length, before);
   assert.equal(s.ont.list("Proposal", (p) => p.actorId === "Technician Copilot" && p.state === "open").length, 0);
   assert.match(r.answer, /paused/);

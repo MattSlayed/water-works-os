@@ -468,7 +468,7 @@ const views = {
     const contact = d.structures.find((s) => s.kind === "contact_tank") || d.structures[d.structures.length - 1];
     const chips = ["chlorine", contact && `upstream of ${contact.tag}`, "neighbours of SITE-RB", "turbidity"].filter(Boolean);
     view.innerHTML = `<div class="row"><div><h2>the works as drawn · plant model rev ${esc(d.model.rev)} · released ${time(d.model.release && d.model.release.at)} by ${esc(d.model.release && d.model.release.by)}</h2><h1>Plant</h1></div>
-        <div class="btns"><span class="btns ptabs" role="tablist" aria-label="Plant view"><button class="btn" role="tab" data-ptab="graph" aria-controls="pgraph">Graph</button><button class="btn" role="tab" data-ptab="3d" aria-controls="p3d">3D</button></span><a class="btn" href="#/plantmodels">Revisions and review</a><a class="btn" href="#/map">Site map</a></div></div>
+        <div class="btns"><span class="btns ptabs" role="tablist" aria-label="Plant view"><button class="btn" role="tab" data-ptab="3d" aria-controls="p3d">3D</button><button class="btn" role="tab" data-ptab="graph" aria-controls="pgraph">Graph</button></span><a class="btn" href="#/plantmodels">Revisions and review</a><a class="btn" href="#/map">Site map</a></div></div>
       <div class="plantwrap"><section class="panel bloom" id="pgraph" role="tabpanel" aria-label="Plant knowledge graph">
           <form id="bq" class="bloombar"><label for="bqi">Query the graph</label><input id="bqi" maxlength="200" autocomplete="off" placeholder="chlorine · upstream of 16UGH01 · neighbours of SITE-RB"><button class="btn primary">Run</button><button type="button" class="btn" id="breset">Reset</button></form>
           <div class="bloomchips">${chips.map((c) => `<button type="button" class="chip" data-bchip="${esc(c)}">${esc(c)}</button>`).join("")}</div>
@@ -625,8 +625,7 @@ const views = {
       btn.disabled = false;
     });
 
-    // a deep link to an item (the region map's Enter plant, a fly-to) opens 3D on it; otherwise the graph comes first
-    await setTab(id ? "3d" : "graph");
+    await setTab("3d");
     const hitOf = (x) => x.id === id || x.positionId === id;
     if (id && state.plant?.flyTo(id)) {
       const mc = d.machines.find(hitOf);
@@ -704,6 +703,7 @@ const views = {
   },
 
   async asset(id) {
+    state.copilot = null; // a session belongs to one asset: going straight to another must not answer about the last
     const m = await api(`/api/assets/${encodeURIComponent(id)}/model`);
     const specsD = await api(`/api/assets/${encodeURIComponent(id)}/specs`).catch(() => null);
     const briefD = specsD && specsD.workOrderId ? await api(`/api/workorders/${encodeURIComponent(specsD.workOrderId)}/brief`).catch(() => null) : null;
@@ -762,12 +762,14 @@ const views = {
       });
     };
     view.querySelectorAll("[data-tab]").forEach((b) => b.addEventListener("click", () => { view.querySelectorAll("[data-tab]").forEach((x) => x.classList.toggle("on", x === b)); tab = b.dataset.tab; drawTab(); }));
-    const select = (pid) => {
+    const lightFigure = (pid) => { if (m.figure?.lights[pid]) $(".figure")?.contentWindow.postMessage({ type: "anatomy:select", part: m.figure.lights[pid] }, "*"); };
+    // keepSession: the Copilot itself moved to this part, so its conversation carries on
+    const select = (pid, keepSession = false) => {
       selected = pid;
       view.querySelectorAll("[data-part]").forEach((b) => b.classList.toggle("sel", b.dataset.part === pid));
       state.twin?.select(pid);
-      if (m.figure?.lights[pid]) $(".figure")?.contentWindow.postMessage({ type: "anatomy:select", part: m.figure.lights[pid] }, "*");
-      state.copilot = null; // a new part scopes a new Copilot session
+      lightFigure(pid);
+      if (!keepSession) state.copilot = null; // a new part scopes a new Copilot session
       tab = "part";
       view.querySelectorAll("[data-tab]").forEach((x) => x.classList.toggle("on", x.dataset.tab === "part"));
       drawTab();
@@ -816,12 +818,17 @@ const views = {
     };
     const ask = async (q) => {
       await ensureCopilot();
+      chat.querySelectorAll("[data-confirm]").forEach((b) => { b.disabled = true; });
       chat.insertAdjacentHTML("beforeend", `<div class="msg me">${esc(q)}</div>`);
       const r = await api(`/api/copilot/${state.copilot}/ask`, { method: "POST", body: { question: q } });
-      chat.insertAdjacentHTML("beforeend", `<div class="msg">${esc(r.answer)}${r.withheld && !r.answer.includes(r.withheld) ? `<br><span style="color:var(--amber)">${esc(r.withheld)}</span>` : ""}${r.citations?.length ? `<br><span class="cite">${r.citations.map((c) => esc(c.id)).join(" · ")}</span>` : ""}${r.model ? `<br><span class="cite">written by Claude from the records above</span>` : ""}</div>`);
+      chat.insertAdjacentHTML("beforeend", `<div class="msg">${esc(r.answer)}${r.withheld && !r.answer.includes(r.withheld) ? `<br><span style="color:var(--amber)">${esc(r.withheld)}</span>` : ""}${r.citations?.length ? `<br><span class="cite">${r.citations.map((c) => esc(c.id)).join(" · ")}</span>` : ""}${r.model ? `<br><span class="cite">written by Claude from the records above</span>` : ""}${r.confirm ? `<br><button class="btn" data-confirm>Record ${esc(r.confirm.value)} ${esc(r.confirm.unit)}</button>` : ""}</div>`);
       chat.scrollTop = chat.scrollHeight;
       state.twin?.highlight(r.lookHere);
+      // shortcut: a figure lights one part at a time, so several look-heres show the first; light them all when figures can
+      if (r.focus) select(r.focus, true);
+      else lightFigure((r.lookHere || []).find((pid) => m.figure?.lights[pid]));
     };
+    chat.addEventListener("click", async (e) => { if (e.target.matches("[data-confirm]:not(:disabled)")) { try { await ask("Yes"); } catch (err) { toast(err.message); } } });
     $("#ask").addEventListener("submit", async (e) => { e.preventDefault(); const q = $("#q").value.trim(); if (!q) return; $("#q").value = ""; try { await ask(q); } catch (err) { toast(err.message); } });
     drawTab();
     $("#permit")?.addEventListener("click", async () => {
