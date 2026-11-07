@@ -60,7 +60,8 @@ test("dry run prints the whole front-door plan and runs nothing", { skip }, () =
   assert.match(out, /budgets list .*--filter=displayName=se-project-49281-water-works-os-budget /);
 
   assert.match(out, /gcloud beta monitoring channels create .*--type=email .*email_address=/);
-  assert.match(out, /gcloud monitoring uptime create water-works-os-uptime .*--status-codes=302,401/);
+  // A check follows IAP's redirect to Google's sign-in page and gets a 200; as an AJAX request it gets IAP's 401 instead.
+  assert.match(out, /gcloud monitoring uptime create water-works-os-uptime .*--headers=X-Requested-With=XMLHttpRequest .*--status-codes=401 /);
   assert.match(out, /--resource-labels=host=water-works-os-426022356353\.africa-south1\.run\.app,project_id=se-project-49281/);
   assert.doesNotMatch(out, /--path=/, "Git Bash would rewrite --path=/; the default path is /");
   assert.match(out, /gcloud monitoring policies create .*--notification-channels=/);

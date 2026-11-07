@@ -108,9 +108,11 @@ if [[ -z $channel ]]; then
     "--display-name=$SERVICE-alert-email" --type=email "--channel-labels=email_address=$ALERT_EMAIL" '--format=value(name)'
 fi
 get found '' gcloud monitoring uptime list-configs --project "$PROJECT" "--filter=displayName=$SERVICE-uptime" '--format=value(name)'
-# IAP answers an anonymous request with a 302 to sign-in (or a 401); either proves the service is up.
+# A check follows redirects, so IAP's 302 would end on Google's sign-in page (200). To an AJAX request IAP answers 401
+# instead. That proves only that IAP's front door answers: IAP replies before the app is reached.
 [[ -n $found ]] || run gcloud monitoring uptime create "$SERVICE-uptime" --project "$PROJECT" --resource-type=uptime-url \
-  "--resource-labels=host=$HOST,project_id=$PROJECT" --protocol=https --status-codes=302,401 --period=5 --regions=europe,usa-iowa,usa-virginia
+  "--resource-labels=host=$HOST,project_id=$PROJECT" --protocol=https --headers=X-Requested-With=XMLHttpRequest --status-codes=401 \
+  --period=5 --regions=europe,usa-iowa,usa-virginia
 get found '' gcloud monitoring policies list --project "$PROJECT" "--filter=displayName=$SERVICE-down" '--format=value(name)'
 [[ -n $found ]] || run gcloud monitoring policies create --project "$PROJECT" "--display-name=$SERVICE-down" "--notification-channels=$channel" \
   "--condition-display-name=$SERVICE uptime check failing" \
