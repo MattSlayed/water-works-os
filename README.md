@@ -142,6 +142,8 @@ Design prototypes for the same screens: https://claude.ai/artifact/LwS7u1g2MyCjY
 
 Design: `docs/superpowers/specs/2026-10-29-riverbend-knowledge-graph-design.md` and `2026-10-29-riverbend-timebase-backend.md`.
 Production stack: `docs/adr/0001-stack-decision.md` (Historian at the edge, Atlas on hold).
+The Timebase vendor docs the specs cite (`docs/vendor/timebase/`) are Flow Software's, for internal use only, so they are
+not in this repository. Rebuild the local mirror with `scripts/vendor/mirror-timebase-docs.py`.
 Eleven read-only tools (search, get, neighbors, upstream, downstream, readings, events, documents, read, locate, people)
 over the Riverbend plant, each answer item carrying a `cite` id and pruned to the acting person's clearance. They are served
 as an MCP endpoint at `POST /mcp` on the same port as the console.

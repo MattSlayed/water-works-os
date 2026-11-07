@@ -2,3 +2,5 @@ node_modules/
 .superpowers/
 .env
 .playwright-mcp/
+# Flow Software's Timebase docs: a local mirror for internal use only, never published (scripts/vendor/mirror-timebase-docs.py)
+docs/vendor/timebase/
