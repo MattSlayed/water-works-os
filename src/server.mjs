@@ -682,8 +682,9 @@ export function createServer(sys, { kgTools = createKgTools({ backend: createMem
     try {
       if (url.pathname === "/mcp") {
         // DNS rebinding: a browser page rebound to 127.0.0.1 sends a foreign Origin; CLI clients send none. No ?as= here.
-        const port = req.socket.localPort, origin = req.headers.origin;
-        if (origin !== undefined && origin !== `http://localhost:${port}` && origin !== `http://127.0.0.1:${port}`) throw new HttpError(403, "origin not allowed");
+        // Behind IAP the web app's own https origin is allowed too: a rebinding page cannot get an IAP token for this audience.
+        const port = req.socket.localPort, origin = req.headers.origin, self = iap && origin === `https://${req.headers.host}`;
+        if (origin !== undefined && !self && origin !== `http://localhost:${port}` && origin !== `http://127.0.0.1:${port}`) throw new HttpError(403, "origin not allowed");
         return await handleMcp(req, res, { tools: kgTools, viewer: await viewerOf(req, null) });
       }
       // The chat stub's webhook: the sender is the channel member, not a console user.

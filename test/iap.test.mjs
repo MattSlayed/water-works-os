@@ -139,6 +139,13 @@ test("events and mcp need the JWT too", async () => {
   assert.equal((await call("/mcp", { email: "one@x.co", as: "P-001", method: "POST", body: mcp })).status, 403);
 });
 
+test("behind IAP, /mcp accepts the browser's own https origin and still refuses a foreign one", async () => {
+  const post = (origin) => fetch(`${base}/mcp`, { method: "POST", headers: { "content-type": "application/json", origin, "x-acting-user": "P-001", "x-goog-iap-jwt-assertion": sign({ email: "ok@x.co" }) }, body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "ping" }) });
+  assert.equal((await post(`https://${new URL(base).host}`)).status, 200, "the graph view's same-origin call");
+  assert.equal((await post("https://evil.example")).status, 403);
+  assert.equal((await post(`http://evil.example:${new URL(base).port}`)).status, 403);
+});
+
 test("the audit records who signed in", async () => {
   const r = await call("/api/actions/raise_alert", { email: "ok@x.co", as: "P-001", method: "POST", body: { params: { targetId: "SEN-FW-turb", title: "signed-in alert" } } });
   assert.equal(r.status, 200);

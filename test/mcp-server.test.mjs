@@ -124,6 +124,7 @@ test("/mcp refuses a foreign Origin (DNS rebinding), allows its own and none, an
   assert.equal((await post({ origin: `http://evil.example:${port}`, "x-acting-user": who })).status, 403);
   assert.equal((await post({ origin: `http://localhost:${port}`, "x-acting-user": who })).status, 200);
   assert.equal((await post({ origin: `http://127.0.0.1:${port}`, "x-acting-user": who })).status, 200);
+  assert.equal((await post({ origin: `https://127.0.0.1:${port}`, "x-acting-user": who })).status, 403, "the https same-host origin is for IAP mode only");
   assert.equal((await post({ "x-acting-user": who })).status, 200, "no Origin: a CLI client");
   assert.equal((await post({}, `?as=${who}`)).status, 401, "?as= is not a credential on /mcp");
 });
