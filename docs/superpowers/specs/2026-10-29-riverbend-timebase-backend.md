@@ -5,6 +5,9 @@ rule in that design still applies unless this document changes it. Vendor docs: 
 
 ## 1. Decision
 
+> **Narrowed 2026-11-06 by `docs/adr/0001-stack-decision.md`:** Timebase Historian stays, at the edge. Atlas is on hold
+> until it is GA, has RBAC and has a licence (spike checks e and f were no-go). The text below records the original call.
+
 Timebase is the data backend and the WaterOS harness stays the agent layer. Gage, Timebase's own harness, is
 not used.
 - **Atlas** is the knowledge graph: typed ontology, instance maps, live and historical binding, Cypher, REST, MCP,

@@ -141,6 +141,7 @@ Design prototypes for the same screens: https://claude.ai/artifact/LwS7u1g2MyCjY
 ## Knowledge graph on Timebase
 
 Design: `docs/superpowers/specs/2026-10-29-riverbend-knowledge-graph-design.md` and `2026-10-29-riverbend-timebase-backend.md`.
+Production stack: `docs/adr/0001-stack-decision.md` (Historian at the edge, Atlas on hold).
 Eleven read-only tools (search, get, neighbors, upstream, downstream, readings, events, documents, read, locate, people)
 over the Riverbend plant, each answer item carrying a `cite` id and pruned to the acting person's clearance. They are served
 as an MCP endpoint at `POST /mcp` on the same port as the console.
