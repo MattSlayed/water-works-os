@@ -120,10 +120,10 @@ for u in "${USERS[@]}"; do
 done
 
 BUDGET_NAME=$PROJECT-$SERVICE-budget  # the billing account is shared across projects, so the name carries the project
-echo "== 7. budget ${BUDGET_USD} USD" >&2
+echo "== 7. budget ${BUDGET_USD} ${BUDGET_CURRENCY:-(in the currency of the billing account)}" >&2
 get found '' gcloud billing budgets list "--billing-account=$BILLING_ACCOUNT" "--billing-project=$PROJECT" "--filter=displayName=$BUDGET_NAME" '--format=value(name)'
 [[ -n $found ]] || run gcloud billing budgets create "--billing-account=$BILLING_ACCOUNT" "--billing-project=$PROJECT" "--display-name=$BUDGET_NAME" \
-  "--budget-amount=${BUDGET_USD}USD" "--filter-projects=projects/$PROJECT_NUMBER" --threshold-rule=percent=0.5 --threshold-rule=percent=0.9 --threshold-rule=percent=1.0
+  "--budget-amount=${BUDGET_USD}${BUDGET_CURRENCY:-}" "--filter-projects=projects/$PROJECT_NUMBER" --threshold-rule=percent=0.5 --threshold-rule=percent=0.9 --threshold-rule=percent=1.0
 
 echo "== 8. email channel, uptime check, alert policy" >&2
 get channel '' gcloud beta monitoring channels list --project "$PROJECT" "--filter=displayName=$SERVICE-alert-email" '--format=value(name)'

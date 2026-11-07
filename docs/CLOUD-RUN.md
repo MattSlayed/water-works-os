@@ -25,7 +25,17 @@ DRY_RUN=1 bash deploy/gcp/front-door.sh    # prints each gcloud command, runs no
 bash deploy/gcp/front-door.sh              # does it; safe to run again
 ```
 
-`VERTEX_REGION` and `LLM_MODEL` in the env file are placeholders until Model Garden confirms them. The script uses `--source .`, so it redeploys the code too.
+`VERTEX_REGION=global` and `LLM_MODEL=claude-opus-5-5` were confirmed in Model Garden on 2026-11-07; Claude Opus 5.5 is served from the global endpoint only. The script uses `--source .`, so it redeploys the code too.
+
+What a re-run does not change:
+- **The budget and the alert email.** A budget or email channel that already exists is left as it is, so a new `BUDGET_USD`, `BUDGET_CURRENCY` or `ALERT_EMAIL` has no effect on it. Edit them in the Console: Billing → Budgets & alerts, and Monitoring → Alerting → Edit notification channels. `BUDGET_CURRENCY` must be the billing account's currency (a South African company account may be ZAR).
+- **Who may sign in, when someone leaves `IAP_USERS`.** The script only adds IAP bindings. Remove the old one by hand:
+
+  ```
+  gcloud iap web remove-iam-policy-binding --project se-project-49281 --resource-type=cloud-run --service=water-works-os --region=africa-south1 --member=user:EMAIL --role=roles/iap.httpsResourceAccessor
+  ```
+
+  Until then IAP still lets that address in. After the re-run the app refuses it anyway, because the address is no longer in `WWOS_OPERATORS`, but the static app shell and figures still load.
 
 Before each deploy, check what will leave the machine with `gcloud meta list-files-for-upload`. `deploy/` is not in the allowlist, so it stays here.
 

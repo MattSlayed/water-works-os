@@ -116,6 +116,11 @@ test("an LLM_PROVIDER other than anthropic or vertex stops the script", { skip }
   assert.equal(r.stdout, "");
 });
 
+test("the budget is in BUDGET_CURRENCY, the billing account's own", { skip }, () => {
+  const file = envWith({ BUDGET_CURRENCY: "ZAR", IAP_OAUTH_CLIENT_FILE: "test/fixtures/iap-oauth-client.json" });
+  assert.match(dry({}, file).stdout, /gcloud billing budgets create .*--budget-amount=25ZAR /);
+});
+
 test("re-running looks before it creates", { skip }, () => {
   const out = dry().stdout;
   for (const what of ["iam service-accounts list", "secrets list", "billing budgets list", "beta monitoring channels list", "monitoring uptime list-configs", "monitoring policies list"])
