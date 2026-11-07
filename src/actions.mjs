@@ -732,7 +732,7 @@ export function createActionService({ ont, audit, clock = wallClock, tel = null,
     });
     if (res.revert) reverts.set(dec.id, res.revert);
     for (const id of res.objects) if (ont.get(id)) ont.link(dec.id, "PRODUCED", id);
-    log({ actor: actor.id, actorKind: actor.kind, signedIn: actor.signedIn ?? null, action, outcome: "done", ref: dec.id, objects: res.objects, approvedBy: extra.approvedBy || null });
+    log({ actor: actor.id, actorKind: actor.kind, signedIn: actor.signedIn ?? extra.signedIn ?? null, action, outcome: "done", ref: dec.id, objects: res.objects, approvedBy: extra.approvedBy || null });
     return { status: "done", decision: dec };
   }
 
@@ -818,7 +818,7 @@ export function createActionService({ ont, audit, clock = wallClock, tel = null,
     if (verdict === "reject") {
       ont.upsert({ id: proposalId, type: "Proposal", state: "rejected", resolvedBy: by.id, resolvedAt: now() });
       fb("reject");
-      log({ actor: by.id, actorKind: "person", action: "resolve", outcome: "rejected", ref: proposalId, reason });
+      log({ actor: by.id, actorKind: "person", signedIn: by?.signedIn ?? null, action: "resolve", outcome: "rejected", ref: proposalId, reason });
       return { status: "rejected" };
     }
     const finalParams = verdict === "edit" ? { ...p.params, ...params } : p.params;
@@ -826,7 +826,7 @@ export function createActionService({ ont, audit, clock = wallClock, tel = null,
     if (bad) return refuse("resolve", by, bad);
     let res;
     try {
-      res = apply(p.action, finalParams, { kind: p.actorKind, id: p.actorId }, { approvedBy: by.id, proposalId, runId: p.runId });
+      res = apply(p.action, finalParams, { kind: p.actorKind, id: p.actorId }, { approvedBy: by.id, proposalId, runId: p.runId, signedIn: by.signedIn });
     } catch (e) {
       return refuse("resolve", by, e.message);
     }
@@ -849,7 +849,7 @@ export function createActionService({ ont, audit, clock = wallClock, tel = null,
     try { kept = (f() || {}).kept || []; } catch (e) { return refuse("reverse", by, e.message); }
     reverts.delete(decisionId);
     ont.upsert({ id: decisionId, type: "Decision", reversed: true, reversedBy: by && by.id, reversedAt: now(), ...(kept.length ? { kept } : {}) });
-    log({ actor: by && by.id, actorKind: by && by.kind, action: "reverse", outcome: "done", ref: decisionId, ...(kept.length ? { kept } : {}) });
+    log({ actor: by && by.id, actorKind: by && by.kind, signedIn: by?.signedIn ?? null, action: "reverse", outcome: "done", ref: decisionId, ...(kept.length ? { kept } : {}) });
     return { status: "done", kept };
   }
 

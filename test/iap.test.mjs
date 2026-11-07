@@ -149,6 +149,38 @@ test("the audit records who signed in", async () => {
   assert.ok(sys.audit.verify());
 });
 
+test("approving and reversing record who signed in", async () => {
+  const p = sys.actions.invoke({ action: "reserve_parts", params: { partIds: ["PRT-HLP-B-06"] }, actor: { kind: "agent", id: "Parts Readiness", clearance: "manager" }, autonomy: "propose" });
+  assert.equal(p.status, "proposed");
+  const as = "P-001"; // the proposal names a clearance, not a person, as its approver
+  const r = await call(`/api/proposals/${p.proposal.id}/resolve`, { email: "ok@x.co", as, method: "POST", body: { verdict: "approve" } });
+  assert.equal(r.status, 200);
+  const done = sys.audit.all().at(-1);
+  assert.deepEqual([done.outcome, done.actor, done.approvedBy, done.signedIn], ["done", "Parts Readiness", as, "ok@x.co"]);
+  assert.equal((await call(`/api/decisions/${(await r.json()).decision.id}/reverse`, { email: "ok@x.co", as, method: "POST", body: {} })).status, 200);
+  assert.deepEqual([sys.audit.all().at(-1).action, sys.audit.all().at(-1).signedIn], ["reverse", "ok@x.co"]);
+});
+
+test("the chat webhook needs the JWT and a sender the email may act as", async () => {
+  const post = (email, sender) => fetch(`${base}/api/channels/CHN-P-028/inbound`, { method: "POST", headers: { "content-type": "application/json", "x-channel-sender": sender, ...(email ? { "x-goog-iap-jwt-assertion": sign({ email }) } : {}) }, body: JSON.stringify({ text: "start" }) });
+  assert.equal((await post(null, "P-028")).status, 401);
+  assert.equal((await post("one@x.co", "P-001")).status, 403, "one@x.co may act only as P-028");
+  assert.equal((await post("one@x.co", "P-028")).status, 200);
+});
+
+test("a write must name its person in a header and be JSON", async () => {
+  const jwt = { "x-goog-iap-jwt-assertion": sign({ email: "ok@x.co" }) }, body = JSON.stringify({ params: { targetId: "SEN-FW-turb", title: "t" } });
+  const viaQuery = await fetch(`${base}/api/actions/raise_alert?as=P-001`, { method: "POST", headers: { ...jwt, "content-type": "application/json" }, body });
+  assert.equal(viaQuery.status, 400);
+  assert.match((await viaQuery.json()).error, /header.*\?as=/);
+  const form = await fetch(`${base}/api/actions/raise_alert`, { method: "POST", headers: { ...jwt, "x-acting-user": "P-001", "content-type": "application/x-www-form-urlencoded" }, body: "params=x" });
+  assert.equal(form.status, 400);
+  assert.match((await form.json()).error, /application\/json/);
+  const ev = await fetch(`${base}/api/events?as=P-001`, { headers: jwt });
+  assert.equal(ev.status, 200, "EventSource cannot send headers, so a GET keeps ?as=");
+  await ev.body.cancel();
+});
+
 test("no iap option keeps today's behaviour", async () => {
   const s2 = createSystem({ seed: 7 }), plain = createServer(s2);
   await new Promise((r) => plain.listen(0, r));
@@ -158,5 +190,6 @@ test("no iap option keeps today's behaviour", async () => {
     const r = await fetch(`${at}/api/actions/raise_alert`, { method: "POST", headers: { "content-type": "application/json", "x-acting-user": "P-001" }, body: JSON.stringify({ params: { targetId: "SEN-FW-turb", title: "t" } }) });
     assert.equal(r.status, 200);
     assert.equal(s2.audit.all().at(-1).signedIn, null, "no sign-in, so the audit says so");
+    assert.equal((await fetch(`${at}/api/actions/raise_alert?as=P-001`, { method: "POST", body: JSON.stringify({ params: { targetId: "SEN-FW-turb", title: "t" } }) })).status, 200, "a local write may still use ?as=");
   } finally { plain.close(); }
 });

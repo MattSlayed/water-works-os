@@ -127,14 +127,20 @@ export function createServer(sys, { kgTools = createKgTools({ backend: createMem
   copilot.on((e) => broadcast(e));
   channels.on((e) => broadcast(e));
 
+  // Behind IAP: the verified email, once it may act as `id`. A write must be JSON with its person in a header, which a
+  // cross-site form riding IAP's sign-in cookie cannot send.
+  const signedInAs = async (req, id) => {
+    let email;
+    try { email = (await verifyIapJwt(req.headers["x-goog-iap-jwt-assertion"], iap)).email; } catch (e) { throw new HttpError(401, `not signed in through IAP: ${e.message}`); }
+    const write = req.method !== "GET";
+    if (write && String(req.headers["content-type"] || "").split(";")[0].trim().toLowerCase() !== "application/json") throw new HttpError(400, "a write must be sent as application/json");
+    if (!id) throw new HttpError(400, write ? "say which person you are acting as, in a header: a write cannot use ?as=" : "say which person you are acting as");
+    if (!mayActAs(iap.operators, email, id)) throw new HttpError(403, `${email} may not act as ${id}`);
+    return email;
+  };
   const viewerOf = async (req, url) => {
-    let signedIn;
-    if (iap) {
-      try { signedIn = (await verifyIapJwt(req.headers["x-goog-iap-jwt-assertion"], iap)).email; } catch (e) { throw new HttpError(401, `not signed in through IAP: ${e.message}`); }
-    }
-    const id = req.headers["x-acting-user"] || (url && url.searchParams.get("as"));
-    if (iap && !id) throw new HttpError(400, "say which person you are acting as");
-    if (iap && !mayActAs(iap.operators, signedIn, id)) throw new HttpError(403, `${signedIn} may not act as ${id}`);
+    const id = req.headers["x-acting-user"] || (iap && req.method !== "GET" ? null : url && url.searchParams.get("as"));
+    const signedIn = iap ? await signedInAs(req, id) : undefined;
     const p = id && ont.get(id);
     if (!p || p.type !== "Person") throw new HttpError(401, "unknown acting user");
     return { id: p.id, kind: "person", role: p.role, clearance: p.clearance, name: p.name, ...(signedIn && { signedIn }) };
@@ -476,7 +482,7 @@ export function createServer(sys, { kgTools = createKgTools({ backend: createMem
       if (!runtime.spec(name)) throw new HttpError(404, "unknown agent");
       if (rank(v.clearance) < rank("engineer")) throw new HttpError(403, "engineer clearance needed to change the autonomy dial");
       const b = await body(req);
-      try { const s = runtime.setAutonomy(name, b.action, b.level); audit.append({ actor: v.id, actorKind: "person", action: "set_autonomy", ref: name, detail: `${b.action}=${b.level}` }); return s; } catch (e) { throw new HttpError(400, e.message); }
+      try { const s = runtime.setAutonomy(name, b.action, b.level); audit.append({ actor: v.id, actorKind: "person", signedIn: v.signedIn ?? null, action: "set_autonomy", ref: name, detail: `${b.action}=${b.level}` }); return s; } catch (e) { throw new HttpError(400, e.message); }
     }],
     ["GET", /^\/api\/runs$/, (v) => { const view = ont.view(v); return runtime.runs().filter((r) => view.get(r.id)).slice(-100).reverse(); }],
     ["GET", /^\/api\/runs\/([^/]+)$/, (v, m) => { const id = decodeURIComponent(m[1]); if (!ont.view(v).get(id) || !runtime.getRun(id)) throw new HttpError(404, "not found"); return runtime.getRun(id); }],
@@ -534,7 +540,7 @@ export function createServer(sys, { kgTools = createKgTools({ backend: createMem
       if (rank(v.clearance) < rank("supervisor")) throw new HttpError(403, "supervisor clearance needed");
       const b = await body(req);
       muster.on = !!b.on; muster.since = muster.on ? tel.now() : null; muster.checkins.clear();
-      audit.append({ actor: v.id, actorKind: "person", action: "muster", detail: muster.on ? "on" : "off" });
+      audit.append({ actor: v.id, actorKind: "person", signedIn: v.signedIn ?? null, action: "muster", detail: muster.on ? "on" : "off" });
       broadcast({ kind: "muster", on: muster.on });
       return { on: muster.on };
     }],
@@ -546,7 +552,7 @@ export function createServer(sys, { kgTools = createKgTools({ backend: createMem
       const b = await body(req);
       if (typeof b.autoSubmit !== "boolean") throw new HttpError(400, "autoSubmit must be true or false");
       ont.upsert({ id: v.id, type: "Person", autoSubmit: b.autoSubmit });
-      audit.append({ actor: v.id, actorKind: "person", action: "consent", detail: `autoSubmit=${b.autoSubmit}` });
+      audit.append({ actor: v.id, actorKind: "person", signedIn: v.signedIn ?? null, action: "consent", detail: `autoSubmit=${b.autoSubmit}` });
       return { autoSubmit: b.autoSubmit };
     }],
     ["GET", /^\/api\/channels$/, (v) => {
@@ -685,6 +691,7 @@ export function createServer(sys, { kgTools = createKgTools({ backend: createMem
       const inbound = req.method === "POST" && url.pathname.match(/^\/api\/channels\/([^/]+)\/inbound$/);
       if (inbound) {
         const sender = req.headers["x-channel-sender"];
+        if (iap) await signedInAs(req, sender);
         if (!sender || !ont.get(sender)) throw new HttpError(401, "unknown sender");
         const b = await body(req);
         let out;
