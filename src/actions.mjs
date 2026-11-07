@@ -684,7 +684,7 @@ export function createActionService({ ont, audit, clock = wallClock, tel = null,
   const reverts = new Map();
   const log = (entry) => audit && audit.append(entry);
   const refuse = (action, actor, reason) => {
-    log({ actor: actor && actor.id, actorKind: actor && actor.kind, action, outcome: "refused", reason });
+    log({ actor: actor && actor.id, actorKind: actor && actor.kind, signedIn: actor?.signedIn ?? null, action, outcome: "refused", reason });
     return { status: "refused", reason };
   };
 
@@ -732,7 +732,7 @@ export function createActionService({ ont, audit, clock = wallClock, tel = null,
     });
     if (res.revert) reverts.set(dec.id, res.revert);
     for (const id of res.objects) if (ont.get(id)) ont.link(dec.id, "PRODUCED", id);
-    log({ actor: actor.id, actorKind: actor.kind, action, outcome: "done", ref: dec.id, objects: res.objects, approvedBy: extra.approvedBy || null });
+    log({ actor: actor.id, actorKind: actor.kind, signedIn: actor.signedIn ?? null, action, outcome: "done", ref: dec.id, objects: res.objects, approvedBy: extra.approvedBy || null });
     return { status: "done", decision: dec };
   }
 
@@ -767,7 +767,7 @@ export function createActionService({ ont, audit, clock = wallClock, tel = null,
         // a studio agent's shadow actions are its builder's and approver's to see, like its documents
         const shAud = spec.builderId ? [spec.builderId, spec.approver].filter((x) => typeof x === "string") : audienceFor(params);
         const sha = ont.upsert({ id: shadowId(), type: "ShadowAction", agent: actor.id, specVersion: spec.version, runId: runId || null, action, params, at: now(), status: "pending", minClearance: actor.clearance, audience: shAud });
-        log({ actor: actor.id, actorKind: actor.kind, action, outcome: "shadowed", ref: sha.id });
+        log({ actor: actor.id, actorKind: actor.kind, signedIn: actor.signedIn ?? null, action, outcome: "shadowed", ref: sha.id });
         return { status: "shadowed", shadow: sha };
       }
       if (cat && cat.locked) return refuse(action, actor, `needs IT sign-off: ${line.kind} ${line.op}`);

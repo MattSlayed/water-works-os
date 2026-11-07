@@ -33,6 +33,7 @@ import { restCall } from "./timebase/rest.mjs";
 import { profiles, profileOf, peopleFor, resolvePlant } from "./people.mjs";
 import { createAtlasSync, atlasWriteThrough } from "./timebase/atlas-sync.mjs";
 import { applyTimeouts, matchShadow, specFor, statementSentences, shadowRecord, promotionGap, MODES } from "./harness.mjs";
+import { verifyIapJwt, googleIapKeys, parseOperators, mayActAs } from "./iap.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const WEB = path.resolve(here, "..", "web");
@@ -106,7 +107,8 @@ export async function kgToolsFor(sys, env = process.env, { fallback = true, writ
   return tools;
 }
 
-export function createServer(sys, { kgTools = createKgTools({ backend: createMemoryBackend(sys), ont: sys.ont, tel: sys.tel, crosswalk: loadCrosswalk() }) } = {}) {
+// iap ({ audience, keys, operators }, hosted behind Google IAP): the acting persona must be one the signed-in email may act as.
+export function createServer(sys, { kgTools = createKgTools({ backend: createMemoryBackend(sys), ont: sys.ont, tel: sys.tel, crosswalk: loadCrosswalk() }), iap } = {}) {
   const { ont, tel, actions, runtime, copilot, audit, channels } = sys;
   const siteAgent = createSiteAgent({ ont, tel, tools: kgTools });
   const workforce = () => [ont.list("Execution"), ont.list("Procedure"), ont.list("Issue"), ont.list("KnowledgeNote")];
@@ -125,11 +127,17 @@ export function createServer(sys, { kgTools = createKgTools({ backend: createMem
   copilot.on((e) => broadcast(e));
   channels.on((e) => broadcast(e));
 
-  const viewerOf = (req, url) => {
+  const viewerOf = async (req, url) => {
+    let signedIn;
+    if (iap) {
+      try { signedIn = (await verifyIapJwt(req.headers["x-goog-iap-jwt-assertion"], iap)).email; } catch (e) { throw new HttpError(401, `not signed in through IAP: ${e.message}`); }
+    }
     const id = req.headers["x-acting-user"] || (url && url.searchParams.get("as"));
+    if (iap && !id) throw new HttpError(400, "say which person you are acting as");
+    if (iap && !mayActAs(iap.operators, signedIn, id)) throw new HttpError(403, `${signedIn} may not act as ${id}`);
     const p = id && ont.get(id);
     if (!p || p.type !== "Person") throw new HttpError(401, "unknown acting user");
-    return { id: p.id, kind: "person", role: p.role, clearance: p.clearance, name: p.name };
+    return { id: p.id, kind: "person", role: p.role, clearance: p.clearance, name: p.name, ...(signedIn && { signedIn }) };
   };
   const body = (req) => new Promise((resolve, reject) => {
     let data = "";
@@ -670,7 +678,7 @@ export function createServer(sys, { kgTools = createKgTools({ backend: createMem
         // DNS rebinding: a browser page rebound to 127.0.0.1 sends a foreign Origin; CLI clients send none. No ?as= here.
         const port = req.socket.localPort, origin = req.headers.origin;
         if (origin !== undefined && origin !== `http://localhost:${port}` && origin !== `http://127.0.0.1:${port}`) throw new HttpError(403, "origin not allowed");
-        return await handleMcp(req, res, { tools: kgTools, viewer: viewerOf(req, null) });
+        return await handleMcp(req, res, { tools: kgTools, viewer: await viewerOf(req, null) });
       }
       // The chat stub's webhook: the sender is the channel member, not a console user.
       // shortcut: header-trusted sender, like x-acting-user; a real WhatsApp webhook verifies Meta's signature.
@@ -687,7 +695,7 @@ export function createServer(sys, { kgTools = createKgTools({ backend: createMem
         return res.end(JSON.stringify(out));
       }
       if (url.pathname === "/api/events") {
-        const sv = viewerOf(req, url);
+        const sv = await viewerOf(req, url);
         res.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-cache", connection: "keep-alive" });
         res.write(`data: ${JSON.stringify({ kind: "hello", clock: tel.now() })}\n\n`);
         clients.set(res, sv);
@@ -696,7 +704,7 @@ export function createServer(sys, { kgTools = createKgTools({ backend: createMem
       }
       const route = routes.find(([mth, re]) => mth === req.method && re.test(url.pathname));
       if (!route) throw new HttpError(404, "no such route");
-      const v = viewerOf(req, url);
+      const v = await viewerOf(req, url);
       const out = await route[2](v, url.pathname.match(route[1]), url, req);
       res.writeHead(200, { "content-type": "application/json" });
       res.end(JSON.stringify(out, (k, val) => (val === Infinity ? null : val)));
@@ -716,7 +724,8 @@ const SELF = fileURLToPath(import.meta.url);
 if (process.argv[1] && path.resolve(process.argv[1]).toLowerCase() === SELF.toLowerCase()) {
   const port = Number(process.argv[2]) || Number(process.env.PORT) || 8830;
   const sys = createSystem({ seed: 7 });
-  const server = createServer(sys, { kgTools: await kgToolsFor(sys, process.env, { writeThrough: true }) });
+  const iap = process.env.WWOS_IAP_AUDIENCE ? { audience: process.env.WWOS_IAP_AUDIENCE, keys: googleIapKeys(), operators: parseOperators(process.env.WWOS_OPERATORS || "") } : undefined;
+  const server = createServer(sys, { kgTools: await kgToolsFor(sys, process.env, { writeThrough: true }), iap });
   for (const a of ["Shift Handover", "Process Watch", "Asset Watch", "Permit Guard", "Shift Cover", "Drop Pack", "Project Watch", "Procedure Steward"]) sys.runtime.run(a, { actingUser: SYSTEM_USER, trigger: { kind: "startup" } });
   setInterval(() => server.tick(1), 2000).unref();
   server.listen(port, process.env.WWOS_HOST || "127.0.0.1", () => console.log(`Water Works OS on http://localhost:${port}  (plant clock ${sys.tel.now()}, Claude ${llmEnabled() ? "on" : "off: deterministic agents"})`));
