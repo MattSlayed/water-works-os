@@ -44,7 +44,7 @@ Before each deploy, check what will leave the machine with `gcloud meta list-fil
 **First run.** The script reads the key only from `ANTHROPIC_API_KEY` in your shell, never from a file. It reads it only while the secret has no version yet. Copy it from `.env` into the same shell without printing it. The line in `.env` must be `ANTHROPIC_API_KEY=sk-...`, without quotes.
 
 ```
-export ANTHROPIC_API_KEY=$(sed -n 's/^ANTHROPIC_API_KEY=//p' .env)
+export ANTHROPIC_API_KEY=$(sed -n 's/^ANTHROPIC_API_KEY=//p' .env | tr -d '\r')
 DRY_RUN=1 bash deploy/gcp/front-door.sh    # a dry run cannot see the secret's versions, so it wants the key too
 bash deploy/gcp/front-door.sh
 ```

@@ -108,7 +108,7 @@ fi
 
 echo "== 4. deploy (IAP on, no public access)" >&2
 run gcloud run deploy "$SERVICE" --project "$PROJECT" --region "$REGION" --source . --iap --no-allow-unauthenticated \
-  --service-account "$SA_EMAIL" --memory 1Gi --cpu 1 --min-instances 0 --max-instances 1 --set-env-vars "$ENV_VARS" "$SECRETS"
+  --service-account "$SA_EMAIL" --memory 1Gi --cpu 1 --min-instances 0 --max-instances 1 "--set-env-vars=$ENV_VARS" "$SECRETS"
 
 echo "== 5. IAP service agent may invoke the service" >&2
 run gcloud beta services identity create --service=iap.googleapis.com --project "$PROJECT" --format=none
