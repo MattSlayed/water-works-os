@@ -1,7 +1,7 @@
 // Bloom: the plant as a graph, drawn from the same knowledge graph the agents query (through /mcp, as the viewer).
 // Plain SVG and a small force layout, no dependencies. Plant nodes are seeded at their site-plan positions.
 const PALETTE = ["#60a5fa", "#a78bfa", "#2dd4bf", "#fbbf24", "#f472b6", "#fb923c", "#a3e635", "#22d3ee", "#f87171", "#4ade80", "#e879f9", "#facc15"];
-const FIXED = { Structure: "#60a5fa", Position: "#a78bfa", Asset: "#2dd4bf", Sensor: "#22d3ee", Zone: "#94a3b8", Alert: "#f87171", WorkOrder: "#fb923c", Document: "#fbbf24", Chunk: "#facc15", Procedure: "#a3e635", Project: "#f472b6", Permit: "#e879f9", Requirement: "#4ade80" };
+const FIXED = { Structure: "#60a5fa", Position: "#a78bfa", Asset: "#2dd4bf", Sensor: "#22d3ee", Zone: "#94a3b8", Alert: "#f87171", WorkOrder: "#fb923c", Document: "#fbbf24", Chunk: "#facc15", Procedure: "#a3e635", Project: "#f472b6", Permit: "#e879f9", Requirement: "#4ade80", Person: "#fda4af" };
 export const colourOf = (type) => FIXED[type] || PALETTE[[...String(type)].reduce((h, c) => (h * 31 + c.charCodeAt(0)) >>> 0, 7) % PALETTE.length];
 const SPAN = 1100; // seeded layout height in user units; width is 1.6x, the stage's landscape shape
 
@@ -31,9 +31,30 @@ export function plantGraph(d) {
     if (!a || !b || a === b) continue;
     const e = edges.get(key);
     if (e) e.title += `, ${l.tag}`;
-    else edges.set(key, { from: a, to: b, rel: "FEEDS", title: `${l.service}: ${l.tag}`, recycle: !!l.recycle });
+    else edges.set(key, { from: a, to: b, rel: "FEEDS", lineId: l.id, title: `${l.service}: ${l.tag}`, recycle: !!l.recycle });
   }
   return { nodes, edges: [...edges.values()], alias };
+}
+
+// The graph Timebase Atlas holds (GET /api/plant/kg), laid out on the site plan: an object the released model draws keeps
+// its place, anything else sits by what it links to (an asset by its position, a zone among its structures). Line nodes
+// are left out because each line is already drawn as its feeds edge.
+export function atlasGraph(d, kg) {
+  const base = plantGraph(d), placed = new Map(base.nodes.map((n) => [n.id, n]));
+  const nodes = kg.nodes.filter((n) => n.type !== "Line"), ids = new Set(nodes.map((n) => n.id));
+  const edges = kg.edges.filter((e) => ids.has(e.from) && ids.has(e.to)).map((e) => ({ from: e.from, to: e.to, rel: e.rel, ...(e.lineId ? { lineId: e.lineId, title: e.lineId.replace(/^PM-RB-[A-Z]:LIN-/, "") } : {}) }));
+  const pos = new Map(nodes.filter((n) => placed.has(n.id)).map((n) => [n.id, [placed.get(n.id).x, placed.get(n.id).y]]));
+  for (let pass = 0; pass < 4; pass++) for (const [i, n] of nodes.entries()) {
+    if (pos.has(n.id)) continue;
+    const near = edges.filter((e) => e.from === n.id || e.to === n.id).map((e) => pos.get(e.from === n.id ? e.to : e.from)).filter(Boolean);
+    if (!near.length) continue;
+    const [x, y] = near.reduce(([a, b], [p, q]) => [a + p / near.length, b + q / near.length], [0, 0]);
+    pos.set(n.id, n.type === "Asset" ? [x + 18, y + 34] : [x + ((i % 5) - 2) * 14, y - 46]);
+  }
+  return {
+    nodes: nodes.map((n) => { const [x, y] = pos.get(n.id) || [SPAN / 2, SPAN / 2]; return { id: n.id, type: n.type, label: n.label || n.id, x, y, ax: x, ay: y }; }),
+    edges, alias: base.alias
+  };
 }
 
 // Bloom-style search phrases -> one KG tool call. Anything else is a search.
@@ -41,6 +62,9 @@ export function parseQuery(q) {
   const s = String(q ?? "").trim();
   let m;
   if (!s) return null;
+  if (/^(?:people|workers|everyone|who(?:'s|\s+is)?)\s+(?:on\s+site|on\s+the\s+site|at\s+work|here)$/i.test(s)) return { tool: "people:site", args: {} };
+  if ((m = s.match(/^(?:people|workers|who(?:\s+(?:works|can\s+work|is))?)\s+(?:on|at|for|near)\s+(.+)$/i)) || (m = s.match(/^who\s+can\s+(?:fix|repair|service)\s+(.+)$/i)))
+    return { tool: "people:on", args: { q: m[1].trim() } };
   if ((m = s.match(/^(upstream|downstream)\s+(?:of\s+)?(.+)$/i))) return { tool: m[1].toLowerCase(), args: { id: m[2].trim() } };
   if ((m = s.match(/^(?:neighbou?rs|expand|around)\s+(?:of\s+)?(.+)$/i))) return { tool: "neighbors", args: { id: m[1].trim() } };
   return { tool: "search", args: { q: s, limit: 25 } };
@@ -54,7 +78,7 @@ const el = (tag, attrs = {}, parent) => {
   return e;
 };
 
-export function mountBloom(host, graph, { onSelect = () => {}, onExpand = () => {} } = {}) {
+export function mountBloom(host, graph, { onSelect = () => {}, onExpand = () => {}, onEdge = null } = {}) {
   const still = matchMedia("(prefers-reduced-motion: reduce)").matches;
   const svg = el("svg", { class: "bloomsvg", role: "group", "aria-label": "Plant knowledge graph" }, host);
   const gEdges = el("g", {}, svg), gNodes = el("g", {}, svg);
@@ -95,7 +119,17 @@ export function mountBloom(host, graph, { onSelect = () => {}, onExpand = () => 
     const label = el("text", { class: "bel", "text-anchor": "middle" }, gEdges);
     label.textContent = e.rel;
     el("title", {}, line).textContent = `${e.rel}${e.title ? ` · ${e.title}` : ""}`;
-    edges.set(key, { ...e, from, to, line, label });
+    // a wide transparent stroke over the edge, so a thin line can be clicked (and reached by keyboard)
+    let hit = null;
+    if (onEdge) {
+      hit = el("line", { class: "beh", tabindex: "0", role: "button", "aria-label": `${e.rel} from ${nodes.get(from).label} to ${nodes.get(to).label}` }, gEdges);
+      el("title", {}, hit).textContent = `${e.rel}${e.title ? ` · ${e.title}` : ""}: click for the people on it`;
+      const fire = () => onEdge({ ...e, from, to });
+      hit.addEventListener("pointerdown", (ev) => ev.stopPropagation());
+      hit.addEventListener("click", fire);
+      hit.addEventListener("keydown", (ev) => { if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); fire(); } });
+    }
+    edges.set(key, { ...e, from, to, line, label, hit });
   }
 
   // drag a node, or press Enter/Space to select and E (or double-click) to expand
@@ -141,7 +175,7 @@ export function mountBloom(host, graph, { onSelect = () => {}, onExpand = () => 
     for (const n of nodes.values()) n.g.setAttribute("transform", `translate(${n.x.toFixed(1)},${n.y.toFixed(1)}) scale(${z.toFixed(3)})`);
     for (const e of edges.values()) {
       const a = nodes.get(e.from), b = nodes.get(e.to);
-      e.line.setAttribute("x1", a.x); e.line.setAttribute("y1", a.y); e.line.setAttribute("x2", b.x); e.line.setAttribute("y2", b.y);
+      for (const l of [e.line, e.hit]) if (l) { l.setAttribute("x1", a.x); l.setAttribute("y1", a.y); l.setAttribute("x2", b.x); l.setAttribute("y2", b.y); }
       e.label.setAttribute("x", (a.x + b.x) / 2); e.label.setAttribute("y", (a.y + b.y) / 2 - 4 * z);
     }
   }

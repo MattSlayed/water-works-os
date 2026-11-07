@@ -54,6 +54,14 @@ export function atlasModel(ont, { domain = "riverbend" } = {}) {
   const field = (o, k) => k === "wosId" ? o.id : k === "zone" ? ont.zoneOf(o.id) : k === "minClearance" ? minClearance(o)
     : k === "geometry" ? geometry(o) : k === "rangeLo" ? o.range?.[0] : k === "rangeHi" ? o.range?.[1] : o[k];
 
+  // two ids with one slug would be one Atlas instance, and the load would overwrite one with the other without a word
+  const bySlug = new Map();
+  for (const o of objs) {
+    const s = slug(o.id), was = bySlug.get(s);
+    if (was && was !== o.id) throw new Error(`Atlas slug collision: ${was} and ${o.id} both become ${s}`);
+    bySlug.set(s, o.id);
+  }
+
   const instances = objs.map((o) => {
     const p = props([...BASE, ...(OWN[o.type] || [])].filter((k) => k !== "Value").map((k) => [k, field(o, k)]));
     if (o.type === "Sensor") p[O("Value")] = [{ type: "BoundStrategy", bindingPath: `historian-rb/Riverbend/${o.tag}` }];
@@ -92,8 +100,6 @@ const canon = (v) => Array.isArray(v) ? `[${v.map(canon).join(",")}]`
   : v && typeof v === "object" ? `{${Object.keys(v).sort().filter((k) => v[k] != null).map((k) => `${JSON.stringify(k)}:${canon(v[k])}`).join(",")}}`
   : JSON.stringify(v);
 
-// What to POST, PATCH (always the full property set; the vendor PATCH merges, so a dropped property is not cleared) and DELETE to make existing match desired.
-// shortcut: dropped properties are not cleared; send clear:["properties"] — verify on the first licensed run
 // Atlas counts well beyond nodes and edges against its Instances entitlement (500 unlicensed; Types is limited to 100)
 // (556 with all 37 structures, whatever properties they kept). This keeps the structures that have flow
 // and the flow between them, with only what the backend's queries read, so the Atlas route can be proven without a licence.
@@ -105,16 +111,57 @@ export function slimModel(model, { domain = "riverbend" } = {}) {
   const keep = new Set(feeds.flatMap((e) => [e.source, e.target]));
   const instances = model.instances.filter((x) => x.type === O("Structure") && keep.has(x.instanceId)).map((x) => only(x, ["wosId", "kind"]));
   const edges = feeds.map((e) => only(e, ["kind"]));
-  return { ...model, relationshipTypes: model.relationshipTypes.filter((r) => r.name === "feeds"), instances, edges };
+  // Types are counted across every branch (100 in all), so slim declares only what it holds
+  return {
+    ...model,
+    properties: model.properties.filter((p) => ["wosId", "kind"].includes(p.name)),
+    entityTypes: model.entityTypes.filter((t) => ["WosObject", "Structure"].includes(t.name)).map((t) => ({ ...t, properties: t.name === "WosObject" ? ["wosId"] : ["kind"] })),
+    relationshipTypes: model.relationshipTypes.filter((r) => r.name === "feeds").map((r) => ({ ...r, properties: ["kind"] })),
+    instances, edges
+  };
 }
 
+// The free licence (2026-11-07) raised Instances from 500 to 1,000. Atlas counts one per node and edge plus one per
+// property its type DECLARES (parent types included), set or not, plus 102 on this branch: that formula gives exactly
+// the 6,241 Atlas reported for the full model and the 2,402 for core before core's types were trimmed.
+export const ATLAS_INSTANCE_LIMIT = 1000;
+export const ATLAS_OVERHEAD = 102;
+export function atlasCost(model) {
+  const types = new Map([...model.entityTypes, ...model.relationshipTypes].map((t) => [t.name, t]));
+  const declared = (name) => { const t = types.get(name); return t ? (t.properties || []).length + (t.parentType ? declared(t.parentType) : 0) : 0; };
+  return ATLAS_OVERHEAD + [...model.instances, ...model.edges].reduce((n, x) => n + 1 + declared(String(x.type).split(":").pop()), 0);
+}
+
+// The process core: the plant's places, machines and lines, with the flow between structures. Each type declares only
+// wosId (Atlas's Label carries the tag) and feeds only kind and lineId; WaterOS supplies the rest by id, and Parts,
+// Sensors, Valves, SamplePoints and Documents stay in WaterOS. About 733 of the 1,000, leaving room to grow.
+// shortcut: sized for the free licence; load atlasModel itself once a tier covers about 6,300 instances.
+export const CORE_TYPES = ["Site", "Zone", "ProcessUnit", "Structure", "Position", "Asset", "Line"];
+export function coreModel(model, { domain = "riverbend" } = {}) {
+  const O = (n) => `urn:atlas:ontology:${domain}:${n}`;
+  const only = (x, names) => ({ ...x, properties: Object.fromEntries(names.filter((n) => x.properties?.[O(n)]).map((n) => [O(n), x.properties[O(n)]])) });
+  const kept = new Set(CORE_TYPES.map(O));
+  const instances = model.instances.filter((x) => kept.has(x.type)).map((x) => only(x, ["wosId"]));
+  const ids = new Set(instances.map((x) => x.instanceId));
+  const edges = model.edges.filter((e) => ids.has(e.source) && ids.has(e.target)).map((e) => only(e, e.type === O("feeds") ? ["kind", "lineId"] : []));
+  const rels = new Set(edges.map((e) => e.type));
+  return {
+    ...model,
+    properties: model.properties.filter((p) => ["wosId", "kind", "lineId"].includes(p.name)),
+    entityTypes: model.entityTypes.filter((t) => t.name === "WosObject" || CORE_TYPES.includes(t.name)).map((t) => ({ ...t, properties: t.name === "WosObject" ? ["wosId"] : [] })),
+    relationshipTypes: model.relationshipTypes.filter((r) => rels.has(O(r.name))).map((r) => (r.name === "feeds" ? { ...r, properties: ["kind", "lineId"] } : r)),
+    instances, edges
+  };
+}
+
+// What to POST, PATCH (the full property set; atlas-sync clears first when the instance holds more) and DELETE to make existing match desired.
 export function planLoad(desired, existing) {
   const have = new Map(existing.map((x) => [x.id, x])), want = new Set(desired.map((x) => x.id));
   const create = [], update = [];
   for (const d of desired) {
     const e = have.get(d.id);
     if (!e) create.push(d);
-    else if (canon(e.properties || {}) !== canon(d.properties || {})) update.push(d);
+    else if (canon(e.properties || {}) !== canon(d.properties || {}) || (d.label != null && e.label !== d.label)) update.push(d);
   }
   return { create, update, remove: existing.filter((x) => !want.has(x.id)) };
 }

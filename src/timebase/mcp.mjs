@@ -8,7 +8,7 @@ export async function connectMcp(baseUrl, getToken, { fetch: f = fetch } = {}) {
       headers: { Authorization: `Bearer ${await getToken()}`, "Content-Type": "application/json", Accept: "application/json, text/event-stream", ...(session ? { "mcp-session-id": session } : {}) },
       body: JSON.stringify(msg)
     });
-    if (!r.ok) throw new Error(`MCP ${msg.method}: ${r.status}`);
+    if (!r.ok) throw Object.assign(new Error(`MCP ${msg.method}: ${r.status}`), { status: r.status });
     session = r.headers.get("mcp-session-id") || session;
     const text = await r.text();
     if (!text.trim()) return null;
@@ -19,12 +19,24 @@ export async function connectMcp(baseUrl, getToken, { fetch: f = fetch } = {}) {
     if (json?.error) throw new Error(`MCP ${msg.method}: ${json.error.message || json.error.code}`);
     return json?.result;
   };
-  await post({ jsonrpc: "2.0", id: ++id, method: "initialize", params: { protocolVersion: "2025-03-26", capabilities: {}, clientInfo: { name: "wateros", version: "0" } } });
-  await post({ jsonrpc: "2.0", method: "notifications/initialized" });
+  const handshake = async () => {
+    session = undefined;
+    await post({ jsonrpc: "2.0", id: ++id, method: "initialize", params: { protocolVersion: "2025-03-26", capabilities: {}, clientInfo: { name: "wateros", version: "0" } } });
+    await post({ jsonrpc: "2.0", method: "notifications/initialized" });
+  };
+  // a server answers 404 to a session it has dropped (idle, or restarted); the client opens a new one and asks once more
+  const request = async (msg) => {
+    try { return await post(msg); } catch (e) {
+      if (e.status !== 404 || !session) throw e;
+      await handshake();
+      return post({ ...msg, id: ++id });
+    }
+  };
+  await handshake();
   return {
-    listTools: async () => ((await post({ jsonrpc: "2.0", id: ++id, method: "tools/list", params: {} }))?.tools ?? []).map(({ name, description, inputSchema }) => ({ name, description, inputSchema })),
+    listTools: async () => ((await request({ jsonrpc: "2.0", id: ++id, method: "tools/list", params: {} }))?.tools ?? []).map(({ name, description, inputSchema }) => ({ name, description, inputSchema })),
     callTool: async (name, args) => {
-      const r = await post({ jsonrpc: "2.0", id: ++id, method: "tools/call", params: { name, arguments: args } });
+      const r = await request({ jsonrpc: "2.0", id: ++id, method: "tools/call", params: { name, arguments: args } });
       if (r?.isError) throw new Error(`MCP tool ${name} failed: ${String(r.content?.find((c) => c.type === "text")?.text ?? "").slice(0, 200)}`);
       return r;
     }

@@ -48,7 +48,9 @@ function summary(pts, alarmHi) {
 export function createKgTools({ backend, ont, tel, crosswalk = {}, env = process.env }) {
   const renamed = new Map((crosswalk.renames || []).filter(([, n]) => n));
   const oldOf = new Map((crosswalk.assets || []).map((a) => [a.canonical, a.old]));
-  const exact = (view, s) => s && view.search(s, 50).find((o) => !PEOPLE.has(o.type) && [o.id, o.tag, o.positionTag, o.kks].some((x) => x && x.toLowerCase() === s.toLowerCase()));
+  // a released revision keeps the older revisions' plant objects with the same tags; a tag names the current one
+  const current = (o) => !o.modelId || o.modelId === currentPlantModel(ont)?.id;
+  const exact = (view, s) => s && view.search(s, 50).find((o) => !PEOPLE.has(o.type) && current(o) && [o.id, o.tag, o.positionTag, o.kks].some((x) => x && x.toLowerCase() === s.toLowerCase()));
   // an id, a renamed id, a tag or KKS, or a crosswalk canonical name, resolved only among what the viewer sees (never a person)
   const resolve = (view, id) => {
     const s = String(id ?? "").trim();
@@ -68,7 +70,11 @@ export function createKgTools({ backend, ont, tel, crosswalk = {}, env = process
   async function graphFor(view) {
     const m = currentPlantModel(ont);
     const g = graphFrom(view.list(null, (o) => m && o.modelId === m.id && (o.type === "Structure" || o.type === "MachinePlacement")));
-    for (const e of await backend.flowEdges()) {
+    // the backend gives the topology; a lean Atlas edge carries only kind and lineId, so its line's share, mode, length
+    // and the rest come from WaterOS by lineId (the backend's own values win where it has them)
+    const lines = new Map([...graphFrom(view.list(null, (o) => m && o.modelId === m.id)).out.values()].flat().filter((e) => e.lineId).map((e) => [e.lineId, e]));
+    for (const raw of await backend.flowEdges()) {
+      const e = { ...lines.get(raw.lineId), ...Object.fromEntries(Object.entries(raw).filter(([, v]) => v != null)) };
       if (!g.nodes.has(e.from) || !g.nodes.has(e.to) || (e.lineId && !view.get(e.lineId))) continue;
       (g.out.get(e.from) || g.out.set(e.from, []).get(e.from)).push(e);
       (g.in.get(e.to) || g.in.set(e.to, []).get(e.to)).push(e);
@@ -80,8 +86,13 @@ export function createKgTools({ backend, ont, tel, crosswalk = {}, env = process
     description: `What is ${name} of a plant object along the process flow, with each item's share of the water and its travel window (onset, mean, tail hours). Backwash lines are walked only in mode "backwash"; recycle items are marked and not crossed.`,
     inputSchema: schema({ id: str, mode: { enum: ["normal", "backwash"] }, flowMlD: { type: "number" } }, ["id"]),
     async run({ id, mode = "normal", flowMlD }, viewer) {
-      const view = ont.view(viewer), g = await graphFor(view), rid = resolve(view, id), start = rid && (g.alias.get(rid) || rid);
-      if (!g.nodes.has(start)) return { found: false, items: [] };
+      const view = ont.view(viewer), g = await graphFor(view), rid = resolve(view, id);
+      // a name can resolve off the flow graph: RES-2 is an asset with no position, and by the crosswalk structure 20UBA02;
+      // an installed asset walks from its position
+      const onGraph = (x) => { const n = x && (g.alias.get(x) || x); return n && g.nodes.has(n) ? n : null; };
+      const installedAt = (x) => x && ont.links(x, { rel: "INSTALLED_AT", dir: "out" }).map((l) => l.to)[0];
+      const start = onGraph(rid) || onGraph(installedAt(rid)) || onGraph(resolve(view, oldOf.get(String(id ?? "").trim()) ?? oldOf.get(view.get(rid)?.positionTag)));
+      if (!start) return { found: false, items: [] };
       const opts = flowMlD ? { flowMlD } : {};
       const items = walk(start, g, { mode }).map((x) => {
         const path = processPaths(name === "upstream" ? x.id : start, name === "upstream" ? start : x.id, g, { limit: 1, mode })[0];
@@ -264,5 +275,15 @@ export function createKgTools({ backend, ont, tel, crosswalk = {}, env = process
       return { ok: true, columns: r.columns, rows: r.rows.filter((row) => !row.some(bad)), cite: `cypher:${query}` };
     }
   });
+  // The whole graph the backend holds, as the viewer may see it: for the console's graph view, not an agent tool (an
+  // agent explores with search and neighbors). null when the backend cannot list its graph (memory: the view draws the
+  // released model itself). A feeds edge on a line the viewer may not see is dropped like its hidden ends.
+  tools.graph = async (viewer) => {
+    if (!backend.graph) return null;
+    const view = ont.view(viewer), { nodes, edges } = await backend.graph();
+    const shown = nodes.filter((n) => sees(view, n.id)).map((n) => { const o = view.get(n.id); return { id: n.id, type: o.type, label: n.label || labelOf(o) }; });
+    const ids = new Set(shown.map((n) => n.id));
+    return { nodes: shown, edges: edges.filter((e) => ids.has(e.from) && ids.has(e.to) && (!e.lineId || view.get(e.lineId))) };
+  };
   return tools;
 }

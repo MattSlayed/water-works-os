@@ -10,7 +10,9 @@ export const ATLAS_QUERIES = {
   search: "MATCH (n) WHERE n.wosId IS NOT NULL AND (toLower(n.wosId) CONTAINS $q OR toLower(n.Label) CONTAINS $q OR toLower(n.name) CONTAINS $q OR toLower(n.kind) CONTAINS $q OR toLower(n.title) CONTAINS $q) RETURN n.wosId AS id, labels(n) AS type, n.Label AS label",
   get: "MATCH (n) WHERE n.wosId = $id RETURN n.wosId AS id, labels(n) AS type, n.Label AS label, properties(n) AS props",
   neighbors: "MATCH (n)-[r]->(m) WHERE n.wosId = $id RETURN type(r) AS rel, 'out' AS dir, m.wosId AS id UNION MATCH (n)<-[r]-(m) WHERE n.wosId = $id RETURN type(r) AS rel, 'in' AS dir, m.wosId AS id",
-  flowEdges: "MATCH (a)-[r:feeds]->(b) RETURN a.wosId AS src, b.wosId AS dst, r.kind AS kind, r.lineId AS lineId, r.share AS split, r.mode AS mode, r.recycle AS recycle, r.length AS len, r.pumped AS pumped"
+  flowEdges: "MATCH (a)-[r:feeds]->(b) RETURN a.wosId AS src, b.wosId AS dst, r.kind AS kind, r.lineId AS lineId, r.share AS split, r.mode AS mode, r.recycle AS recycle, r.length AS len, r.pumped AS pumped",
+  graphNodes: "MATCH (n) WHERE n.wosId IS NOT NULL RETURN n.wosId AS id, labels(n) AS type, n.Label AS label",
+  graphEdges: "MATCH (a)-[r]->(b) WHERE a.wosId IS NOT NULL AND b.wosId IS NOT NULL RETURN a.wosId AS src, type(r) AS rel, b.wosId AS dst, r.lineId AS lineId"
 };
 
 // One cell of Atlas's text table: null, a boolean, a number, a [list], a {map} or text. Keys look like urn:atlas:...:name or @entity:Name.
@@ -75,10 +77,16 @@ export function createAtlasBackend({ atlas, historian, domain = "riverbend", bra
     async neighbors(id, rel) {
       return (await objects(ATLAS_QUERIES.neighbors, { id })).map((n) => ({ ...n, rel: short(n.rel) })).filter((n) => !rel || sameRel(n.rel, rel));
     },
+    // a value Atlas does not hold stays null (the lean core model keeps only kind and lineId); the tools fill it from WaterOS
     async flowEdges() {
       return (await objects(ATLAS_QUERIES.flowEdges)).map((e) => ({
-        from: e.src, to: e.dst, kind: e.kind, lineId: e.lineId, split: e.split ?? null, mode: e.mode, recycle: !!e.recycle, length: e.len || 0, pumped: !!e.pumped
+        from: e.src, to: e.dst, kind: e.kind, lineId: e.lineId, split: e.split ?? null, mode: e.mode ?? null, recycle: e.recycle ?? null, length: e.len ?? null, pumped: e.pumped ?? null
       }));
+    },
+    async graph() {
+      const nodes = (await objects(ATLAS_QUERIES.graphNodes)).map((n) => ({ id: n.id, type: typeOf(n.type), label: n.label }));
+      const edges = (await objects(ATLAS_QUERIES.graphEdges)).map((e) => ({ from: e.src, to: e.dst, rel: short(e.rel), lineId: e.lineId ?? null }));
+      return { nodes, edges };
     },
     // Historian's window is [from, to) and it stores changes only; the tools treat a missing minute as the value held
     readings: historianReadings(historian),

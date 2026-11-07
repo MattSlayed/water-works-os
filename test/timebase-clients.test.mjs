@@ -89,6 +89,25 @@ test("mcp parses SSE and JSON", async () => {
   await assert.rejects(b.c.callTool("x", {}), /nope/);
 });
 
+test("MCP client: a dropped session (404) is re-opened once and the call retried; a second 404 is an error", async () => {
+  let live = "S1", inits = 0, drop = 1;
+  const seen = [];
+  const fetch = async (url, init) => {
+    const msg = JSON.parse(init.body), sid = init.headers["mcp-session-id"];
+    seen.push(`${msg.method}${sid ? `@${sid}` : ""}`);
+    const ok = (o) => new Response(JSON.stringify(o), { status: 200, headers: { "content-type": "application/json", "mcp-session-id": live } });
+    if (msg.method === "initialize") { live = `S${++inits}`; return ok({ jsonrpc: "2.0", id: msg.id, result: {} }); }
+    if (msg.method === "notifications/initialized") return new Response(null, { status: 202 });
+    if (drop > 0 || sid !== live) { drop--; return new Response("", { status: 404 }); }
+    return ok({ jsonrpc: "2.0", id: msg.id, result: { content: [{ type: "text", text: "fine" }] } });
+  };
+  const c = await connectMcp("https://a", async () => "tok", { fetch });
+  assert.equal((await c.callTool("x", {})).content[0].text, "fine");
+  assert.deepEqual(seen, ["initialize", "notifications/initialized@S1", "tools/call@S1", "initialize", "notifications/initialized@S2", "tools/call@S2"]);
+  drop = 2;
+  await assert.rejects(c.callTool("x", {}), /tools\/call: 404/);
+});
+
 const ont = createOntology(generateWorks(7));
 
 test("historian tags", () => {

@@ -29,6 +29,9 @@ import { createMemoryBackend } from "./kg/backend-memory.mjs";
 import { connectMcp } from "./timebase/mcp.mjs";
 import { pulseToken } from "./timebase/pulse.mjs";
 import { createAtlasBackend, createHybridBackend } from "./kg/backend-atlas.mjs";
+import { restCall } from "./timebase/rest.mjs";
+import { profiles, profileOf, peopleFor, resolvePlant } from "./people.mjs";
+import { createAtlasSync, atlasWriteThrough } from "./timebase/atlas-sync.mjs";
 import { applyTimeouts, matchShadow, specFor, statementSentences, shadowRecord, promotionGap, MODES } from "./harness.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -75,22 +78,32 @@ const loadCrosswalk = () => JSON.parse(fs.readFileSync(path.resolve(here, "..", 
 // The KG tools for the MCP endpoint. Memory by default; WWOS_KG_BACKEND=atlas reads Timebase through its MCP, =hybrid keeps
 // the graph in memory and reads readings from Historian, and any failure to connect logs one line (no token, no secret) and falls back to memory. With fallback: false (the eval run,
 // which must not grade memory as atlas) the failure throws that same line instead.
-export async function kgToolsFor(sys, env = process.env, { fallback = true } = {}) {
+// writeThrough (the running server): in atlas mode, Atlas is synced from this process's ontology at start (the store is
+// reseeded every start) and again after each change to a mirrored object (src/timebase/atlas-sync.mjs).
+export async function kgToolsFor(sys, env = process.env, { fallback = true, writeThrough = false } = {}) {
   const crosswalk = loadCrosswalk();
-  let backend;
+  let backend, sync = null;
   const mode = env.WWOS_KG_BACKEND;
   if (mode === "atlas" || mode === "hybrid") {
     try {
       const getToken = () => pulseToken({ pulseUrl: env.TIMEBASE_PULSE_URL ?? "https://localhost:4542", clientId: env.TIMEBASE_CLIENT_ID, secretFile: env.TIMEBASE_SECRET_FILE });
+      const atlasUrl = env.TIMEBASE_ATLAS_URL ?? "https://localhost:4552", branch = env.TIMEBASE_ATLAS_BRANCH ?? "riverbend";
       const historian = await connectMcp(env.TIMEBASE_HISTORIAN_URL ?? "https://localhost:4512", getToken);
-      backend = mode === "hybrid" ? createHybridBackend({ ont: sys.ont, tel: sys.tel, historian }) : createAtlasBackend({ atlas: await connectMcp(env.TIMEBASE_ATLAS_URL ?? "https://localhost:4552", getToken), historian });
+      backend = mode === "hybrid" ? createHybridBackend({ ont: sys.ont, tel: sys.tel, historian }) : createAtlasBackend({ atlas: await connectMcp(atlasUrl, getToken), historian, branch });
+      if (mode === "atlas" && writeThrough && env.WWOS_ATLAS_SYNC !== "0") {
+        const call = async (method, p, body) => restCall(atlasUrl, method, p, body, { token: await getToken() });
+        sync = atlasWriteThrough(sys.ont, createAtlasSync({ call, branch, log: console.log }));
+        sync.now();
+      }
     } catch (e) {
       const why = e?.code ?? String(e?.message).slice(0, 120);
       if (!fallback) throw new Error(`KG backend ${mode} unavailable: ${why}`);
       console.error(`KG backend ${mode} unavailable, using memory: ${why}`);
     }
   }
-  return createKgTools({ backend: backend ?? createMemoryBackend(sys), ont: sys.ont, tel: sys.tel, crosswalk, env });
+  const tools = createKgTools({ backend: backend ?? createMemoryBackend(sys), ont: sys.ont, tel: sys.tel, crosswalk, env });
+  tools.sync = sync; // the graph view reports whether Atlas is in step
+  return tools;
 }
 
 export function createServer(sys, { kgTools = createKgTools({ backend: createMemoryBackend(sys), ont: sys.ont, tel: sys.tel, crosswalk: loadCrosswalk() }) } = {}) {
@@ -310,6 +323,21 @@ export function createServer(sys, { kgTools = createKgTools({ backend: createMem
     ["GET", /^\/api\/projects\/([^/]+)\/panel$/, (v, m) => notFound(projectPanel(sys, v, decodeURIComponent(m[1])))],
     ["GET", /^\/api\/me$/, (v) => ({ ...v, autoSubmit: !!ont.get(v.id).autoSubmit, supervisorId: ont.get(v.id).supervisorId || null })],
     ["GET", /^\/api\/people$/, () => ont.list("Person").map((p) => ({ id: p.id, name: p.name, role: p.role, clearance: p.clearance }))],
+    // worker profiles (src/people.mjs): the whole profile for oneself and for supervisors up; who, trade and where for the rest
+    ["GET", /^\/api\/people\/profiles$/, (v) => ({ at: tel.now(), people: profiles(ont, v, tel.now()) })],
+    ["GET", /^\/api\/people\/([^/]+)$/, (v, m) => {
+      const p = profileOf(ont, v, decodeURIComponent(m[1]), tel.now());
+      if (!p) throw new HttpError(404, "not found");
+      return p;
+    }],
+    // the people relevant to a plant node, a line, or both ends of an edge (?id=a&id=b, or ?q=<tag>), with the reasons
+    ["GET", /^\/api\/plant\/people$/, (v, m, url) => {
+      const ids = [...url.searchParams.getAll("id"), ...url.searchParams.getAll("q").map((q) => resolvePlant(ont, v, q))].filter(Boolean);
+      const r = ids.length ? peopleFor(ont, v, ids, tel.now()) : null;
+      if (!r) throw new HttpError(404, "no plant object by that name that you can see");
+      const view = ont.view(v), label = (id) => { const o = view.get(id); return o.tag || o.lineNumber || o.name || o.id; };
+      return { ...r, labels: Object.fromEntries(r.ids.map((id) => [id, label(id)])), ends: Object.fromEntries(r.ids.filter((id) => view.get(id).type === "Line").map((id) => [id, [view.get(id).fromId, view.get(id).toId]])) };
+    }],
     ["GET", /^\/api\/console$/, (v) => consolePayload(v)],
     ["GET", /^\/api\/map$/, (v) => mapPayload(v)],
     ["GET", /^\/api\/plant$/, (v) => plantPayload(v)],
@@ -319,6 +347,12 @@ export function createServer(sys, { kgTools = createKgTools({ backend: createMem
       if (rank(v.clearance) < rank("engineer")) throw new HttpError(403, "engineer clearance needed to ingest drawings");
       const b = await body(req);
       try { return modelSummary(sys.plant.ingest(Array.isArray(b.drawingIds) ? b.drawingIds : [], v)); } catch (e) { throw new HttpError(409, e.message); }
+    }],
+    // the graph view's starting graph: Atlas's own, pruned to the viewer, when the KG backend is Atlas; else the view
+    // draws the released model from /api/plant
+    ["GET", /^\/api\/plant\/kg$/, async (v) => {
+      const g = kgTools.graph ? await kgTools.graph(v) : null;
+      return g ? { source: "atlas", ...g, sync: kgTools.sync ? kgTools.sync.status() : null } : { source: "memory" };
     }],
     ["GET", /^\/api\/plant\/graph\/(upstream|downstream)\/([^/]+)$/, (v, m, url) => {
       const g = plantGraph(v), id = nodeOf(g, decodeURIComponent(m[2])), mode = url.searchParams.get("mode") === "backwash" ? "backwash" : "normal";
@@ -682,7 +716,7 @@ const SELF = fileURLToPath(import.meta.url);
 if (process.argv[1] && path.resolve(process.argv[1]).toLowerCase() === SELF.toLowerCase()) {
   const port = Number(process.argv[2]) || Number(process.env.PORT) || 8830;
   const sys = createSystem({ seed: 7 });
-  const server = createServer(sys, { kgTools: await kgToolsFor(sys) });
+  const server = createServer(sys, { kgTools: await kgToolsFor(sys, process.env, { writeThrough: true }) });
   for (const a of ["Shift Handover", "Process Watch", "Asset Watch", "Permit Guard", "Shift Cover", "Drop Pack", "Project Watch", "Procedure Steward"]) sys.runtime.run(a, { actingUser: SYSTEM_USER, trigger: { kind: "startup" } });
   setInterval(() => server.tick(1), 2000).unref();
   server.listen(port, process.env.WWOS_HOST || "127.0.0.1", () => console.log(`Water Works OS on http://localhost:${port}  (plant clock ${sys.tel.now()}, Claude ${llmEnabled() ? "on" : "off: deterministic agents"})`));
