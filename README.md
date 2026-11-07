@@ -141,14 +141,18 @@ Design prototypes for the same screens: https://claude.ai/artifact/LwS7u1g2MyCjY
 ## Knowledge graph on Timebase
 
 Design: `docs/superpowers/specs/2026-10-29-riverbend-knowledge-graph-design.md` and `2026-10-29-riverbend-timebase-backend.md`.
+Production stack: `docs/adr/0001-stack-decision.md` (Historian at the edge, Atlas on hold).
+The Timebase vendor docs the specs cite (`docs/vendor/timebase/`) are Flow Software's, for internal use only, so they are
+not in this repository. Rebuild the local mirror with `scripts/vendor/mirror-timebase-docs.py`.
 Eleven read-only tools (search, get, neighbors, upstream, downstream, readings, events, documents, read, locate, people)
 over the Riverbend plant, each answer item carrying a `cite` id and pruned to the acting person's clearance. They are served
 as an MCP endpoint at `POST /mcp` on the same port as the console.
 
 - **Run the MCP server:** `npm start`, then
   `claude mcp add --transport http wateros http://localhost:8830/mcp --header "x-acting-user: P-028"`.
-  `WWOS_KG_BACKEND=memory` (default) reads the in-memory works; `WWOS_KG_BACKEND=atlas` reads Timebase Atlas and Historian
-  through their MCP. Do not set `atlas` until the install is licensed and the domain compiles: the MCP connection succeeds
+  `WWOS_KG_BACKEND=memory` (default) reads the in-memory works; `WWOS_KG_BACKEND=hybrid` keeps the graph in memory and reads
+  the agents' `readings` tool from Historian (it needs no Atlas licence, and the console's own charts still draw from memory);
+  `WWOS_KG_BACKEND=atlas` reads Timebase Atlas and Historian through their MCP. Do not set `atlas` until the install is licensed and the domain compiles: the MCP connection succeeds
   even then (only the compile is refused), so there is no fallback to memory and every graph query fails. `WWOS_KG_CYPHER=1` adds a twelfth,
   linted `cypher` tool.
 - **People data and the model provider:** MCP clients such as Claude Code send tool results (people data for supervisors and above) to the model provider; inference is cross-border, disclosed under POPIA s72 (see `src/llm.mjs`). `/mcp` accepts no foreign `Origin` and takes the viewer from `x-acting-user` only.
@@ -156,11 +160,11 @@ as an MCP endpoint at `POST /mcp` on the same port as the console.
   `TIMEBASE_SECRET_FILE` (a path under `E:\Timebase\secrets\`, never the secret itself) and, if Pulse's CA is not trusted,
   `NODE_EXTRA_CA_CERTS`. Then `node scripts/timebase/backfill.mjs` (dataset `Riverbend` only; `--reset` clears it) and
   `node scripts/timebase/load-atlas.mjs riverbend` (branch `riverbend` only; safe to re-run).
-- **Eval:** `node scripts/kg/eval-claude.mjs --backend memory|atlas --out <file>` runs Claude over `data/eval-questions.json`
-  as each question's asker and grades the structured answers with the rule grader. It needs `ANTHROPIC_API_KEY`, and an
-  atlas run stops rather than grading memory if Atlas is unreachable.
+- **Eval:** `node scripts/kg/eval-claude.mjs --backend memory|hybrid|atlas --out <file>` runs Claude over `data/eval-questions.json`
+  as each question's asker and grades the structured answers with the rule grader. It needs `ANTHROPIC_API_KEY`, and a
+  hybrid or atlas run stops rather than grading memory if Timebase is unreachable.
 - **Known limits:** the Atlas model cannot compile until the install is licensed (Instances entitlement 500 against the
-  model's 5,814), so Atlas is loaded and published to branch `riverbend` but not read live. The Claude eval run has not
+  model's 5,814), so Atlas is loaded and published to branch `riverbend` but not read live; use `hybrid` until then. `load-atlas.mjs riverbend-slim` loads only the flow graph, which compiles without a licence and proves the route, but the app can't select it. The Claude eval run has not
   been executed yet.
 
 ### Site Agent and project briefs

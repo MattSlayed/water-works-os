@@ -67,6 +67,18 @@ test("an observation gets a cited Copilot answer and an offer; yes raises the is
   assert.match(y.replies[0].text, new RegExp(iss.id));
 });
 
+test("a reading sent by chat is offered first, and the yes records it", async () => {
+  const t = setup();
+  const count = () => t.sys.ont.list("Reading", (x) => !x.id.startsWith("RDG-H")).length;
+  const offer = await t.say("HLP-B housing bore reads 110.065, can I reuse it?");
+  assert.match(offer.replies[0].text, /Not recorded yet/);
+  assert.doesNotMatch(offer.replies[0].text, /Raise an issue/);
+  assert.equal(count(), 0);
+  const yes = await t.say("yes");
+  assert.match(yes.replies[0].text, /recorded the reading/);
+  assert.equal(count(), 1);
+});
+
 test("a question about a named asset reaches the Copilot without a running job", async () => {
   const t = setup();
   const r = await t.say("What should I check on HLP-B?");

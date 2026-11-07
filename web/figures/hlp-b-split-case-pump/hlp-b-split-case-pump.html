@@ -833,7 +833,7 @@ let order = nodes.map((_, i) => i);
 const piece = Object.fromEntries(D.stagger.map((id) => [id, { x: 0, v: 0, target: 0, pending: null }]));
 const shareOf = (id) => (piece[id] ? piece[id].x : 0);
 // Depth uses the spring clamped to its audited ends: overshoot varies with refresh rate, and the audit replays at 60 fps.
-const depthOf = (id) => Math.min(1, Math.max(0, shareOf(id)));
+const springDepth = (id) => Math.min(1, Math.max(0, shareOf(id)));
 const pickables = [...svg.querySelectorAll("[data-part]")];
 let apart = false, chosen = -1, time = 0;
 const moving = () => D.stagger.some((id) => piece[id].pending || piece[id].x !== piece[id].target || piece[id].v !== 0);
@@ -878,7 +878,7 @@ function place() {
     const text = s === 0 ? "" : "translate(" + ((D.EX[0] * n.m[0] + D.EY[0] * n.m[1] + D.EZ[0] * n.m[2]) * s).toFixed(2) + " " + ((D.EX[1] * n.m[0] + D.EY[1] * n.m[1] + D.EZ[1] * n.m[2]) * s).toFixed(2) + ")";
     if (text !== n.shown) { n.shown = text; if (text) n.el.setAttribute("transform", text); else n.el.removeAttribute("transform"); }
   }
-  const next = nodes.map((_, i) => i).sort((a, b) => nodes[a].key + nodes[a].lift * depthOf(nodes[a].piece) - (nodes[b].key + nodes[b].lift * depthOf(nodes[b].piece)));
+  const next = nodes.map((_, i) => i).sort((a, b) => nodes[a].key + nodes[a].lift * springDepth(nodes[a].piece) - (nodes[b].key + nodes[b].lift * springDepth(nodes[b].piece)));
   if (next.some((i, at) => i !== order[at])) {
     const fragment = document.createDocumentFragment();
     for (const i of next) fragment.appendChild(nodes[i].el);
@@ -983,7 +983,20 @@ toggle.addEventListener("click", () => { hold(); setApart(!apart); });
 window.anatomySelect = (key) => { hold(); setApart(true); pickPart(D.parts.findIndex((p) => p.key === key)); };
 still.addEventListener?.("change", () => { touring = !still.matches && !apart; run(); });
 choose(0, true);
-</script><script>
+</script><style>
+.iso{--anatomy-page:#0a2e5c;--anatomy-card:#0d3b73;--anatomy-text:#bcd6f2;--anatomy-strong:#f2f8ff;--anatomy-muted:#8fb3d9;
+--anatomy-paper:#0d3b73;--anatomy-face:#114681;--anatomy-top:#134c8b;
+--anatomy-shade-0:#0b3364;--anatomy-shade-1:#0d3a70;--anatomy-shade-2:#0f407a;--anatomy-shade-3:#114684;
+--anatomy-lit-top:#1a5ba3;--anatomy-lit-shade:#15508f;
+--anatomy-hi:#eaf4ff;--anatomy-mid:#9cc3ea;--anatomy-lo:#6293c8;--anatomy-faint:#2f6299;--anatomy-lit:#ffffff;
+--anatomy-halo:#061f42;--anatomy-halo-opacity:.7;--anatomy-dot:#eaf4ff;
+--anatomy-red:#ff9d9d;--anatomy-green:#86efbb;--anatomy-blue:#9fdcff;
+--blw-oil:#0a2b55;--hlp-void:#07264d;--hlp-cage:#0b3364;
+--dp-wet:#2b78bd;--dp-dry:#07244a;--dp-glass-0:#1a5590;--dp-glass-1:#1d5c99;--dp-glass-2:#2063a2;--dp-glass-3:#236aab;--dp-glass-top:#2a74b8}
+.iso .cl{--cl-water:#2a6aa8;--cl-sludge:#1c4f87;--cl-sludge-top:#15457a;--cl-mound:#174a80;--cl-hopper:#0a2f5c;--cl-cut:#114684;--cl-weir:#134c8b;
+--cl-hi:#eaf4ff;--cl-mid:#9cc3ea;--cl-lo:#6293c8;--cl-top:#134c8b;--cl-shade:#0f407a}
+.iso-plate{background-image:linear-gradient(#ffffff14 1px,transparent 1px),linear-gradient(90deg,#ffffff14 1px,transparent 1px),linear-gradient(#ffffff09 1px,transparent 1px),linear-gradient(90deg,#ffffff09 1px,transparent 1px);background-size:120px 120px,120px 120px,24px 24px,24px 24px}
+</style><script>
 addEventListener("message",(e)=>{if(e.source===parent&&e.data&&e.data.type==="anatomy:select"&&window.anatomySelect)window.anatomySelect(e.data.part)});
 function anatomyReport(){const on=document.querySelector("[data-part][data-on]");if(on)parent.postMessage({type:"anatomy:pick",part:on.dataset.part},"*")}
 addEventListener("click",anatomyReport);

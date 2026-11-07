@@ -5,6 +5,9 @@ rule in that design still applies unless this document changes it. Vendor docs: 
 
 ## 1. Decision
 
+> **Narrowed 2026-11-06 by `docs/adr/0001-stack-decision.md`:** Timebase Historian stays, at the edge. Atlas is on hold
+> until it is GA, has RBAC and has a licence (spike checks e and f were no-go). The text below records the original call.
+
 Timebase is the data backend and the WaterOS harness stays the agent layer. Gage, Timebase's own harness, is
 not used.
 - **Atlas** is the knowledge graph: typed ontology, instance maps, live and historical binding, Cypher, REST, MCP,
@@ -130,6 +133,15 @@ Steps 2, 5 and 6 are built (plan `2026-10-30-riverbend-atlas-physical-tools.md`)
 - **Atlas: loaded, not compiled.** `scripts/timebase/load-atlas.mjs` wrote the model and published it to branch `riverbend`. The compile is refused by the unlicensed install's Instances entitlement: the limit enforced is 500 against 1,000 documented, and the model counts 5,814 instances including property strategies. Until the install is licensed, the Atlas backend cannot be read live; the memory backend serves the same tools.
 - **New quirk:** `[word...]` in a static string is read as a placeholder, and there is no escape. The loader must avoid it in labels and descriptions.
 - The alarms row above is unchanged.
+
+### Status (2026-11-02)
+
+- **Ports:** the compose file published every port on all interfaces, which broke the localhost rule. All 14 are now bound to `127.0.0.1` and the stack was recreated. State lives in named volumes, and the Pulse instance id and grace date were unchanged afterwards.
+- **Licence:** still none. Pulse holds 0 licences. Grace ends 12 Nov 2026 19:32 UTC.
+- **Atlas reply format:** `ExecuteCypherQuery` over MCP answers with a JSON string holding a text table, not `{columns, rows}`. The backend could not have read Atlas even when licensed. `parseCypherReply` now reads the real format and throws on a row that doesn't fit, which means a value containing ` | ` or a line break fails loudly.
+- **Atlas route proven on `riverbend-slim`:** 29 structures and 50 feeds edges, the only part that fits the unlicensed limits. It compiled, and `flowEdges`, `search`, `get` and `neighbors` all ran through the real backend over MCP. All 50 flow edges match memory, and Cypher upstream of RES-2 returns 27 structures.
+- **Limits a licence must cover:** Instances (500 enforced; full model 5,814) and **Types (100 enforced; the model with all relationship types is 102)**. The count is not nodes plus edges plus values: dropping property values did not change it, while dropping instances did.
+- **Not proven:** the full model, sensors and bound values through Atlas, and the clearance rule (the slim branch carries no `zone` or `minClearance`, and nothing in the app can select it). In the slim run a missing double came back as `0`, so `split` must be rechecked against memory on the full model.
 
 ## 5. Protect rules (in addition to the base design)
 

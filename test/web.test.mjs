@@ -144,3 +144,14 @@ test("browser walk (plan 3b): the document's review buttons fit beside it, and c
   assert.ok(app.includes('class="grid console intake-grid"'));
   for (const s of [".grid.console.intake-grid", ".intake-grid .panel", "#view table input"]) assert.ok(css.includes(s), s);
 });
+
+test("moving from one asset to another never keeps the last asset's Copilot session", async () => {
+  const js = await (await fetch(base + "/app.js")).text();
+  assert.match(js, /async asset\(id\) \{\s*state\.copilot = null;/);
+});
+
+test("a Copilot answer reaches the figure, and an offered reading gets a button", async () => {
+  const js = await (await fetch(base + "/app.js")).text();
+  assert.match(js, /r\.lookHere[\s\S]{0,200}lightFigure/);
+  assert.match(js, /r\.confirm/);
+});

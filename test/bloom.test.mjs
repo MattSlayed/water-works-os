@@ -55,10 +55,10 @@ test("a technician's plant graph and graph queries never show Z06", async () => 
   assert.ok((await mcp(mgr, "neighbors", { id: "SITE-RB" })).items.some((i) => i.id === "Z06"), "a manager sees it");
 });
 
-test("the plant view opens on the graph and queries through /mcp", async () => {
+test("the plant view opens on 3D, the graph follows it and queries through /mcp", async () => {
   const app = await (await fetch(`${base}/app.js`)).text();
-  assert.ok(app.indexOf('data-ptab="graph"') < app.indexOf('data-ptab="3d"'), "Graph is the first tab");
-  assert.ok(app.includes('setTab(id ? "3d" : "graph")'), "the graph is the default; a deep link opens 3D");
+  assert.ok(app.indexOf('data-ptab="3d"') < app.indexOf('data-ptab="graph"'), "3D is the first tab");
+  assert.ok(app.includes('await setTab("3d")'), "3D is the default");
   assert.ok(app.includes('fetch("/mcp"'));
   const src = await (await fetch(`${base}/bloom.js`)).text();
   for (const s of ["export function mountBloom", "export function plantGraph", "export function parseQuery", "highlight", "frame", "dispose", "prefers-reduced-motion"]) assert.ok(src.includes(s), s);

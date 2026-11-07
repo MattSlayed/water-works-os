@@ -1,7 +1,7 @@
 // The job brief (job brief design §6): what a person should know before they calibrate or test an asset, built from
 // their own view. Deterministic; Claude, when on, may only shorten its wording.
 
-import { isAnalyser } from "./functions.mjs";
+import { isAnalyser, isStale, currentProcedure } from "./functions.mjs";
 // Corrections that reach a job, most specific first (the asset, its make and model, then an organisation), newest first
 // within each. An organisation reaches the asset through any project that touched it or the job's own project; the
 // works' owner reaches every job (design §4.5).
@@ -24,7 +24,7 @@ const item = (text, refs) => ({ text, refs: refs.filter(Boolean) });
 // The brief for one work order, from the viewer's own view: { lines, full, specVersions, correctionIds }, or null when
 // the viewer cannot see the job. lines is the chat version (at most 8 lines); full holds every section with its refs.
 // Source text never enters it: only titles, dates and names.
-export function jobBrief(view, workOrderId, { execution = null } = {}) {
+export function jobBrief(view, workOrderId, { execution = null, now = null } = {}) {
   const wo = view.get(workOrderId);
   if (!wo || wo.type !== "WorkOrder") return null;
   const asset = view.get(wo.assetId);
@@ -80,12 +80,15 @@ export function jobBrief(view, workOrderId, { execution = null } = {}) {
     if (!c || (wo.planned && c.validTo < wo.planned)) open.push(item(`Open: no current calibration certificate for ${s.name}.`, [s.id, c && c.id]));
   }
 
+  const proc = asset.template && currentProcedure(view.list("Procedure"), asset.template);
+  if (proc && now && isStale(proc, now)) open.unshift(item(`Open: ${proc.title} v${proc.version} is past its review date (${proc.stale_after.slice(0, 10)}). Check it against the site before you rely on it, and tell the engineer.`, [proc.id]));
+
   // 5. watch-outs: notes on this make and model's procedure steps, this asset first; a note the finding already says is dropped
   const sameProc = (n) => n.procedureId && (view.get(n.procedureId) || {}).template === asset.template;
   const notes = asset.template ? view.list("KnowledgeNote", (n) => sameProc(n) && sisters.has(n.assetId))
     .filter((n) => !(finding && n.assetId === finding.assetId && n.partId === finding.partId))
     .sort((a, b) => (a.assetId === asset.id ? 0 : 1) - (b.assetId === asset.id ? 0 : 1) || String(b.at).localeCompare(String(a.at))) : [];
-  const watchOuts = notes.map((n) => item(`Step ${n.step}: ${lowerFirst(n.text.replace(/\.$/, ""))} (${n.id}).`, [n.id]));
+  const watchOuts = notes.map((n) => item(`Step ${n.step}: ${lowerFirst(n.text.replace(/\.$/, ""))} (${n.id}${now && isStale(n, now) ? ", past its review date" : ""}).`, [n.id]));
 
   // 6. changed since the last job here (full brief only)
   const changed = !lastAt ? [] : [

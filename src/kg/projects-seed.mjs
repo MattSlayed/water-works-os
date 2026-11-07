@@ -3,6 +3,7 @@
 // Safe to run twice: every id is derived from the order in the file.
 import { readFileSync } from "node:fs";
 import { chunkByHeading } from "./chunks.mjs";
+import { releasedOkf } from "../functions.mjs";
 
 const data = JSON.parse(readFileSync(new URL("../../data/riverbend/projects.json", import.meta.url), "utf8"));
 const prov = { source: "SYNTH-PROJ", source_uri: "data/riverbend/projects.json", source_version: "v1", extracted_at: "2026-10-15T00:00:00Z", confidence: 1 };
@@ -35,7 +36,7 @@ function seedProcedures(ont) {
       id: `${p.id}-S${String(i + 1).padStart(2, "0")}`, step: i + 1, text: s.text, intrusive: s.intrusive, partNames: [], hazard: s.hazard, documentId: null,
       requires: { permit: s.requiresPermit, isolation: s.requiresIsolation, reading: null }, requiresPermit: s.requiresPermit, requiresIsolation: s.requiresIsolation, expectedMinutes: s.expectedMinutes
     }));
-    ont.upsert({ id: p.id, type: "Procedure", template: p.template, documentId: null, title: p.title, version: 1, state: "released", releasedBy: "P-001", releasedAt: "2026-10-01T00:00:00Z", reason: "Project work (dashboard design)", steps, prov });
+    ont.upsert({ id: p.id, type: "Procedure", template: p.template, documentId: null, title: p.title, version: 1, state: "released", releasedBy: "P-001", releasedAt: "2026-10-01T00:00:00Z", reason: "Project work (dashboard design)", ...releasedOkf("2026-10-01T00:00:00Z", [{ id: "project", resource: "data/riverbend/projects.json", title: "Project work" }]), steps, prov });
   }
 }
 

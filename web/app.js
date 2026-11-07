@@ -466,9 +466,9 @@ const views = {
     state.plantRev = d.model.id;
     const enc = encodeURIComponent;
     const contact = d.structures.find((s) => s.kind === "contact_tank") || d.structures[d.structures.length - 1];
-    const chips = ["chlorine", contact && `upstream of ${contact.tag}`, "neighbours of SITE-RB", "turbidity"].filter(Boolean);
+    const chips = ["chlorine", contact && `upstream of ${contact.tag}`, "neighbours of SITE-RB", "turbidity", "people on HLP-B", "people on site"].filter(Boolean);
     view.innerHTML = `<div class="row"><div><h2>the works as drawn · plant model rev ${esc(d.model.rev)} · released ${time(d.model.release && d.model.release.at)} by ${esc(d.model.release && d.model.release.by)}</h2><h1>Plant</h1></div>
-        <div class="btns"><span class="btns ptabs" role="tablist" aria-label="Plant view"><button class="btn" role="tab" data-ptab="graph" aria-controls="pgraph">Graph</button><button class="btn" role="tab" data-ptab="3d" aria-controls="p3d">3D</button></span><a class="btn" href="#/plantmodels">Revisions and review</a><a class="btn" href="#/map">Site map</a></div></div>
+        <div class="btns"><span class="btns ptabs" role="tablist" aria-label="Plant view"><button class="btn" role="tab" data-ptab="3d" aria-controls="p3d">3D</button><button class="btn" role="tab" data-ptab="graph" aria-controls="pgraph">Graph</button></span><a class="btn" href="#/plantmodels">Revisions and review</a><a class="btn" href="#/map">Site map</a></div></div>
       <div class="plantwrap"><section class="panel bloom" id="pgraph" role="tabpanel" aria-label="Plant knowledge graph">
           <form id="bq" class="bloombar"><label for="bqi">Query the graph</label><input id="bqi" maxlength="200" autocomplete="off" placeholder="chlorine · upstream of 16UGH01 · neighbours of SITE-RB"><button class="btn primary">Run</button><button type="button" class="btn" id="breset">Reset</button></form>
           <div class="bloomchips">${chips.map((c) => `<button type="button" class="chip" data-bchip="${esc(c)}">${esc(c)}</button>`).join("")}</div>
@@ -483,18 +483,46 @@ const views = {
     let tab = null;
 
     // ---- graph (Bloom): the KG the agents query, through the same MCP door, as the acting person ----
-    const { mountBloom, plantGraph, parseQuery, colourOf } = await import("/bloom.js");
-    const pg = plantGraph(d), plantIds = new Set([...pg.nodes.map((n) => n.id), ...pg.alias.keys()]);
+    const { mountBloom, plantGraph, atlasGraph, parseQuery, colourOf } = await import("/bloom.js");
+    // with the Atlas backend the graph starts from what Atlas holds; otherwise from the released model
+    const kgg = await api("/api/plant/kg").catch(() => ({ source: "memory" }));
+    const pg = kgg.source === "atlas" ? atlasGraph(d, kgg) : plantGraph(d), plantIds = new Set([...pg.nodes.map((n) => n.id), ...pg.alias.keys()]);
     const stat = (html) => { $("#bstat").innerHTML = html; };
     const legend = () => { $("#blegend").innerHTML = [...state.bloom.types].sort().map((t) => `<span><i style="background:${colourOf(t)}">${esc(t[0])}</i>${esc(t)}</span>`).join(""); };
     const edgeOf = (c, x) => (x.dir === "out" ? { from: c, to: x.id, rel: x.rel } : { from: x.id, to: c, rel: x.rel });
     const kindOf = (x) => (x.includes(":STR-") ? "Structure" : x.startsWith("POS-") ? "Position" : x.includes(":VLV-") ? "Valve" : x.includes(":SPT-") ? "SamplePoint" : null);
     const via = (tool, args) => `<span class="mono">${esc(tool)} ${esc(JSON.stringify(args))}</span>`;
+    // ---- people: profiles and the people on each node and edge, from WaterOS only (never Atlas), as the viewer may see them ----
+    const shiftWord = (s) => (s === true ? "on shift now" : s === false ? "off shift" : "shift not known");
+    const profileSide = async (n) => {
+      side.innerHTML = `<h2>Person</h2><p class="meta" role="status">Reading the profile…</p>`;
+      try {
+        const p = await api(`/api/people/${enc(n.id)}`);
+        const li = (xs, f) => (xs.length ? `<ul class="list">${xs.map(f).join("")}</ul>` : `<p class="meta">None.</p>`);
+        side.innerHTML = `<h2>Person</h2><h1 style="font-size:20px;margin:2px 0">${esc(p.name)}</h1>
+          <p class="meta">${esc(p.role.replace(/_/g, " "))}${p.trade && p.trade !== p.role ? ` · ${esc(p.trade)}` : ""}${p.employer ? ` · ${esc(p.employer)}` : ""}</p>
+          <p>${esc(shiftWord(p.onShift))}${p.shift ? ` · shift ${esc(p.shift)}` : ""}</p>
+          <p>${p.onSite ? `Checked in at <strong>${esc(p.onSite.zone)}</strong> since ${esc(p.onSite.since.slice(0, 16).replace("T", " "))} <span class="meta mono">${esc(p.onSite.cite)}</span>` : "Not checked in on site."}</p>
+          ${p.full ? `<p class="meta">Clearance ${esc(p.clearance)}${p.supervisor ? ` · reports to <button class="linkbtn" data-bperson="${esc(p.supervisor.id)}">${esc(p.supervisor.name)}</button>` : ""}</p>
+            <h3>Competencies</h3>${li(p.competencies, (c) => `<li>${esc(c.competency)}${c.level != null ? ` · level ${esc(c.level)}` : ""} ${pill(c.status)}${c.validTo ? ` <span class="meta">to ${esc(c.validTo)}</span>` : ""}</li>`)}
+            <h3>Open work</h3>${li(p.workOrders, (w) => `<li><a href="#/object/${enc(w.id)}">${esc(w.id)}</a> ${esc(w.title)} <span class="meta">${esc(w.state)} · ${esc(w.priority || "")}</span></li>`)}
+            <h3>Projects</h3>${li(p.projects, (x) => `<li><a href="#/project/${enc(x.id)}">${esc(x.name)}</a>${x.role ? ` <span class="meta">as ${esc(x.role)}</span>` : ""}</li>`)}`
+          : `<p class="meta">Competencies, open work and reporting line show to the person themselves and to supervisors and above.</p>`}
+          <p class="meta">People data stays in WaterOS and is never sent to Atlas.</p>`;
+        side.querySelectorAll("[data-bperson]").forEach((b) => b.addEventListener("click", () => profileSide({ id: b.dataset.bperson })));
+      } catch (e) { side.innerHTML = `<h2>Person</h2><p class="meta">${esc(e.message)}</p>`; }
+    };
+    const peopleSide = (title, people, sub) => {
+      side.innerHTML = `<h2>${esc(title)}</h2><p class="meta">${esc(sub)}</p><ul class="list">${people.map((p) => `<li><button class="linkbtn" data-bperson="${esc(p.id)}"><i class="dot" style="background:${colourOf("Person")}"></i>${esc(p.name)}</button> <span class="meta">${esc(p.role.replace(/_/g, " "))} · ${esc(shiftWord(p.onShift))}</span>
+        ${p.reasons ? `<ul class="reasons">${p.reasons.map((r) => `<li>${pill(r.kind)} ${esc(r.text)} <span class="meta mono">${esc(r.cite)}</span></li>`).join("")}</ul>` : p.onSite ? `<div class="meta">${esc(p.onSite.zone)} since ${esc(p.onSite.since.slice(0, 16).replace("T", " "))}</div>` : ""}</li>`).join("")}</ul>`;
+      side.querySelectorAll("[data-bperson]").forEach((b) => b.addEventListener("click", () => { if (state.bloom.has(b.dataset.bperson)) { state.bloom.select(b.dataset.bperson); state.bloom.frame([b.dataset.bperson]); } else profileSide({ id: b.dataset.bperson }); }));
+    };
     const bloomSide = (n) => {
-      if (!n) { side.innerHTML = `<h2>Graph</h2><p class="meta">The plant as the knowledge graph holds it: structures and their machines, joined by process lines. Click a node to inspect it; double-click it, or press E, to expand its links. Every query runs through the same KG tools the agents use, as you, so it shows only what your clearance allows.</p>`; return; }
+      if (!n) { side.innerHTML = `<h2>Graph</h2><p class="meta">The plant as the knowledge graph holds it: structures and their machines, joined by process lines. Click a node to inspect it; double-click it, or press E, to expand its links. Click a link, or a node's People button, for the people on it. Every query runs through the same KG tools the agents use, as you, so it shows only what your clearance allows.</p>`; return; }
+      if (n.type === "Person") return profileSide(n);
       const plant = plantIds.has(n.id);
       side.innerHTML = `<h2>${esc(n.type)}</h2><h1 style="font-size:20px;margin:2px 0">${esc(n.label)}</h1><p class="meta mono">${esc(n.id)}${n.sub ? ` · ${esc(n.sub)}` : ""}</p>
-        <div class="btns"><button class="btn primary" data-bx="neighbors">Expand</button>${plant ? `<button class="btn" data-bx="upstream">Upstream</button><button class="btn" data-bx="downstream">Downstream</button><button class="btn" id="b3d">Show in 3D</button>` : ""}<a class="btn" href="#/object/${enc(n.id)}">Open record</a></div>`;
+        <div class="btns"><button class="btn primary" data-bx="neighbors">Expand</button><button class="btn" data-bx="people:on">People</button>${plant ? `<button class="btn" data-bx="upstream">Upstream</button><button class="btn" data-bx="downstream">Downstream</button><button class="btn" id="b3d">Show in 3D</button>` : ""}<a class="btn" href="#/object/${enc(n.id)}">Open record</a></div>`;
       side.querySelectorAll("[data-bx]").forEach((b) => b.addEventListener("click", () => run(b.dataset.bx, { id: n.id })));
       $("#b3d")?.addEventListener("click", async () => { await setTab("3d"); state.plant?.flyTo(n.id); });
     };
@@ -505,6 +533,30 @@ const views = {
     async function run(tool, args) {
       stat(`Running ${via(tool, args)}…`);
       try {
+        if (tool === "people:site") {
+          const r = await api("/api/people/profiles"), here = r.people.filter((p) => p.onSite);
+          // each person checked in joins the graph at their zone (when the zone is drawn)
+          const placed = here.filter((p) => state.bloom.has(p.onSite.zoneId));
+          for (const p of placed) state.bloom.add([{ id: p.id, type: "Person", label: p.name }], [{ from: p.id, to: p.onSite.zoneId, rel: "here" }], p.onSite.zoneId);
+          state.bloom.highlight(placed.map((p) => p.id)); if (placed.length) state.bloom.frame(placed.map((p) => p.id));
+          peopleSide("People on site", r.people, `${here.length} of ${r.people.length} people checked in · ${r.people.filter((p) => p.onShift).length} on shift · plant time ${r.at.slice(0, 16).replace("T", " ")}`);
+          legend();
+          return stat(`people on site → ${here.length} checked in, ${r.people.length} profiled`);
+        }
+        if (tool === "people:on") {
+          const qs = args.id ? `id=${enc(args.id)}` : args.ids ? args.ids.map((x) => `id=${enc(x)}`).join("&") : `q=${enc(args.q)}`;
+          const r = await api(`/api/plant/people?${qs}`);
+          // a person joins the graph beside each drawn object (a line: beside its two ends), linked by their strongest reason
+          const anchors = r.ids.flatMap((x) => r.ends[x] || [x]).filter((x) => state.bloom.has(x)).map((x) => state.bloom.resolve(x));
+          const top = r.people.slice(0, 12);
+          if (anchors.length) for (const p of top) state.bloom.add([{ id: p.id, type: "Person", label: p.name }], anchors.map((a) => ({ from: p.id, to: a, rel: p.reasons[0].kind })), anchors[0]);
+          const ids = [...anchors, ...top.map((p) => p.id)];
+          state.bloom.highlight(ids); if (ids.length) state.bloom.frame(ids);
+          const name = r.ids.map((x) => r.labels[x]).join(" – ");
+          peopleSide(`People on ${name}`, r.people, `${r.people.length} people, most relevant first${r.people.length > top.length ? `; the top ${top.length} are drawn` : ""}. Assigned work, then project roles, then who is checked in there, then who holds a valid competency for it.`);
+          legend();
+          return stat(`people on ${esc(name)} → ${r.people.length} people`);
+        }
         if (tool === "search") {
           const items = (await kg("search", args)).items || [];
           if (!items.length) { state.bloom.highlight(null); return stat(`${via(tool, args)} → nothing you can see matches.`); }
@@ -539,9 +591,10 @@ const views = {
         legend();
       } catch (e) { stat(`${via(tool, args)} failed: ${esc(e.message)}`); }
     }
-    state.bloom = mountBloom(graphEl, pg, { onSelect: bloomSide, onExpand: (n) => run("neighbors", { id: n.id }) });
+    state.bloom = mountBloom(graphEl, pg, { onSelect: bloomSide, onExpand: (n) => (n.type === "Person" ? profileSide(n) : run("neighbors", { id: n.id })), onEdge: (e) => (/^P-\d+$/.test(e.from) ? profileSide({ id: e.from }) : run("people:on", e.lineId ? { id: e.lineId } : { ids: [e.from, e.to] })) });
     legend();
-    const intro = `${pg.nodes.length} nodes from the released plant model, as you see it. Query with a word, <span class="mono">upstream of …</span>, <span class="mono">downstream of …</span> or <span class="mono">neighbours of …</span>.`;
+    const synced = kgg.sync ? (kgg.sync.state === "behind" ? ` <strong>Atlas is behind WaterOS:</strong> ${esc(kgg.sync.error || "")}` : kgg.sync.at ? ` In step with WaterOS as of ${esc(kgg.sync.at.slice(11, 16))} UTC.` : "") : "";
+    const intro = `${pg.nodes.length} nodes and ${pg.edges.length} links ${kgg.source === "atlas" ? "from Timebase Atlas" : "from the released plant model"}, as you see it.${synced} Query with a word, <span class="mono">upstream of …</span>, <span class="mono">downstream of …</span> or <span class="mono">neighbours of …</span>.`;
     stat(intro);
     $("#bq").addEventListener("submit", (e) => { e.preventDefault(); const p = parseQuery($("#bqi").value); if (p) run(p.tool, p.args); });
     graphEl.querySelectorAll("[data-bchip]").forEach((b) => b.addEventListener("click", () => { $("#bqi").value = b.dataset.bchip; const p = parseQuery(b.dataset.bchip); run(p.tool, p.args); }));
@@ -625,8 +678,7 @@ const views = {
       btn.disabled = false;
     });
 
-    // a deep link to an item (the region map's Enter plant, a fly-to) opens 3D on it; otherwise the graph comes first
-    await setTab(id ? "3d" : "graph");
+    await setTab("3d");
     const hitOf = (x) => x.id === id || x.positionId === id;
     if (id && state.plant?.flyTo(id)) {
       const mc = d.machines.find(hitOf);
@@ -704,6 +756,7 @@ const views = {
   },
 
   async asset(id) {
+    state.copilot = null; // a session belongs to one asset: going straight to another must not answer about the last
     const m = await api(`/api/assets/${encodeURIComponent(id)}/model`);
     const specsD = await api(`/api/assets/${encodeURIComponent(id)}/specs`).catch(() => null);
     const briefD = specsD && specsD.workOrderId ? await api(`/api/workorders/${encodeURIComponent(specsD.workOrderId)}/brief`).catch(() => null) : null;
@@ -762,12 +815,14 @@ const views = {
       });
     };
     view.querySelectorAll("[data-tab]").forEach((b) => b.addEventListener("click", () => { view.querySelectorAll("[data-tab]").forEach((x) => x.classList.toggle("on", x === b)); tab = b.dataset.tab; drawTab(); }));
-    const select = (pid) => {
+    const lightFigure = (pid) => { if (m.figure?.lights[pid]) $(".figure")?.contentWindow.postMessage({ type: "anatomy:select", part: m.figure.lights[pid] }, "*"); };
+    // keepSession: the Copilot itself moved to this part, so its conversation carries on
+    const select = (pid, keepSession = false) => {
       selected = pid;
       view.querySelectorAll("[data-part]").forEach((b) => b.classList.toggle("sel", b.dataset.part === pid));
       state.twin?.select(pid);
-      if (m.figure?.lights[pid]) $(".figure")?.contentWindow.postMessage({ type: "anatomy:select", part: m.figure.lights[pid] }, "*");
-      state.copilot = null; // a new part scopes a new Copilot session
+      lightFigure(pid);
+      if (!keepSession) state.copilot = null; // a new part scopes a new Copilot session
       tab = "part";
       view.querySelectorAll("[data-tab]").forEach((x) => x.classList.toggle("on", x.dataset.tab === "part"));
       drawTab();
@@ -816,12 +871,17 @@ const views = {
     };
     const ask = async (q) => {
       await ensureCopilot();
+      chat.querySelectorAll("[data-confirm]").forEach((b) => { b.disabled = true; });
       chat.insertAdjacentHTML("beforeend", `<div class="msg me">${esc(q)}</div>`);
       const r = await api(`/api/copilot/${state.copilot}/ask`, { method: "POST", body: { question: q } });
-      chat.insertAdjacentHTML("beforeend", `<div class="msg">${esc(r.answer)}${r.withheld && !r.answer.includes(r.withheld) ? `<br><span style="color:var(--amber)">${esc(r.withheld)}</span>` : ""}${r.citations?.length ? `<br><span class="cite">${r.citations.map((c) => esc(c.id)).join(" · ")}</span>` : ""}${r.model ? `<br><span class="cite">written by Claude from the records above</span>` : ""}</div>`);
+      chat.insertAdjacentHTML("beforeend", `<div class="msg">${esc(r.answer)}${r.withheld && !r.answer.includes(r.withheld) ? `<br><span style="color:var(--amber)">${esc(r.withheld)}</span>` : ""}${r.citations?.length ? `<br><span class="cite">${r.citations.map((c) => esc(c.id)).join(" · ")}</span>` : ""}${r.model ? `<br><span class="cite">written by Claude from the records above</span>` : ""}${r.confirm ? `<br><button class="btn" data-confirm>Record ${esc(r.confirm.value)} ${esc(r.confirm.unit)}</button>` : ""}</div>`);
       chat.scrollTop = chat.scrollHeight;
       state.twin?.highlight(r.lookHere);
+      // shortcut: a figure lights one part at a time, so several look-heres show the first; light them all when figures can
+      if (r.focus) select(r.focus, true);
+      else lightFigure((r.lookHere || []).find((pid) => m.figure?.lights[pid]));
     };
+    chat.addEventListener("click", async (e) => { if (e.target.matches("[data-confirm]:not(:disabled)")) { try { await ask("Yes"); } catch (err) { toast(err.message); } } });
     $("#ask").addEventListener("submit", async (e) => { e.preventDefault(); const q = $("#q").value.trim(); if (!q) return; $("#q").value = ""; try { await ask(q); } catch (err) { toast(err.message); } });
     drawTab();
     $("#permit")?.addEventListener("click", async () => {
@@ -1116,7 +1176,7 @@ const views = {
 
   async procedures() {
     const ps = await api("/api/procedures");
-    view.innerHTML = `<h2>digitised SOPs</h2><h1>Procedures</h1><section class="panel"><table><thead><tr><th>Procedure</th><th>Version</th><th>State</th><th>Steps</th><th>Source</th></tr></thead><tbody>${ps.map((p) => `<tr><td><a href="#/procedure/${encodeURIComponent(p.id)}">${esc(p.title)}</a></td><td>v${esc(p.version)}</td><td>${pill(p.state, p.state === "released" ? "done" : p.state === "draft" ? "proposed" : "noted")}</td><td>${esc(p.steps)}</td><td>${p.sourceRef ? `${esc(p.sourceRef.system)} rev ${esc(p.sourceRef.revision)}` : ""}${p.sourceBehind ? ` ${pill("source copy behind", "medium")}` : ""}</td></tr>`).join("")}</tbody></table></section>`;
+    view.innerHTML = `<h2>digitised SOPs</h2><h1>Procedures</h1><section class="panel"><table><thead><tr><th>Procedure</th><th>Version</th><th>State</th><th>Steps</th><th>Source</th><th>Review by</th></tr></thead><tbody>${ps.map((p) => `<tr><td><a href="#/procedure/${encodeURIComponent(p.id)}">${esc(p.title)}</a></td><td>v${esc(p.version)}</td><td>${pill(p.state, p.state === "released" ? "done" : p.state === "draft" ? "proposed" : "noted")}</td><td>${esc(p.steps)}</td><td>${p.sourceRef ? `${esc(p.sourceRef.system)} rev ${esc(p.sourceRef.revision)}` : ""}${p.sourceBehind ? ` ${pill("source copy behind", "medium")}` : ""}</td><td>${p.stale_after && p.state === "released" ? `${esc(p.stale_after.slice(0, 10))}${p.stale ? ` ${pill("review due", "high")}` : ""}` : "—"}</td></tr>`).join("")}</tbody></table></section>`;
   },
 
   async procedure(id) {
@@ -1128,11 +1188,11 @@ const views = {
       const f = perf && perf.steps.find((x) => x.step === s.step);
       const notes = d.notes.filter((x) => x.step === s.step), issues = d.issues.filter((x) => x.step === s.step);
       return `<tr><td>${esc(s.step)}</td><td>${canEdit ? `<div class="meta">Now: ${esc(s.text)}</div><textarea rows="2" data-step="${esc(s.step)}" aria-label="Step ${esc(s.step)}, new text">${esc(s.text)}</textarea>` : esc(s.text)}${s.requires.permit ? ` ${pill("permit", "medium")}` : ""}${s.requires.reading ? ` ${pill(s.requires.reading.measure, "low")}` : ""}
-        ${notes.length ? `<details><summary class="meta">${notes.length} field note(s)</summary><ul class="list">${notes.map((x) => `<li>${esc(x.text)} <span class="meta">${link(x.id)}</span></li>`).join("")}</ul></details>` : ""}</td>
+        ${notes.length ? `<details><summary class="meta">${notes.length} field note(s)</summary><ul class="list">${notes.map((x) => `<li>${esc(x.text)} <span class="meta">${link(x.id)}</span>${x.stale ? ` ${pill("review due", "medium")}` : ""}</li>`).join("")}</ul></details>` : ""}</td>
         <td>${esc(s.expectedMinutes)} min</td>${perf ? `<td>${f && f.median != null ? `${num(f.median)} min${f.ratio >= 1.5 ? ` ${pill(`${f.ratio}x`, "high")}` : ""}` : "—"}</td>` : ""}<td>${notes.length} / ${issues.length}</td></tr>`;
     };
     view.innerHTML = `<h2>procedure</h2><h1>${esc(p.title)} v${esc(p.version)}</h1>
-      <p class="sub">${pill(p.state, p.state === "released" ? "done" : "proposed")} · from ${d.document ? link(d.document.id, d.document.title) : esc(p.documentId)}${d.document && d.document.sourceBehind ? ` ${pill("SharePoint copy behind", "medium")}` : ""} · versions: ${d.versions.map((v) => `<a href="#/procedure/${encodeURIComponent(v.id)}">v${esc(v.version)}</a> ${esc(v.state)}`).join(" · ")}</p>
+      <p class="sub">${pill(p.state, p.state === "released" ? "done" : "proposed")} · from ${d.document ? link(d.document.id, d.document.title) : esc(p.documentId)}${d.document && d.document.sourceBehind ? ` ${pill("SharePoint copy behind", "medium")}` : ""} · versions: ${d.versions.map((v) => `<a href="#/procedure/${encodeURIComponent(v.id)}">v${esc(v.version)}</a> ${esc(v.state)}`).join(" · ")}${p.stale_after && p.state === "released" ? ` · review by ${esc(p.stale_after.slice(0, 10))}${p.stale ? ` ${pill("review due", "high")}` : ""}` : ""}</p>
       <section class="panel"><table><thead><tr><th>#</th><th>Step</th><th>Expected</th>${perf ? "<th>Median</th>" : ""}<th>Notes / issues</th></tr></thead><tbody>${p.steps.map(row).join("")}</tbody></table>
         ${canEdit ? `<label class="field">Reason for the new version<textarea id="reason" rows="2"></textarea></label><div class="btns"><button class="btn primary" id="propose">Propose the next version</button></div>` : ""}
         ${canRelease ? `<p class="meta">Proposed by ${esc(p.proposedBy)}: ${esc(p.reason)}</p><div class="btns"><button class="btn primary" id="release">Release v${esc(p.version)}</button></div>` : ""}</section>`;

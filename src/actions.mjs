@@ -1,7 +1,7 @@
 // Typed ontology actions, shared by people and agents (PRD §6.3, AD-02), and the action service that applies the
 // autonomy dial (BR-04, BR-05, FR-AGT-004) and writes Decisions, Proposals and Feedback (FR-GOV-002).
 import { rank } from "./ontology.mjs";
-import { currentProcedure, stepLock, bandCheck, partNamesIn, stepRequires } from "./functions.mjs";
+import { currentProcedure, stepLock, bandCheck, partNamesIn, stepRequires, staleAfter, reviewEvent } from "./functions.mjs";
 import { packageHash, currentPlantModel, writePlant } from "./plant.mjs";
 import { specFor, specId, promotionGap, MODES, checkWrite, approvalTerms, expectedEffect, shadowId } from "./harness.mjs";
 import { digestDoc } from "./digest.mjs";
@@ -430,15 +430,15 @@ export const ACTIONS = {
       const base = same || { intrusive: true, hazard: null, expectedMinutes: 25 };
       return { ...base, text, partNames, documentId: cur.documentId, requires: stepRequires(text, base.intrusive, partNames, bandOf), id: `${id}-S${String(i + 1).padStart(2, "0")}`, step: i + 1 };
     });
-    const pr = create(ont, { id, type: "Procedure", template: cur.template, documentId: cur.documentId, title: cur.title, version, state: "draft", steps, basedOn: cur.id, proposedBy: ctx.actor.id, reason: p.reason, created: ctx.now() }, [["PART_OF", cur.documentId], ["REVISES", cur.id]]);
-    return { objects: [pr.id], revert: () => setProps(ont, pr.id, { state: "withdrawn" }) };
+    const pr = create(ont, { id, type: "Procedure", template: cur.template, documentId: cur.documentId, title: cur.title, version, state: "draft", status: "draft", sources: [...(cur.sources || []), { id: `v${cur.version}`, resource: cur.id, title: String(p.reason) }], steps, basedOn: cur.id, proposedBy: ctx.actor.id, reason: p.reason, created: ctx.now() }, [["PART_OF", cur.documentId], ["REVISES", cur.id]]);
+    return { objects: [pr.id], revert: () => setProps(ont, pr.id, { state: "withdrawn", status: "deprecated" }) };
   }, "engineer"),
   release_procedure: def("act", "human", ["procedureId"], (ont, p, ctx) => {
     const next = ont.get(p.procedureId);
     if (next.state !== "draft") throw new Error(`${next.id} is ${next.state}, not a draft`);
     const prev = ont.list("Procedure", (x) => x.template === next.template && x.state === "released")[0];
-    const undo = [setProps(ont, next.id, { state: "released", releasedBy: ctx.actor.id, releasedAt: ctx.now() })];
-    if (prev) undo.push(setProps(ont, prev.id, { state: "superseded" }));
+    const undo = [setProps(ont, next.id, { state: "released", status: "stable", verified: [...(next.verified || []), reviewEvent(ont.get(ctx.actor.id), ctx.now())], stale_after: staleAfter(ctx.now()), releasedBy: ctx.actor.id, releasedAt: ctx.now() })];
+    if (prev) undo.push(setProps(ont, prev.id, { state: "superseded", status: "deprecated" }));
     if (ont.get(next.documentId)) undo.push(setProps(ont, next.documentId, { sourceBehind: true }));
     return { objects: [next.id, ...(prev ? [prev.id] : [])], revert: () => undo.forEach((f) => f()) };
   }, "manager"),
@@ -459,7 +459,7 @@ export const ACTIONS = {
     ont.upsert({ id: ex.id, type: "Execution", specPins });
     // what the person was told before step 1, so root cause can later ask (design §4.6)
     const person = ont.get(p.personId), sm = ont.list("Person", (x) => x.role === "works_manager")[0];
-    const b = jobBrief(ont.view({ id: person.id, clearance: person.clearance }), wo.id);
+    const b = jobBrief(ont.view({ id: person.id, clearance: person.clearance }), wo.id, { now: ctx.now() });
     const br = b && create(ont, { id: nextId("BRF"), type: "Brief", executionId: ex.id, workOrderId: wo.id, assetId: wo.assetId, personId: person.id, at: ctx.now(),
       specVersions: b.specVersions, correctionIds: b.correctionIds, lines: b.lines, audience: [...new Set([person.id, person.supervisorId, sm && sm.id].filter(Boolean))] }, [["FOR", ex.id]]);
     return { objects: [ex.id, wo.id, ...(br ? [br.id] : [])], revert: () => { if (br) ont.remove(br.id); revert(); } };
@@ -528,15 +528,16 @@ export const ACTIONS = {
   }),
   add_knowledge_note: def("act", "act", ["text"], (ont, p, ctx) => {
     const part = p.partId ? ont.get(p.partId) : null;
-    const kn = create(ont, { id: nextId("KN"), type: "KnowledgeNote", text: String(p.text), authorId: actorId(ctx), partId: p.partId || null, assetId: p.assetId || (part && part.assetId) || null, procedureId: p.procedureId || null, step: p.step ?? null, executionId: p.executionId || null, messageId: p.messageId || null, verified: false, at: ctx.now() }, [["ABOUT", p.partId || p.assetId], ["ON", p.procedureId]]);
-    return { objects: [kn.id], revert: () => setProps(ont, kn.id, { state: "withdrawn" }) };
+    const kn = create(ont, { id: nextId("KN"), type: "KnowledgeNote", text: String(p.text), authorId: actorId(ctx), partId: p.partId || null, assetId: p.assetId || (part && part.assetId) || null, procedureId: p.procedureId || null, step: p.step ?? null, executionId: p.executionId || null, messageId: p.messageId || null, status: "draft", stale_after: staleAfter(ctx.now()), sources: [{ id: "field", resource: p.executionId || p.messageId || p.partId || p.assetId || "field report", title: "Field observation" }], at: ctx.now() }, [["ABOUT", p.partId || p.assetId], ["ON", p.procedureId]]);
+    return { objects: [kn.id], revert: () => setProps(ont, kn.id, { state: "withdrawn", status: "deprecated" }) };
   }),
   verify_knowledge_note: def("act", "human", ["noteId"], (ont, p, ctx) => {
     const n = ont.get(p.noteId);
     if (n.verified) throw new Error(`${n.id} is already verified`);
     const author = ont.get(n.authorId);
     const f = create(ont, { id: nextId("FND"), type: "Finding", partId: n.partId, assetId: n.assetId, text: n.text, authorId: n.authorId, authorRole: author ? author.role : null, verified: true, verifiedBy: ctx.actor.id, fromNoteId: n.id, at: ctx.now().slice(0, 10) }, [["ABOUT", n.partId || n.assetId]]);
-    const undo = setProps(ont, n.id, { verified: true, verifiedBy: ctx.actor.id, promotedTo: f.id });
+    // shortcut: a verified note past its date can't be verified again; add that when the first one comes due
+    const undo = setProps(ont, n.id, { verified: [reviewEvent(ont.get(ctx.actor.id), ctx.now())], status: "stable", stale_after: staleAfter(ctx.now()), verifiedBy: ctx.actor.id, promotedTo: f.id });
     return { objects: [n.id, f.id], revert: () => { undo(); setProps(ont, f.id, { verified: false }); } };
   }, "engineer"),
   // Projects: what a chat says is a claim until a supervisor confirms the milestone.

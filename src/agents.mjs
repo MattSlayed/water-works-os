@@ -241,7 +241,7 @@ const LOGIC = {
       }
       case "brief": {
         if (!ex) { say('No job is running. Reply "start" first.'); return outcome("asked"); }
-        const b = jobBrief(ctx, ex.workOrderId, { execution: ex });
+        const b = jobBrief(ctx, ex.workOrderId, { execution: ex, now: ctx.now });
         say(b ? Object.values(b.full).flat().map((x) => x.text).join("\n") : "No brief for this job.");
         return outcome("asked");
       }
@@ -304,6 +304,7 @@ const LOGIC = {
           return outcome("recorded");
         }
         if (awaiting && awaiting.kind === "submit") { ctx.output({ kind: "submit", draftId: awaiting.draftId }); return outcome("recorded"); }
+        if (awaiting && awaiting.kind === "reading") { ctx.output({ kind: "question", text: "yes", assetId: awaiting.assetId, partId: awaiting.partId, workOrderId: awaiting.workOrderId, step: null, offerIssue: null }); return outcome("recorded"); }
         say("Noted.");
         return outcome("recorded");
       }
@@ -623,8 +624,9 @@ const LOGIC = {
       const perf = ctx.fn("performanceFor", { procedureId: pr.id }, all.executions, all.procedures, all.issues, all.notes);
       const long = (s) => s.ratio != null && s.ratio >= 1.5, talked = (s) => s.notes + s.issues >= 3;
       const flagged = perf.steps.filter((s) => long(s) || talked(s));
-      if (!flagged.length || ctx.list("Notification", (n) => n.aboutId === pr.id && weekOf(n.at) === weekOf(ctx.now)).length) continue;
-      const lines = flagged.map((s) => `step ${s.step} (${s.text}): ${[long(s) ? `median ${s.median} min against ${s.expected} expected (${s.ratio}x)` : null, talked(s) ? `${s.notes} field note(s) and ${s.issues} issue(s)` : null].filter(Boolean).join("; ")}`);
+      const overdue = F.isStale(pr, ctx.now);
+      if ((!flagged.length && !overdue) || ctx.list("Notification", (n) => n.aboutId === pr.id && weekOf(n.at) === weekOf(ctx.now)).length) continue;
+      const lines = [...(overdue ? [`past its review date (${pr.stale_after.slice(0, 10)})`] : []), ...flagged.map((s) => `step ${s.step} (${s.text}): ${[long(s) ? `median ${s.median} min against ${s.expected} expected (${s.ratio}x)` : null, talked(s) ? `${s.notes} field note(s) and ${s.issues} issue(s)` : null].filter(Boolean).join("; ")}`)];
       ctx.act("notify", { to: engineers, message: `${pr.title} v${pr.version} may need revising: ${lines.join(" · ")}.`, aboutId: pr.id });
     }
   },

@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { createSystem } from "../src/system.mjs";
 import { createKgTools } from "../src/kg/tools.mjs";
-import { createAtlasBackend } from "../src/kg/backend-atlas.mjs";
+import { createAtlasBackend, createHybridBackend, parseCypherReply } from "../src/kg/backend-atlas.mjs";
 import { createMemoryBackend } from "../src/kg/backend-memory.mjs";
 
 const sys = createSystem({ seed: 7 });
@@ -13,7 +13,9 @@ const as = (clearance) => ({ id: sys.ont.list("Person", (p) => p.clearance === c
 const tech = as("technician"), sup = as("supervisor"), mgr = as("manager");
 const CLB = "PM-RB-A:STR-16UHC01";
 const T = (n) => `urn:atlas:ontology:riverbend:${n}`;
-const table = (columns, rows) => ({ content: [{ type: "text", text: JSON.stringify({ columns, rows }) }] });
+// Renders rows the way the real ExecuteCypherQuery does: a JSON string holding a text table.
+const show = (v) => Array.isArray(v) ? `[${v.map(show).join(", ")}]` : v && typeof v === "object" ? `{${Object.entries(v).map(([k, x]) => `${k}: ${show(x)}`).join(", ")}}` : String(v);
+const table = (columns, rows) => ({ content: [{ type: "text", text: JSON.stringify(`${columns.join(" | ")}\n${columns.map(() => "---").join("+")}\n${rows.map((r) => r.map(show).join(" | ")).join("\n")}\n\n(${rows.length} rows)`) }] });
 
 // Canned Atlas: Atlas answers every zone to any token, like the real one.
 const queries = [];
@@ -45,6 +47,18 @@ let historianText = "";
 const backend = createAtlasBackend({ atlas, historian });
 const tools = createKgTools({ backend, ont: sys.ont, tel: sys.tel, crosswalk });
 const run = (name, input, viewer, ts = tools) => ts.find((t) => t.name === name).run(input, viewer);
+
+test("parses replies captured from the live Atlas, and refuses what doesn't fit", () => {
+  const live = (text) => ({ content: [{ type: "text", text: JSON.stringify(text) }] });
+  assert.deepEqual(parseCypherReply(live("a | b | share\n-----+------+------\nRWP-1 | MIX | null\nMIX | CL-1 | 0.5\n\n(2 rows)")), { columns: ["a", "b", "share"], rows: [["RWP-1", "MIX", null], ["MIX", "CL-1", 0.5]] });
+  const { rows } = parseCypherReply(live("label | type | props\n---+---+---\nCL-1 | [urn:atlas:ontology:riverbend:Clarifier] | {@entity:Label: CL-1, urn:atlas:ontology:riverbend:kks: 14UGE01, urn:atlas:ontology:riverbend:geometry: [ 1, 2], urn:atlas:ontology:riverbend:height: 4.5}\n\n(1 rows)"));
+  assert.deepEqual(rows[0][1], ["urn:atlas:ontology:riverbend:Clarifier"]);
+  assert.deepEqual(rows[0][2], { "@entity:Label": "CL-1", "urn:atlas:ontology:riverbend:kks": "14UGE01", "urn:atlas:ontology:riverbend:geometry": "[ 1, 2]", "urn:atlas:ontology:riverbend:height": 4.5 });
+  assert.deepEqual(parseCypherReply(live("n\n----\n\n(0 rows)")).rows, []);
+  assert.throws(() => parseCypherReply(live("a | b\n--+--\nx | y | z\n\n(1 rows)")), /3 cells for 2 columns/);
+  assert.throws(() => parseCypherReply(live("ERROR: Domain 'riverbend' on branch 'x' has not been compiled.")), /has not been compiled/);
+  assert.throws(() => parseCypherReply({ content: [] }), /unrecognised reply/);
+});
 
 test("technician cannot see Z06 (Atlas backend)", async () => {
   assert.deepEqual(await run("get", { id: CLB }, tech), { found: false });
@@ -102,4 +116,20 @@ test("cypher on Atlas: linted before it is sent", async () => {
   assert.equal(queries.length, n, "a query that fails lint is never sent");
   const r = await run("cypher", { query: "MATCH (r)<-[:feeds*]-(u) WHERE u:Filter RETURN u.wosId" }, mgr, ts);
   assert.deepEqual(r.rows, [[CLB], ["Z05"]]);
+});
+
+test("hybrid: readings come from Historian by tag; the graph answers from memory; the viewer's clearance still holds", async () => {
+  const calls = [];
+  const fake = { async callTool(name, args) { calls.push(args); return { content: [{ type: "text", text: "## AIT-157 - 2 point(s)\n- 2026-10-14T05:00:00Z  v=7.5  q=192\n- 2026-10-14T05:30:00Z  v=8.5  q=192\n" }] }; } };
+  const hybrid = createKgTools({ backend: createHybridBackend({ ont: sys.ont, tel: sys.tel, historian: fake }), ont: sys.ont, tel: sys.tel, crosswalk });
+  const s = await run("readings", { sensorId: "SEN-F07-turb", from: "2026-10-14T05:00:00Z", to: "2026-10-14T06:00:00Z" }, tech, hybrid);
+  assert.deepEqual([s.min, s.max, s.first, s.last], [7.5, 8.5, 7.5, 8.5], "values that only the fake Historian holds");
+  assert.equal(JSON.parse(calls[0].tagNamesJson)[0], "AIT-157");
+  calls.length = 0;
+  assert.equal((await run("search", { q: "CHL-A" }, mgr, hybrid)).items.length > 0, true);
+  assert.equal((await run("get", { id: CLB }, sup, hybrid)).found, true);
+  assert.equal(calls.length, 0, "the graph never calls Historian");
+  const hidden = sys.ont.list("Sensor", (x) => !sys.ont.view(tech).get(x.id))[0];
+  assert.deepEqual(await run("readings", { sensorId: hidden.id }, tech, hybrid), { found: false });
+  assert.equal(calls.length, 0, "a hidden sensor is never read");
 });

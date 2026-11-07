@@ -46,9 +46,11 @@ export function createChannels({ ont, tel, actions, runtime, copilot, audit }) {
         s.step = q.step || null;
         const res = await copilot.ask(s.id, q.text);
         const cites = [...new Set((res.citations || []).map((c) => c.id).filter(Boolean))];
+        // an offered reading comes before any issue offer: one yes can only mean one thing
+        const offerIssue = res.confirm ? null : q.offerIssue;
         reply("Technician Copilot", {
-          text: `${res.answer}${cites.length ? `\nSources: ${cites.join(", ")}` : ""}${q.offerIssue ? "\n\nRaise an issue? (yes/no)" : ""}`,
-          ...(q.offerIssue ? { awaiting: { kind: "issue", ...q.offerIssue } } : {})
+          text: `${res.answer}${cites.length ? `\nSources: ${cites.join(", ")}` : ""}${offerIssue ? "\n\nRaise an issue? (yes/no)" : ""}`,
+          ...(res.confirm ? { awaiting: { kind: "reading", assetId: q.assetId, partId: q.partId, workOrderId: q.workOrderId } } : offerIssue ? { awaiting: { kind: "issue", ...offerIssue } } : {})
         });
       } catch (e) {
         reply("Technician Copilot", { text: `I could not open that asset for you: ${e.message}.` });
