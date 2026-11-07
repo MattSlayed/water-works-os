@@ -10,13 +10,14 @@ export function createChannels({ ont, tel, actions, runtime, copilot, audit }) {
   const emit = (e) => listeners.forEach((fn) => fn(e));
   const sessions = new Map(); // sender|asset|part -> Copilot session id
 
-  async function inbound(channelId, senderId, { text, media } = {}) {
+  async function inbound(channelId, senderId, { text, media, signedIn } = {}) {
     const ch = ont.get(channelId);
     if (!ch || ch.type !== "Channel") throw new Error("channel not found");
     if (!(ch.members || []).includes(senderId)) throw new Error("not a member of this channel");
     const sender = ont.get(senderId);
     // a contractor's number acts at the lowest clearance, and only as itself
     const user = sender.type === "Person" ? { id: sender.id, kind: "person", clearance: sender.clearance } : { id: sender.id, kind: "person", clearance: "technician", participant: true };
+    if (signedIn) user.signedIn = signedIn; // behind IAP: the email the webhook verified, so what the sender submits is audited with it
     const thread = ont.list("Message", (m) => m.channelId === ch.id);
     const last = thread[thread.length - 1];
     const awaiting = last && last.direction === "out" && last.awaiting ? last.awaiting : null;

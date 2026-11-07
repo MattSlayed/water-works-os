@@ -161,11 +161,22 @@ test("approving and reversing record who signed in", async () => {
   assert.deepEqual([sys.audit.all().at(-1).action, sys.audit.all().at(-1).signedIn], ["reverse", "ok@x.co"]);
 });
 
+const chat = (email, sender, text = "start") => fetch(`${base}/api/channels/CHN-P-028/inbound`, { method: "POST", headers: { "content-type": "application/json", "x-channel-sender": sender, ...(email ? { "x-goog-iap-jwt-assertion": sign({ email }) } : {}) }, body: JSON.stringify({ text }) });
+
+test("a document submitted from chat records who signed in", async () => {
+  // the Scribe drafts P-028's job card and asks in chat; "yes" submits it as P-028
+  const e = sys.ont.list("Execution", (x) => x.state === "done")[0];
+  sys.ont.upsert({ id: e.id, type: "Execution", personId: "P-028", audience: ["P-028"] });
+  sys.runtime.run("Scribe", { actingUser: { id: "P-028", clearance: "technician" }, scope: { executionId: e.id } });
+  assert.equal((await chat("one@x.co", "P-028", "yes")).status, 200);
+  const sub = sys.audit.all().findLast((x) => x.action === "submit_document");
+  assert.deepEqual([sub.outcome, sub.actor, sub.signedIn], ["done", "P-028", "one@x.co"]);
+});
+
 test("the chat webhook needs the JWT and a sender the email may act as", async () => {
-  const post = (email, sender) => fetch(`${base}/api/channels/CHN-P-028/inbound`, { method: "POST", headers: { "content-type": "application/json", "x-channel-sender": sender, ...(email ? { "x-goog-iap-jwt-assertion": sign({ email }) } : {}) }, body: JSON.stringify({ text: "start" }) });
-  assert.equal((await post(null, "P-028")).status, 401);
-  assert.equal((await post("one@x.co", "P-001")).status, 403, "one@x.co may act only as P-028");
-  assert.equal((await post("one@x.co", "P-028")).status, 200);
+  assert.equal((await chat(null, "P-028")).status, 401);
+  assert.equal((await chat("one@x.co", "P-001")).status, 403, "one@x.co may act only as P-028");
+  assert.equal((await chat("one@x.co", "P-028")).status, 200);
 });
 
 test("a write must name its person in a header and be JSON", async () => {

@@ -691,11 +691,11 @@ export function createServer(sys, { kgTools = createKgTools({ backend: createMem
       const inbound = req.method === "POST" && url.pathname.match(/^\/api\/channels\/([^/]+)\/inbound$/);
       if (inbound) {
         const sender = req.headers["x-channel-sender"];
-        if (iap) await signedInAs(req, sender);
+        const signedIn = iap ? await signedInAs(req, sender) : undefined;
         if (!sender || !ont.get(sender)) throw new HttpError(401, "unknown sender");
         const b = await body(req);
         let out;
-        try { out = await channels.inbound(decodeURIComponent(inbound[1]), sender, { text: b.text, media: b.media }); } catch (e) {
+        try { out = await channels.inbound(decodeURIComponent(inbound[1]), sender, { text: b.text, media: b.media, signedIn }); } catch (e) {
           throw new HttpError(/not a member/.test(e.message) ? 403 : /not found/.test(e.message) ? 404 : 400, e.message);
         }
         res.writeHead(200, { "content-type": "application/json" });
