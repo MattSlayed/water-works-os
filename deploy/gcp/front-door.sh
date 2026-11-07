@@ -4,6 +4,9 @@
 #        DRY_RUN=1 deploy/gcp/front-door.sh       prints every gcloud command as "+ ..." and runs none
 # Safe to re-run: every create step looks first, the rest are idempotent in gcloud.
 set -euo pipefail
+# Git for Windows' bash rewrites path-like arguments to native programs (--path=/ became C:/Program Files/Git/), so
+# no --flag is converted. Not MSYS_NO_PATHCONV=1: the gcloud wrapper needs its own gcloud.py path converted.
+export MSYS2_ARG_CONV_EXCL=--
 
 DRY_RUN=${DRY_RUN:-0}
 PN_OVERRIDE=${PROJECT_NUMBER:-}   # lets a dry run skip the describe lookup
@@ -85,7 +88,7 @@ fi
 get found '' gcloud monitoring uptime list-configs --project "$PROJECT" "--filter=displayName=$SERVICE-uptime" '--format=value(name)'
 # IAP answers an anonymous request with a 302 to sign-in (or a 401); either proves the service is up.
 [[ -n $found ]] || run gcloud monitoring uptime create "$SERVICE-uptime" --project "$PROJECT" --resource-type=uptime-url \
-  "--resource-labels=host=$HOST,project_id=$PROJECT" --protocol=https --path=/ --status-codes=302,401 --period=5 --regions=europe,usa-iowa,usa-virginia
+  "--resource-labels=host=$HOST,project_id=$PROJECT" --protocol=https --status-codes=302,401 --period=5 --regions=europe,usa-iowa,usa-virginia
 get found '' gcloud monitoring policies list --project "$PROJECT" "--filter=displayName=$SERVICE-down" '--format=value(name)'
 [[ -n $found ]] || run gcloud monitoring policies create --project "$PROJECT" "--display-name=$SERVICE-down" "--notification-channels=$channel" \
   "--condition-display-name=$SERVICE uptime check failing" \

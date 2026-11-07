@@ -48,6 +48,7 @@ test("dry run prints the whole front-door plan and runs nothing", { skip }, () =
   assert.match(out, /gcloud beta monitoring channels create .*--type=email .*email_address=/);
   assert.match(out, /gcloud monitoring uptime create water-works-os-uptime .*--status-codes=302,401/);
   assert.match(out, /--resource-labels=host=water-works-os-426022356353\.africa-south1\.run\.app,project_id=se-project-49281/);
+  assert.doesNotMatch(out, /--path=/, "Git Bash would rewrite --path=/; the default path is /");
   assert.match(out, /gcloud monitoring policies create .*--notification-channels=/);
 
   assert.doesNotMatch(out, /--allow-unauthenticated/);
