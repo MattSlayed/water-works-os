@@ -5,28 +5,35 @@ Private test deployment in project `se-project-49281`, region `africa-south1`. S
 ## What it is
 
 - Synthetic data and the in-memory graph only. Timebase stays on this machine, so `WWOS_KG_BACKEND` isn't set.
-- No API key, so agents give deterministic answers.
-- Anonymous requests get 403. Project owners can reach it after signing in with Google.
+- Claude runs on Vertex AI as the `wateros-run` service account, so there is no API key. Until `front-door.sh` has run, agents give deterministic answers.
+- People sign in with Google through IAP. Only the addresses in `IAP_USERS` get in. Anonymous requests never reach the app.
 - Scales to zero. **Everything changed at runtime is lost when the instance stops**, including approvals.
 - `.gcloudignore` is an allowlist. `data/geo/` stays on this machine. The anatomy figures in `web/figures/` are uploaded, in their blueprint colours, except CHL-A and CHL-B: sync refuses a zone above technician clearance.
 
-`x-acting-user` is still trusted as sent. Anyone with access can act as any person. Real sign-in must replace it before real people or data go in.
+Operators (`WWOS_OPERATORS`) are demo operators: each signed-in address may act as any persona (`email=*`). Per-person limits come later, with real users.
 
 ## Open it
 
-```
-gcloud run services proxy water-works-os --region africa-south1 --project se-project-49281 --port 8835
-```
+Browse to https://water-works-os-426022356353.africa-south1.run.app and sign in with Google. IAP checks the address against `IAP_USERS`, and the app checks IAP's signed token again.
 
-Then browse to http://localhost:8835.
+## Set up and redeploy
 
-## Redeploy
+Every project-specific value lives in `deploy/gcp/front-door.env` (the parameters are listed in `front-door.env.example`). One script does it all: APIs, the `wateros-run` service account with `roles/aiplatform.user`, the deploy with `--iap --no-allow-unauthenticated`, who may sign in, a monthly budget with alerts at 50%, 90% and 100%, and an uptime check with an email alert.
 
 ```
-gcloud run deploy water-works-os --project se-project-49281 --source . --region africa-south1 --no-allow-unauthenticated --memory 1Gi --cpu 1 --min-instances 0 --max-instances 1 --set-env-vars WWOS_HOST=0.0.0.0
+DRY_RUN=1 bash deploy/gcp/front-door.sh    # prints each gcloud command, runs none
+bash deploy/gcp/front-door.sh              # does it; safe to run again
 ```
 
-Before each deploy, check what will leave the machine with `gcloud meta list-files-for-upload`.
+`VERTEX_REGION` and `LLM_MODEL` in the env file are placeholders until Model Garden confirms them. The script uses `--source .`, so it redeploys the code too.
+
+Before each deploy, check what will leave the machine with `gcloud meta list-files-for-upload`. `deploy/` is not in the allowlist, so it stays here.
+
+## Move to the company project
+
+1. Copy `deploy/gcp/front-door.env.example` to `deploy/gcp/front-door.env` and set `PROJECT`, `REGION`, `BILLING_ACCOUNT`, `ALERT_EMAIL`, `IAP_USERS`, `VERTEX_REGION` and `LLM_MODEL`.
+2. Run `DRY_RUN=1 bash deploy/gcp/front-door.sh`, read the plan, then run it without `DRY_RUN`.
+3. Check the Claude model is enabled in Model Garden for the new project.
 
 ## Remove it
 
