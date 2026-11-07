@@ -23,6 +23,23 @@ for v in PROJECT REGION SERVICE BILLING_ACCOUNT BUDGET_USD ALERT_EMAIL IAP_USERS
 done
 [[ $DRY_RUN = 1 ]] || command -v gcloud >/dev/null || { echo "front-door: gcloud is not on PATH" >&2; exit 2; }
 
+# IAP's Google-managed OAuth client admits only an organisation's own users, so a project without one (or with users
+# outside it) needs a custom client, made once by hand in the Console. The lookup is read-only, so a dry run makes it
+# too (tests: ORG_CHECK=none|organization).
+ANCESTORS=${ORG_CHECK:-$(gcloud projects get-ancestors "$PROJECT" '--format=value(type)')}
+IAP_SETTINGS=""
+if [[ $ANCESTORS != *organization* || -n ${IAP_OAUTH_CLIENT_FILE:-} ]]; then
+  [[ -f ${IAP_OAUTH_CLIENT_FILE:-} ]] || { echo "front-door: IAP needs a custom OAuth client here ($PROJECT has no organisation, or IAP_OAUTH_CLIENT_FILE is set), but IAP_OAUTH_CLIENT_FILE in $ENV_FILE names no file: see docs/CLOUD-RUN.md, \"IAP sign-in without an organisation\"" >&2; exit 2; }
+  IAP_SETTINGS=$(mktemp)  # mode 600 from mktemp; it holds the client secret, so it is deleted on exit
+  trap 'rm -f "$IAP_SETTINGS"' EXIT
+  command -v cygpath >/dev/null && IAP_SETTINGS=$(cygpath -m "$IAP_SETTINGS")  # gcloud on Windows is native and needs C:/...
+  # node moves the secret from file to file, so it never passes through bash, a trace or an error message.
+  node -e 'try { const w = JSON.parse(require("fs").readFileSync(0, "utf8")).web; if (!w.client_id || !w.client_secret) throw 0;
+    process.stdout.write(JSON.stringify({ accessSettings: { oauthSettings: { clientId: w.client_id, clientSecret: w.client_secret } } }));
+  } catch { console.error("front-door: IAP_OAUTH_CLIENT_FILE is not a web OAuth client JSON (web.client_id, web.client_secret)"); process.exit(2); }' \
+    <"$IAP_OAUTH_CLIENT_FILE" >"$IAP_SETTINGS"
+fi
+
 # say: print one command, shell-quoted only where needed.
 say() { printf '+'; local a; for a; do [[ $a =~ ^[A-Za-z0-9_@%+=:,./-]+$ ]] && printf ' %s' "$a" || printf " '%s'" "${a//\'/\'\\\'\'}"; done; printf '\n'; }
 # run: execute (or, in a dry run, print) one command.
@@ -60,26 +77,31 @@ get found '' gcloud iam service-accounts list --project "$PROJECT" "--filter=ema
 [[ -n $found ]] || run gcloud iam service-accounts create "$SERVICE_ACCOUNT_NAME" --project "$PROJECT" --display-name "$SERVICE runtime"
 run_retry gcloud projects add-iam-policy-binding "$PROJECT" "--member=serviceAccount:$SA_EMAIL" --role=roles/aiplatform.user --condition=None --format=none
 
-echo "== 3. deploy (IAP on, no public access)" >&2
+if [[ -n $IAP_SETTINGS ]]; then
+  echo "== 3. IAP sign-in uses the custom OAuth client" >&2
+  run gcloud iap settings set "$IAP_SETTINGS" --project "$PROJECT" --format=none
+fi
+
+echo "== 4. deploy (IAP on, no public access)" >&2
 run gcloud run deploy "$SERVICE" --project "$PROJECT" --region "$REGION" --source . --iap --no-allow-unauthenticated \
   --service-account "$SA_EMAIL" --memory 1Gi --cpu 1 --min-instances 0 --max-instances 1 --set-env-vars "$ENV_VARS"
 
-echo "== 4. IAP service agent may invoke the service" >&2
+echo "== 5. IAP service agent may invoke the service" >&2
 run gcloud beta services identity create --service=iap.googleapis.com --project "$PROJECT" --format=none
 run gcloud run services add-iam-policy-binding "$SERVICE" --project "$PROJECT" --region "$REGION" "--member=serviceAccount:$IAP_AGENT" --role=roles/run.invoker --format=none
 
-echo "== 5. who may sign in" >&2
+echo "== 6. who may sign in" >&2
 for u in "${USERS[@]}"; do
   run gcloud iap web add-iam-policy-binding --project "$PROJECT" --resource-type=cloud-run --service="$SERVICE" --region="$REGION" "--member=user:$u" --role=roles/iap.httpsResourceAccessor --format=none
 done
 
 BUDGET_NAME=$PROJECT-$SERVICE-budget  # the billing account is shared across projects, so the name carries the project
-echo "== 6. budget ${BUDGET_USD} USD" >&2
+echo "== 7. budget ${BUDGET_USD} USD" >&2
 get found '' gcloud billing budgets list "--billing-account=$BILLING_ACCOUNT" "--billing-project=$PROJECT" "--filter=displayName=$BUDGET_NAME" '--format=value(name)'
 [[ -n $found ]] || run gcloud billing budgets create "--billing-account=$BILLING_ACCOUNT" "--billing-project=$PROJECT" "--display-name=$BUDGET_NAME" \
   "--budget-amount=${BUDGET_USD}USD" "--filter-projects=projects/$PROJECT_NUMBER" --threshold-rule=percent=0.5 --threshold-rule=percent=0.9 --threshold-rule=percent=1.0
 
-echo "== 7. email channel, uptime check, alert policy" >&2
+echo "== 8. email channel, uptime check, alert policy" >&2
 get channel '' gcloud beta monitoring channels list --project "$PROJECT" "--filter=displayName=$SERVICE-alert-email" '--format=value(name)'
 if [[ -z $channel ]]; then
   get channel "projects/$PROJECT/notificationChannels/<CHANNEL_ID>" gcloud beta monitoring channels create --project "$PROJECT" \

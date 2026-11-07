@@ -18,7 +18,7 @@ Browse to https://water-works-os-426022356353.africa-south1.run.app and sign in 
 
 ## Set up and redeploy
 
-Every project-specific value lives in `deploy/gcp/front-door.env` (the parameters are listed in `front-door.env.example`). One script does it all: APIs, the `wateros-run` service account with `roles/aiplatform.user`, the deploy with `--iap --no-allow-unauthenticated`, who may sign in, a monthly budget with alerts at 50%, 90% and 100%, and an uptime check with an email alert.
+Every project-specific value lives in `deploy/gcp/front-door.env` (the parameters are listed in `front-door.env.example`). One script does it all: APIs, the `wateros-run` service account with `roles/aiplatform.user`, IAP's custom OAuth client when the project has no organisation (see below), the deploy with `--iap --no-allow-unauthenticated`, who may sign in, a monthly budget with alerts at 50%, 90% and 100%, and an uptime check with an email alert.
 
 ```
 DRY_RUN=1 bash deploy/gcp/front-door.sh    # prints each gcloud command, runs none
@@ -29,11 +29,25 @@ bash deploy/gcp/front-door.sh              # does it; safe to run again
 
 Before each deploy, check what will leave the machine with `gcloud meta list-files-for-upload`. `deploy/` is not in the allowlist, so it stays here.
 
+## IAP sign-in without an organisation
+
+`se-project-49281` has no organisation: `gcloud projects get-ancestors se-project-49281` lists only the project. IAP's Google-managed OAuth client admits only users inside an organisation, so without a custom OAuth client neither address in `IAP_USERS` can sign in. A project inside an organisation needs this too if any `IAP_USERS` address is outside it, such as a Gmail address.
+
+Creating the client is a one-time step, done by hand in the Console; it cannot be scripted. In the project's [Google Auth Platform](https://console.cloud.google.com/auth/overview):
+
+1. **Branding:** set an app name. The user support email is `ALERT_EMAIL`.
+2. **Audience:** choose External, and leave the publishing status on Testing. Add every `IAP_USERS` address as a test user.
+3. **Clients → Create client → Web application.** After it is created, open it and add the authorised redirect URI `https://iap.googleapis.com/v1/oauth/clientIds/CLIENT_ID:handleRedirect`, with CLIENT_ID replaced by the client's own id.
+4. **Download the JSON** to a folder outside the repo; it holds the client secret. Set `IAP_OAUTH_CLIENT_FILE` in `front-door.env` to its absolute path, with forward slashes (`C:/Users/you/secrets/wateros-iap-client.json`).
+
+`front-door.sh` looks up the organisation itself. With none, it stops before changing anything until `IAP_OAUTH_CLIENT_FILE` names the file. It then applies the client to IAP at the project level (`gcloud iap settings set`), before the deploy turns IAP on. The secret goes through a temporary file that only you can read, which is deleted when the script ends. It never appears in the output, in a dry run either.
+
 ## Move to the company project
 
 1. Copy `deploy/gcp/front-door.env.example` to `deploy/gcp/front-door.env` and set `PROJECT`, `REGION`, `BILLING_ACCOUNT`, `ALERT_EMAIL`, `IAP_USERS`, `VERTEX_REGION` and `LLM_MODEL`.
-2. Run `DRY_RUN=1 bash deploy/gcp/front-door.sh`, read the plan, then run it without `DRY_RUN`.
-3. Check the Claude model is enabled in Model Garden for the new project.
+2. If the project has no organisation, or any `IAP_USERS` address is outside it, follow "IAP sign-in without an organisation" and set `IAP_OAUTH_CLIENT_FILE`.
+3. Run `DRY_RUN=1 bash deploy/gcp/front-door.sh`, read the plan, then run it without `DRY_RUN`.
+4. Check the Claude model is enabled in Model Garden for the new project.
 
 ## Remove it
 

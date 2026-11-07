@@ -1,7 +1,9 @@
-import { test } from "node:test";
+import { test, after } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
@@ -9,9 +11,21 @@ const root = fileURLToPath(new URL("..", import.meta.url));
 const bash = process.platform === "win32" ? "C:\\Program Files\\Git\\bin\\bash.exe" : "bash";
 const skip = process.platform === "win32" && !existsSync(bash) ? "Git for Windows bash not found" : false;
 
-const dry = (env = {}, args = ["deploy/gcp/front-door.env"]) =>
-  spawnSync(bash, ["deploy/gcp/front-door.sh", ...args], {
-    cwd: root, encoding: "utf8", env: { ...process.env, DRY_RUN: "1", PROJECT_NUMBER: "426022356353", ...env },
+// A temp file as Git Bash names it (C:\x\y -> /c/x/y).
+const tmp = mkdtempSync(path.join(tmpdir(), "front-door-"));
+after(() => rmSync(tmp, { recursive: true, force: true }));
+const bashPath = (p) => process.platform === "win32" ? p.replace(/\\/g, "/").replace(/^([A-Za-z]):/, (_, d) => `/${d.toLowerCase()}`) : p;
+let n = 0;
+const tmpFile = (text) => { const f = path.join(tmp, `${++n}`); writeFileSync(f, text); return bashPath(f); };
+// The committed env file with some values changed.
+const envWith = (vals) => tmpFile(Object.entries(vals).reduce((t, [k, v]) => t.replace(new RegExp(`^${k}=.*$`, "m"), `${k}=${v}`),
+  readFileSync(path.join(root, "deploy/gcp/front-door.env"), "utf8")));
+
+// This project has no organisation, so IAP needs the custom OAuth client; the fixture holds a sentinel secret.
+const CLIENT_SECRET = "GOCSPX-SENTINEL-456";
+const dry = (env = {}, file = envWith({ IAP_OAUTH_CLIENT_FILE: "test/fixtures/iap-oauth-client.json" })) =>
+  spawnSync(bash, ["deploy/gcp/front-door.sh", file], {
+    cwd: root, encoding: "utf8", env: { ...process.env, DRY_RUN: "1", PROJECT_NUMBER: "426022356353", ORG_CHECK: "none", ...env },
   });
 const count = (s, re) => (s.match(re) || []).length;
 
@@ -69,8 +83,41 @@ test("a dry run without PROJECT_NUMBER shows the describe command and a placehol
 });
 
 test("a missing parameter stops the script before anything is printed", { skip }, () => {
-  const r = dry({}, ["test/fixtures/front-door-incomplete.env"]);
+  const r = dry({}, "test/fixtures/front-door-incomplete.env");
   assert.notEqual(r.status, 0);
   assert.match(r.stderr, /IAP_USERS/);
   assert.equal(r.stdout, "");
+});
+
+test("no organisation and no OAuth client file stops before anything is planned", { skip }, () => {
+  for (const file of [envWith({}), envWith({ IAP_OAUTH_CLIENT_FILE: "/nope/client.json" })]) {
+    const r = dry({}, file);
+    assert.notEqual(r.status, 0);
+    assert.match(r.stderr, /no organisation.*IAP_OAUTH_CLIENT_FILE.*docs\/CLOUD-RUN\.md, "IAP sign-in without an organisation"/);
+    assert.equal(r.stdout, "");
+  }
+});
+
+test("no organisation: the client is applied to IAP before the deploy and its secret is never shown", { skip }, () => {
+  const r = dry();
+  assert.equal(r.status, 0, r.stderr);
+  const m = r.stdout.match(/^\+ gcloud iap settings set (\S+) --project se-project-49281 --format=none$/m);
+  assert.ok(m, r.stdout);
+  assert.ok(r.stdout.indexOf(m[0]) < r.stdout.indexOf("gcloud run deploy"), "set before --iap is turned on");
+  assert.ok(!existsSync(m[1]), "the settings file is deleted on exit");
+  assert.ok(!(r.stdout + r.stderr).includes(CLIENT_SECRET));
+});
+
+test("a broken OAuth client file stops the script without echoing its contents", { skip }, () => {
+  const r = dry({}, envWith({ IAP_OAUTH_CLIENT_FILE: tmpFile(`{"web":{"client_secret":"${CLIENT_SECRET}"`) }));
+  assert.notEqual(r.status, 0);
+  assert.match(r.stderr, /not a web OAuth client JSON/);
+  assert.ok(!(r.stdout + r.stderr).includes(CLIENT_SECRET));
+});
+
+test("a project in an organisation needs no OAuth client, but uses one when given (users outside the organisation)", { skip }, () => {
+  const r = dry({ ORG_CHECK: "organization" }, envWith({}));
+  assert.equal(r.status, 0, r.stderr);
+  assert.doesNotMatch(r.stdout, /iap settings set/);
+  assert.match(dry({ ORG_CHECK: "organization" }).stdout, /gcloud iap settings set /);
 });
