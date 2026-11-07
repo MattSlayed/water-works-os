@@ -2,7 +2,7 @@
 // briefs the operator, and names the place so the camera can fly there. With Claude it runs a tool loop over the
 // asker's tools; without it (or when the call fails) it briefs from the best-matching active alert.
 // Inference is cross-border and disclosed under POPIA s72 (NVT-PROJ-BBR-ARC-001 §4); the people tool is never offered.
-import { MODEL, llmEnabled } from "./llm.mjs";
+import { llmEnabled, llmModel, claudeClient, requestExtras } from "./llm.mjs";
 import { toolsFor, PEOPLE } from "./kg/tools.mjs";
 import { currentPlantModel } from "./plant.mjs";
 import { projectIndicators } from "./project-indicators.mjs";
@@ -103,9 +103,9 @@ Cite every fact in square brackets with the cite field of the tool item it came 
 If a few searches find nothing, stop and say you cannot find it among what you can see; do not guess.`;
 
   async function claudeBrief(question, viewer) {
-    let Anthropic;
-    try { ({ default: Anthropic } = await import("@anthropic-ai/sdk")); } catch { return null; }
-    client ??= new Anthropic();
+    // an injected client (tests) is first-party shaped; otherwise the configured provider's
+    const c = client ? { client, model: llmModel(), provider: "anthropic" } : await claudeClient();
+    if (!c) return null;
     const mine = toolsFor(tools, viewer).filter((t) => t.name !== "people" && t.name !== "cypher");
     let shown = [], project = null;
     const defs = [...mine.map(({ name, description, inputSchema }) => ({ name, description, input_schema: inputSchema })),
@@ -115,7 +115,7 @@ If a few searches find nothing, stop and say you cannot find it among what you c
       // the last turn must answer with what it has, never end on a tool call
       const last = turn === MAX_TURNS - 1;
       if (last) messages.at(-1).content.push({ type: "text", text: "No more tool calls are allowed. Write the brief now from what you have." });
-      const r = await client.beta.messages.create({ model: MODEL, max_tokens: 8000, betas: ["server-side-fallback-2026-07-01"], fallbacks: "default", output_config: { effort: "low" }, system: system(), tools: defs, messages, ...(last ? { tool_choice: { type: "none" } } : {}) });
+      const r = await c.client.beta.messages.create({ model: c.model, max_tokens: 8000, ...requestExtras(c.provider), output_config: { effort: "low" }, system: system(), tools: defs, messages, ...(last ? { tool_choice: { type: "none" } } : {}) });
       if (r.stop_reason === "refusal") return null;
       messages.push({ role: "assistant", content: r.content });
       if (r.stop_reason !== "tool_use") {
@@ -149,8 +149,8 @@ If a few searches find nothing, stop and say you cannot find it among what you c
       catch (e) { console.warn(`[site-agent] ${e?.status ? `API error ${e.status}` : e?.message}; using the fallback brief`); }
     }
     r ??= projectBrief(ont, tel, viewer, question) || alertBrief(ont, tel, viewer, question);
-    if (r.project) r.changed = writeSnapshot(ont, viewer, r.project, { brief: r.answer, citations: r.citations, model: r.model ? MODEL : null, at: tel.now() }).changed;
-    r.answerId = writeAnswer(ont, viewer, { answer: r.answer, citations: r.citations, model: r.model ? MODEL : null }, tel.now()).id;
+    if (r.project) r.changed = writeSnapshot(ont, viewer, r.project, { brief: r.answer, citations: r.citations, model: r.model ? llmModel() : null, at: tel.now() }).changed;
+    r.answerId = writeAnswer(ont, viewer, { answer: r.answer, citations: r.citations, model: r.model ? llmModel() : null }, tel.now()).id;
     r.sources = answerEvidence(ont, tel, viewer, r.citations);
     return r;
   }

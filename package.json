@@ -12,6 +12,7 @@
     "start": "node --env-file-if-exists=.env src/server.mjs"
   },
   "optionalDependencies": {
-    "@anthropic-ai/sdk": "^1.1.0"
+    "@anthropic-ai/sdk": "^1.1.0",
+    "@anthropic-ai/vertex-sdk": "^1.1.2"
   }
 }
