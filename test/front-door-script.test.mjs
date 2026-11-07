@@ -42,6 +42,8 @@ test("dry run prints the whole front-door plan and runs nothing", { skip }, () =
   for (const p of ["0.5", "0.9", "1.0"]) assert.match(out, new RegExp(`--threshold-rule=percent=${p}\\s`));
   assert.equal(count(out, /--threshold-rule=/g), 3);
   assert.match(out, /--billing-account=01B233-16D37B-41FAFF/);
+  assert.match(out, /--display-name=se-project-49281-water-works-os-budget /);
+  assert.match(out, /budgets list .*--filter=displayName=se-project-49281-water-works-os-budget /);
 
   assert.match(out, /gcloud beta monitoring channels create .*--type=email .*email_address=/);
   assert.match(out, /gcloud monitoring uptime create water-works-os-uptime .*--status-codes=302,401/);

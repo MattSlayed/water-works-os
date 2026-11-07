@@ -70,9 +70,10 @@ for u in "${USERS[@]}"; do
   run gcloud iap web add-iam-policy-binding --project "$PROJECT" --resource-type=cloud-run --service="$SERVICE" --region="$REGION" "--member=user:$u" --role=roles/iap.httpsResourceAccessor --format=none
 done
 
+BUDGET_NAME=$PROJECT-$SERVICE-budget  # the billing account is shared across projects, so the name carries the project
 echo "== 6. budget ${BUDGET_USD} USD" >&2
-get found '' gcloud billing budgets list "--billing-account=$BILLING_ACCOUNT" "--billing-project=$PROJECT" "--filter=displayName=$SERVICE-budget" '--format=value(name)'
-[[ -n $found ]] || run gcloud billing budgets create "--billing-account=$BILLING_ACCOUNT" "--billing-project=$PROJECT" "--display-name=$SERVICE-budget" \
+get found '' gcloud billing budgets list "--billing-account=$BILLING_ACCOUNT" "--billing-project=$PROJECT" "--filter=displayName=$BUDGET_NAME" '--format=value(name)'
+[[ -n $found ]] || run gcloud billing budgets create "--billing-account=$BILLING_ACCOUNT" "--billing-project=$PROJECT" "--display-name=$BUDGET_NAME" \
   "--budget-amount=${BUDGET_USD}USD" "--filter-projects=projects/$PROJECT_NUMBER" --threshold-rule=percent=0.5 --threshold-rule=percent=0.9 --threshold-rule=percent=1.0
 
 echo "== 7. email channel, uptime check, alert policy" >&2
