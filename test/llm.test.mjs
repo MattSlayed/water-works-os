@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { MODEL, claudeProvider, claudeClient, requestExtras, llmEnabled } from "../src/llm.mjs";
+import { MODEL, claudeProvider, claudeClient, requestExtras, llmEnabled, askClaude } from "../src/llm.mjs";
 
 const VERTEX = { WWOS_LLM_PROVIDER: "vertex", WWOS_VERTEX_PROJECT: "p", WWOS_VERTEX_REGION: "europe-west1" };
 
@@ -33,4 +33,17 @@ test("claudeClient: default model, one client per project/region/model, null whe
 test("claudeClient: a key gives the first-party client", async () => {
   const c = await claudeClient({ ANTHROPIC_API_KEY: "sk-test-not-a-key" });
   assert.equal(c.provider, "anthropic"); assert.equal(c.client.constructor.name, "Anthropic");
+});
+test("Vertex without a region: one warn line, null client, and askClaude falls back", async (t) => {
+  const warn = t.mock.method(console, "warn", () => {});
+  const saved = { ...process.env };
+  t.after(() => { for (const k of Object.keys(process.env)) if (!(k in saved)) delete process.env[k]; Object.assign(process.env, saved); });
+  delete process.env.CLOUD_ML_REGION; // the SDK would take its region from here
+  const env = { WWOS_LLM_PROVIDER: "vertex", WWOS_VERTEX_PROJECT: "p" };
+  assert.equal(await claudeClient(env), null);
+  assert.equal(warn.mock.callCount(), 1);
+  assert.match(warn.mock.calls[0].arguments[0], /^\[llm\] cannot build the vertex client: .*region/i);
+  Object.assign(process.env, env);
+  assert.equal(await askClaude({ system: "s", context: {}, question: "q" }), null);
+  assert.equal(warn.mock.callCount(), 2);
 });

@@ -33,7 +33,9 @@ export async function claudeClient(env = process.env) {
         const { default: Anthropic } = await import("@anthropic-ai/sdk");
         clients.set(key, new Anthropic());
       }
-    } catch {
+    } catch (error) {
+      // a missing region or SDK must be visible, not a silent fall back; the message carries no secret
+      console.warn(`[llm] cannot build the ${provider} client: ${error.message}; using the deterministic answer`);
       return null;
     }
   }
