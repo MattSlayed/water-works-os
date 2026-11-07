@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# WaterOS front door on Google Cloud: sign-in (IAP), Claude on Vertex AI (service account), budget, uptime alert.
+# WaterOS front door on Google Cloud: sign-in (IAP), Claude (first-party API with its key in Secret Manager, or Vertex AI
+# as the service account), budget, uptime alert.
 # Usage: deploy/gcp/front-door.sh [env-file]      (default: deploy/gcp/front-door.env, see front-door.env.example)
 #        DRY_RUN=1 deploy/gcp/front-door.sh       prints every gcloud command as "+ ..." and runs none
 # Safe to re-run: every create step looks first, the rest are idempotent in gcloud.
@@ -18,9 +19,11 @@ cd "$ROOT"
 
 set -a; source "$ENV_FILE"; set +a
 SERVICE_ACCOUNT_NAME=${SERVICE_ACCOUNT_NAME:-wateros-run}
-for v in PROJECT REGION SERVICE BILLING_ACCOUNT BUDGET_USD ALERT_EMAIL IAP_USERS VERTEX_REGION LLM_MODEL; do
+ANTHROPIC_SECRET=${ANTHROPIC_SECRET:-anthropic-api-key}
+for v in PROJECT REGION SERVICE BILLING_ACCOUNT BUDGET_USD ALERT_EMAIL IAP_USERS VERTEX_REGION LLM_MODEL LLM_PROVIDER; do
   [[ -n ${!v:-} ]] || { echo "front-door: $v is empty in $ENV_FILE" >&2; exit 2; }
 done
+[[ $LLM_PROVIDER = anthropic || $LLM_PROVIDER = vertex ]] || { echo "front-door: LLM_PROVIDER must be anthropic or vertex, not '$LLM_PROVIDER'" >&2; exit 2; }
 [[ $DRY_RUN = 1 ]] || command -v gcloud >/dev/null || { echo "front-door: gcloud is not on PATH" >&2; exit 2; }
 
 # IAP's Google-managed OAuth client admits only an organisation's own users, so a project without one (or with users
@@ -66,16 +69,37 @@ IFS=, read -ra raw <<<"$IAP_USERS"
 for u in "${raw[@]}"; do u=${u//[[:space:]]/}; [[ -z $u ]] || { USERS+=("$u"); OPERATORS+=${OPERATORS:+,}$u=*; }; done
 [[ ${#USERS[@]} -gt 0 ]] || { echo "front-door: IAP_USERS has no users" >&2; exit 2; }  # empty operators = every request 403
 # Env values hold commas, so the list uses gcloud's alternate delimiter: ^|^KEY=V|KEY=V
-ENV_VARS="^|^WWOS_HOST=0.0.0.0|WWOS_LLM_PROVIDER=vertex|WWOS_VERTEX_PROJECT=$PROJECT|WWOS_VERTEX_REGION=$VERTEX_REGION|WWOS_LLM_MODEL=$LLM_MODEL|WWOS_IAP_AUDIENCE=$AUDIENCE|WWOS_OPERATORS=$OPERATORS"
+ENV_VARS="^|^WWOS_HOST=0.0.0.0|WWOS_LLM_MODEL=$LLM_MODEL|WWOS_IAP_AUDIENCE=$AUDIENCE|WWOS_OPERATORS=$OPERATORS"
+if [[ $LLM_PROVIDER = vertex ]]; then
+  LLM_API=aiplatform.googleapis.com SECRETS=--clear-secrets  # a switch from anthropic must not leave the key mounted
+  ENV_VARS+="|WWOS_LLM_PROVIDER=vertex|WWOS_VERTEX_PROJECT=$PROJECT|WWOS_VERTEX_REGION=$VERTEX_REGION"
+else
+  LLM_API=secretmanager.googleapis.com SECRETS=--set-secrets=ANTHROPIC_API_KEY=$ANTHROPIC_SECRET:latest
+fi
 
 echo "== 1. enable APIs" >&2
-run gcloud services enable iap.googleapis.com aiplatform.googleapis.com run.googleapis.com cloudbuild.googleapis.com \
+run gcloud services enable iap.googleapis.com "$LLM_API" run.googleapis.com cloudbuild.googleapis.com \
   artifactregistry.googleapis.com monitoring.googleapis.com billingbudgets.googleapis.com --project "$PROJECT"
 
-echo "== 2. service account $SA_EMAIL" >&2
+echo "== 2. service account $SA_EMAIL and its access to Claude ($LLM_PROVIDER)" >&2
 get found '' gcloud iam service-accounts list --project "$PROJECT" "--filter=email=$SA_EMAIL" '--format=value(email)'
 [[ -n $found ]] || run gcloud iam service-accounts create "$SERVICE_ACCOUNT_NAME" --project "$PROJECT" --display-name "$SERVICE runtime"
-run_retry gcloud projects add-iam-policy-binding "$PROJECT" "--member=serviceAccount:$SA_EMAIL" --role=roles/aiplatform.user --condition=None --format=none
+if [[ $LLM_PROVIDER = vertex ]]; then
+  run_retry gcloud projects add-iam-policy-binding "$PROJECT" "--member=serviceAccount:$SA_EMAIL" --role=roles/aiplatform.user --condition=None --format=none
+else
+  # The key is read from the caller's ANTHROPIC_API_KEY only when the secret has no enabled version yet. It is never
+  # expanded on a command line (a trace would show it): node writes it to gcloud's stdin.
+  get found '' gcloud secrets list --project "$PROJECT" "--filter=name~/secrets/$ANTHROPIC_SECRET\$" '--format=value(name)'
+  version=''
+  [[ -z $found ]] || get version '' gcloud secrets versions list "$ANTHROPIC_SECRET" --project "$PROJECT" --filter=state=enabled '--format=value(name)'
+  if [[ -z $version ]]; then
+    [[ -n ${ANTHROPIC_API_KEY:+set} ]] || { echo "front-door: secret $ANTHROPIC_SECRET has no enabled version and ANTHROPIC_API_KEY is empty: export it in this shell first (docs/CLOUD-RUN.md, \"Claude's API key\")" >&2; exit 2; }
+    [[ -n $found ]] || run gcloud secrets create "$ANTHROPIC_SECRET" --project "$PROJECT" --replication-policy=automatic
+    if [[ $DRY_RUN = 1 ]]; then say gcloud secrets versions add "$ANTHROPIC_SECRET" --project "$PROJECT" --data-file=- '<stdin: $ANTHROPIC_API_KEY, not shown>'
+    else node -e 'process.stdout.write(process.env.ANTHROPIC_API_KEY)' | gcloud secrets versions add "$ANTHROPIC_SECRET" --project "$PROJECT" --data-file=-; fi
+  fi
+  run_retry gcloud secrets add-iam-policy-binding "$ANTHROPIC_SECRET" --project "$PROJECT" "--member=serviceAccount:$SA_EMAIL" --role=roles/secretmanager.secretAccessor --format=none
+fi
 
 if [[ -n $IAP_SETTINGS ]]; then
   echo "== 3. IAP sign-in uses the custom OAuth client" >&2
@@ -84,7 +108,7 @@ fi
 
 echo "== 4. deploy (IAP on, no public access)" >&2
 run gcloud run deploy "$SERVICE" --project "$PROJECT" --region "$REGION" --source . --iap --no-allow-unauthenticated \
-  --service-account "$SA_EMAIL" --memory 1Gi --cpu 1 --min-instances 0 --max-instances 1 --set-env-vars "$ENV_VARS"
+  --service-account "$SA_EMAIL" --memory 1Gi --cpu 1 --min-instances 0 --max-instances 1 --set-env-vars "$ENV_VARS" "$SECRETS"
 
 echo "== 5. IAP service agent may invoke the service" >&2
 run gcloud beta services identity create --service=iap.googleapis.com --project "$PROJECT" --format=none

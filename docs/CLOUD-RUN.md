@@ -5,7 +5,7 @@ Private test deployment in project `se-project-49281`, region `africa-south1`. S
 ## What it is
 
 - Synthetic data and the in-memory graph only. Timebase stays on this machine, so `WWOS_KG_BACKEND` isn't set.
-- Claude runs on Vertex AI as the `wateros-run` service account, so there is no API key. Until `front-door.sh` has run, agents give deterministic answers.
+- Claude runs through Anthropic's first-party API (`LLM_PROVIDER=anthropic`). Its key is in Secret Manager (`anthropic-api-key`), mounted as `ANTHROPIC_API_KEY`, and only the `wateros-run` service account may read it. Vertex AI has no Claude quota on this project yet (the requests of 20 Aug 2026 were denied); see "Claude's API key" for the switch. Until `front-door.sh` has run, agents give deterministic answers.
 - People sign in with Google through IAP. Only the addresses in `IAP_USERS` get in. Anonymous requests never reach the app.
 - Scales to zero. **Everything changed at runtime is lost when the instance stops**, including approvals.
 - `.gcloudignore` is an allowlist. `data/geo/` stays on this machine. The anatomy figures in `web/figures/` are uploaded, in their blueprint colours, except CHL-A and CHL-B: sync refuses a zone above technician clearance.
@@ -18,7 +18,7 @@ Browse to https://water-works-os-426022356353.africa-south1.run.app and sign in 
 
 ## Set up and redeploy
 
-Every project-specific value lives in `deploy/gcp/front-door.env` (the parameters are listed in `front-door.env.example`). One script does it all: APIs, the `wateros-run` service account with `roles/aiplatform.user`, IAP's custom OAuth client when the project has no organisation (see below), the deploy with `--iap --no-allow-unauthenticated`, who may sign in, a monthly budget with alerts at 50%, 90% and 100%, and an uptime check with an email alert.
+Every project-specific value lives in `deploy/gcp/front-door.env` (the parameters are listed in `front-door.env.example`). One script does it all: APIs, the `wateros-run` service account with access to Claude (the key's secret, or `roles/aiplatform.user` for Vertex), IAP's custom OAuth client when the project has no organisation (see below), the deploy with `--iap --no-allow-unauthenticated`, who may sign in, a monthly budget with alerts at 50%, 90% and 100%, and an uptime check with an email alert.
 
 ```
 DRY_RUN=1 bash deploy/gcp/front-door.sh    # prints each gcloud command, runs none
@@ -28,6 +28,31 @@ bash deploy/gcp/front-door.sh              # does it; safe to run again
 `VERTEX_REGION` and `LLM_MODEL` in the env file are placeholders until Model Garden confirms them. The script uses `--source .`, so it redeploys the code too.
 
 Before each deploy, check what will leave the machine with `gcloud meta list-files-for-upload`. `deploy/` is not in the allowlist, so it stays here.
+
+## Claude's API key
+
+**First run.** The script reads the key only from `ANTHROPIC_API_KEY` in your shell, never from a file. It reads it only while the secret has no version yet. Copy it from `.env` into the same shell without printing it. The line in `.env` must be `ANTHROPIC_API_KEY=sk-...`, without quotes.
+
+```
+export ANTHROPIC_API_KEY=$(sed -n 's/^ANTHROPIC_API_KEY=//p' .env)
+DRY_RUN=1 bash deploy/gcp/front-door.sh    # a dry run cannot see the secret's versions, so it wants the key too
+bash deploy/gcp/front-door.sh
+```
+
+The key reaches Secret Manager on gcloud's standard input. It never appears in the output, in a dry run, or in a `bash -x` trace. Later runs find the secret's version and need no key.
+
+**Rotate it.** Export the new key the same way, then add a version and redeploy, so a fresh instance reads `:latest`:
+
+```
+printf %s "$ANTHROPIC_API_KEY" | gcloud secrets versions add anthropic-api-key --data-file=- --project se-project-49281
+bash deploy/gcp/front-door.sh
+gcloud secrets versions list anthropic-api-key --project se-project-49281      # then disable the old one:
+gcloud secrets versions disable OLD_VERSION --secret anthropic-api-key --project se-project-49281
+```
+
+**Spend.** The GCP budget (`BUDGET_USD`) does not see Anthropic's bill, so set a monthly spend limit in the [Anthropic Console](https://console.anthropic.com/settings/limits) as well.
+
+**Switch to Vertex AI** once Claude quota is granted: set `LLM_PROVIDER=vertex` in `front-door.env` and run the script again. It grants `roles/aiplatform.user`, sets the Vertex variables, and redeploys with `--clear-secrets`, so the key is no longer mounted. The secret itself stays until you delete it (`gcloud secrets delete anthropic-api-key --project se-project-49281`). To switch back, set `LLM_PROVIDER=anthropic`. The script then grants no Vertex role, but it does not revoke one granted earlier.
 
 ## IAP sign-in without an organisation
 
@@ -44,10 +69,11 @@ Creating the client is a one-time step, done by hand in the Console; it cannot b
 
 ## Move to the company project
 
-1. Copy `deploy/gcp/front-door.env.example` to `deploy/gcp/front-door.env` and set `PROJECT`, `REGION`, `BILLING_ACCOUNT`, `ALERT_EMAIL`, `IAP_USERS`, `VERTEX_REGION` and `LLM_MODEL`.
+1. Copy `deploy/gcp/front-door.env.example` to `deploy/gcp/front-door.env` and set `PROJECT`, `REGION`, `BILLING_ACCOUNT`, `ALERT_EMAIL`, `IAP_USERS`, `LLM_PROVIDER`, `VERTEX_REGION` and `LLM_MODEL`.
 2. If the project has no organisation, or any `IAP_USERS` address is outside it, follow "IAP sign-in without an organisation" and set `IAP_OAUTH_CLIENT_FILE`.
-3. Run `DRY_RUN=1 bash deploy/gcp/front-door.sh`, read the plan, then run it without `DRY_RUN`.
-4. Check the Claude model is enabled in Model Garden for the new project.
+3. With `LLM_PROVIDER=anthropic`, export the key first (see "Claude's API key").
+4. Run `DRY_RUN=1 bash deploy/gcp/front-door.sh`, read the plan, then run it without `DRY_RUN`.
+5. With `LLM_PROVIDER=vertex`, check the Claude model is enabled in Model Garden for the new project, with quota.
 
 ## Remove it
 

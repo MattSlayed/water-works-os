@@ -22,10 +22,11 @@ const envWith = (vals) => tmpFile(Object.entries(vals).reduce((t, [k, v]) => t.r
   readFileSync(path.join(root, "deploy/gcp/front-door.env"), "utf8")));
 
 // This project has no organisation, so IAP needs the custom OAuth client; the fixture holds a sentinel secret.
-const CLIENT_SECRET = "GOCSPX-SENTINEL-456";
-const dry = (env = {}, file = envWith({ IAP_OAUTH_CLIENT_FILE: "test/fixtures/iap-oauth-client.json" })) =>
-  spawnSync(bash, ["deploy/gcp/front-door.sh", file], {
-    cwd: root, encoding: "utf8", env: { ...process.env, DRY_RUN: "1", PROJECT_NUMBER: "426022356353", ORG_CHECK: "none", ...env },
+// The Anthropic key comes from the caller's environment: a sentinel here, never a real key from the test runner's shell.
+const CLIENT_SECRET = "GOCSPX-SENTINEL-456", API_KEY = "sk-test-SENTINEL-123";
+const dry = (env = {}, file = envWith({ IAP_OAUTH_CLIENT_FILE: "test/fixtures/iap-oauth-client.json" }), flags = []) =>
+  spawnSync(bash, [...flags, "deploy/gcp/front-door.sh", file], {
+    cwd: root, encoding: "utf8", env: { ...process.env, DRY_RUN: "1", PROJECT_NUMBER: "426022356353", ORG_CHECK: "none", ANTHROPIC_API_KEY: API_KEY, ...env },
   });
 const count = (s, re) => (s.match(re) || []).length;
 
@@ -38,8 +39,7 @@ test("dry run prints the whole front-door plan and runs nothing", { skip }, () =
   assert.match(out, /gcloud run deploy water-works-os\b.*--iap\b.*--no-allow-unauthenticated/);
   assert.match(out, /--service-account wateros-run@se-project-49281\.iam\.gserviceaccount\.com/);
   assert.match(out, /--memory 1Gi --cpu 1 --min-instances 0 --max-instances 1/);
-  assert.match(out, /WWOS_LLM_PROVIDER=vertex/);
-  assert.match(out, /WWOS_VERTEX_PROJECT=se-project-49281/);
+  assert.match(out, /WWOS_LLM_MODEL=claude-opus-5-5/);
   assert.match(out, /WWOS_IAP_AUDIENCE=\/projects\/426022356353\/locations\/africa-south1\/services\/water-works-os/);
   assert.match(out, /WWOS_OPERATORS=matthewkoeberg13@gmail\.com=\*,matthew@novatekllc\.co\.za=\*/);
 
@@ -49,7 +49,6 @@ test("dry run prints the whole front-door plan and runs nothing", { skip }, () =
     assert.equal(count(out, new RegExp(re.source, "g")), 1, u);
   }
   assert.equal(count(out, /roles\/iap\.httpsResourceAccessor/g), 2);
-  assert.match(out, /roles\/aiplatform\.user/);
   assert.match(out, /serviceAccount:service-426022356353@gcp-sa-iap\.iam\.gserviceaccount\.com --role=roles\/run\.invoker/);
 
   assert.match(out, /gcloud billing budgets create .*--budget-amount=25USD/);
@@ -67,12 +66,59 @@ test("dry run prints the whole front-door plan and runs nothing", { skip }, () =
   assert.match(out, /gcloud monitoring policies create .*--notification-channels=/);
 
   assert.doesNotMatch(out, /--allow-unauthenticated/);
+});
+
+test("anthropic: the key goes to Secret Manager, readable by the runtime account on that secret only, never shown", { skip }, () => {
+  for (const flags of [[], ["-x"]]) {  // -x: a traced run must not show it either
+    const r = dry({}, undefined, flags);
+    assert.equal(r.status, 0, r.stderr);
+    const out = r.stdout;
+    assert.match(out, /gcloud services enable .*secretmanager\.googleapis\.com/);
+    assert.match(out, /gcloud secrets list --project se-project-49281 /);
+    assert.match(out, /gcloud secrets create anthropic-api-key --project se-project-49281 --replication-policy=automatic\n/);
+    assert.match(out, /gcloud secrets versions add anthropic-api-key --project se-project-49281 --data-file=- /);
+    assert.match(out, /gcloud secrets add-iam-policy-binding anthropic-api-key --project se-project-49281 --member=serviceAccount:wateros-run@se-project-49281\.iam\.gserviceaccount\.com --role=roles\/secretmanager\.secretAccessor/);
+    assert.doesNotMatch(out, /projects add-iam-policy-binding .*secretAccessor/, "never project-wide");
+    assert.match(out, /gcloud run deploy .*--set-secrets=ANTHROPIC_API_KEY=anthropic-api-key:latest/);
+    assert.doesNotMatch(out, /aiplatform/, "least privilege: no Vertex role");
+    assert.doesNotMatch(out, /WWOS_LLM_PROVIDER|WWOS_VERTEX_/);
+    assert.ok(!(r.stdout + r.stderr).includes(API_KEY), `the key is shown${flags.length ? " in a trace" : ""}`);
+    assert.ok(!(r.stdout + r.stderr).includes(CLIENT_SECRET));
+  }
+});
+
+test("anthropic: a secret with no version and no ANTHROPIC_API_KEY stops before the deploy", { skip }, () => {
+  const r = dry({ ANTHROPIC_API_KEY: "" });
+  assert.notEqual(r.status, 0);
+  assert.match(r.stderr, /anthropic-api-key has no enabled version and ANTHROPIC_API_KEY is empty: export it/);
+  assert.doesNotMatch(r.stdout, /secrets create|run deploy/);
+});
+
+test("vertex: today's plan, no key mounted (a switch from anthropic drops it)", { skip }, () => {
+  const r = dry({}, envWith({ LLM_PROVIDER: "vertex", IAP_OAUTH_CLIENT_FILE: "test/fixtures/iap-oauth-client.json" }));
+  assert.equal(r.status, 0, r.stderr);
+  const out = r.stdout;
+  assert.match(out, /gcloud services enable .*aiplatform\.googleapis\.com/);
+  assert.match(out, /gcloud projects add-iam-policy-binding se-project-49281 --member=serviceAccount:wateros-run@se-project-49281\.iam\.gserviceaccount\.com --role=roles\/aiplatform\.user/);
+  assert.match(out, /WWOS_LLM_PROVIDER=vertex/);
+  assert.match(out, /WWOS_VERTEX_PROJECT=se-project-49281/);
+  assert.match(out, /WWOS_VERTEX_REGION=global/);
+  assert.match(out, /WWOS_LLM_MODEL=claude-opus-5-5/);
+  assert.match(out, /gcloud run deploy .*--clear-secrets/);
+  assert.doesNotMatch(out, /secretmanager|gcloud secrets /);
   assert.doesNotMatch(out, /ANTHROPIC_API_KEY/);
+});
+
+test("an LLM_PROVIDER other than anthropic or vertex stops the script", { skip }, () => {
+  const r = dry({}, envWith({ LLM_PROVIDER: "openai", IAP_OAUTH_CLIENT_FILE: "test/fixtures/iap-oauth-client.json" }));
+  assert.notEqual(r.status, 0);
+  assert.match(r.stderr, /LLM_PROVIDER must be anthropic or vertex, not 'openai'/);
+  assert.equal(r.stdout, "");
 });
 
 test("re-running looks before it creates", { skip }, () => {
   const out = dry().stdout;
-  for (const what of ["iam service-accounts list", "billing budgets list", "beta monitoring channels list", "monitoring uptime list-configs", "monitoring policies list"])
+  for (const what of ["iam service-accounts list", "secrets list", "billing budgets list", "beta monitoring channels list", "monitoring uptime list-configs", "monitoring policies list"])
     assert.ok(out.includes(`gcloud ${what}`), what);
 });
 
