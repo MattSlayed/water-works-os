@@ -80,7 +80,8 @@ fi
 
 echo "== 1. enable APIs" >&2
 run gcloud services enable iap.googleapis.com "$LLM_API" run.googleapis.com cloudbuild.googleapis.com \
-  artifactregistry.googleapis.com monitoring.googleapis.com billingbudgets.googleapis.com storage.googleapis.com --project "$PROJECT"
+  artifactregistry.googleapis.com monitoring.googleapis.com billingbudgets.googleapis.com storage.googleapis.com \
+  cloudresourcemanager.googleapis.com --project "$PROJECT"  # gcloud iap web add-iam-policy-binding (step 6) needs it
 
 echo "== 2. service account $SA_EMAIL and its access to Claude ($LLM_PROVIDER)" >&2
 get found '' gcloud iam service-accounts list --project "$PROJECT" "--filter=email=$SA_EMAIL" '--format=value(email)'
@@ -149,7 +150,8 @@ get found '' gcloud monitoring uptime list-configs --project "$PROJECT" "--filte
   "--resource-labels=host=$HOST,project_id=$PROJECT" --protocol=https --headers=X-Requested-With=XMLHttpRequest --status-codes=401 \
   --period=5 --regions=europe,usa-iowa,usa-virginia
 get found '' gcloud monitoring policies list --project "$PROJECT" "--filter=displayName=$SERVICE-down" '--format=value(name)'
-[[ -n $found ]] || run gcloud monitoring policies create --project "$PROJECT" "--display-name=$SERVICE-down" "--notification-channels=$channel" \
+# --combiner is required: the API rejects the unset default (seen 2026-11-18)
+[[ -n $found ]] || run gcloud monitoring policies create --project "$PROJECT" "--display-name=$SERVICE-down" "--notification-channels=$channel" --combiner=OR \
   "--condition-display-name=$SERVICE uptime check failing" \
   "--condition-filter=metric.type=\"monitoring.googleapis.com/uptime_check/check_passed\" AND resource.type=\"uptime_url\" AND resource.label.host=\"$HOST\"" \
   '--aggregation={"alignmentPeriod":"300s","perSeriesAligner":"ALIGN_NEXT_OLDER","crossSeriesReducer":"REDUCE_COUNT_FALSE","groupByFields":["resource.label.host"]}' \

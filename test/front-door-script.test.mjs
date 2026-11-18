@@ -17,8 +17,8 @@ after(() => rmSync(tmp, { recursive: true, force: true }));
 const bashPath = (p) => process.platform === "win32" ? p.replace(/\\/g, "/").replace(/^([A-Za-z]):/, (_, d) => `/${d.toLowerCase()}`) : p;
 let n = 0;
 const tmpFile = (text) => { const f = path.join(tmp, `${++n}`); writeFileSync(f, text); return bashPath(f); };
-// The committed env file with some values changed.
-const envWith = (vals) => tmpFile(Object.entries(vals).reduce((t, [k, v]) => t.replace(new RegExp(`^${k}=.*$`, "m"), `${k}=${v}`),
+// The committed env file with some values changed. The client file path is set per test, never taken from this machine.
+const envWith = (vals) => tmpFile(Object.entries({ IAP_OAUTH_CLIENT_FILE: "", ...vals }).reduce((t, [k, v]) => t.replace(new RegExp(`^${k}=.*$`, "m"), `${k}=${v}`),
   readFileSync(path.join(root, "deploy/gcp/front-door.env"), "utf8")));
 
 // This project has no organisation, so IAP needs the custom OAuth client; the fixture holds a sentinel secret.
@@ -63,9 +63,10 @@ test("dry run prints the whole front-door plan and runs nothing", { skip }, () =
   assert.match(out, /gcloud monitoring uptime create water-works-os-uptime .*--headers=X-Requested-With=XMLHttpRequest .*--status-codes=401 /);
   assert.match(out, /--resource-labels=host=water-works-os-426022356353\.africa-south1\.run\.app,project_id=se-project-49281/);
   assert.doesNotMatch(out, /--path=/, "Git Bash would rewrite --path=/; the default path is /");
-  assert.match(out, /gcloud monitoring policies create .*--notification-channels=/);
+  assert.match(out, /gcloud monitoring policies create .*--notification-channels=\S+ --combiner=OR /);
 
   assert.doesNotMatch(out, /--allow-unauthenticated/);
+  assert.match(out, /gcloud services enable .*cloudresourcemanager\.googleapis\.com/, "step 6 fails without it on a fresh project");
 
   // saved state: a private bucket in the region, mounted where WWOS_STATE_FILE points, writable by the runtime account
   assert.match(out, /gcloud storage buckets create gs:\/\/se-project-49281-water-works-os-state --project se-project-49281 --location=africa-south1 --uniform-bucket-level-access --public-access-prevention/);
