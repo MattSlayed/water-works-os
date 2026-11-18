@@ -66,6 +66,14 @@ test("dry run prints the whole front-door plan and runs nothing", { skip }, () =
   assert.match(out, /gcloud monitoring policies create .*--notification-channels=/);
 
   assert.doesNotMatch(out, /--allow-unauthenticated/);
+
+  // saved state: a private bucket in the region, mounted where WWOS_STATE_FILE points, writable by the runtime account
+  assert.match(out, /gcloud storage buckets create gs:\/\/se-project-49281-water-works-os-state --project se-project-49281 --location=africa-south1 --uniform-bucket-level-access --public-access-prevention/);
+  assert.match(out, /buckets add-iam-policy-binding gs:\/\/se-project-49281-water-works-os-state --member=serviceAccount:wateros-run@se-project-49281\.iam\.gserviceaccount\.com --role=roles\/storage\.objectUser/);
+  assert.match(out, /--add-volume=name=state,type=cloud-storage,bucket=se-project-49281-water-works-os-state,mount-options=uid=1000;gid=1000/);
+  assert.match(out, /--add-volume-mount=volume=state,mount-path=\/state/);
+  assert.match(out, /WWOS_STATE_FILE=\/state\/wateros-state\.json/);
+  assert.ok(out.indexOf("buckets create") < out.indexOf("gcloud run deploy"), "the bucket exists before the deploy mounts it");
 });
 
 test("anthropic: the key goes to Secret Manager, readable by the runtime account on that secret only, never shown", { skip }, () => {

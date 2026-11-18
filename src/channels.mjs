@@ -4,6 +4,7 @@
 import { parseMessage } from "./parse.mjs";
 
 let seq = 0;
+export const channelIds = { get: () => seq, reserve: (n) => { seq = Math.max(seq, n); } }; // see actionIds
 
 export function createChannels({ ont, tel, actions, runtime, copilot, audit }) {
   const listeners = [];

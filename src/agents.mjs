@@ -716,11 +716,13 @@ export function dropPackEvidence(ctx) {
 const READS = { "m365.mail": ["list"], "m365.files": ["list", "moves"], "m365.teams": ["messages"], "google.mail": ["list"], "google.drive": ["list"], "google.sheets": ["values"],
   erp: ["suppliers", "purchaseOrders", "goodsReceipts", "invoices"] };
 
-export function createRuntime({ ont, tel, actions, audit, connectors = null }) {
+// state: what state() returned before a restart (src/state.mjs); the runs themselves come back from the ontology.
+export function createRuntime({ ont, tel, actions, audit, connectors = null, state = null }) {
   const specs = new Map(AGENT_SPECS.map((s) => [s.name, structuredClone(s)]));
   const logic = new Map(Object.entries(LOGIC));
-  const runs = [];
-  let n = 0;
+  const runs = state ? ont.list("AgentRun").sort((a, b) => (a.id < b.id ? -1 : 1)) : [];
+  let n = state ? state.n : 0;
+  if (state) for (const [name, a] of Object.entries(state.autonomy)) if (specs.has(name)) Object.assign(specs.get(name).autonomy, a);
 
   function makeCtx(spec, run, opts) {
     const view = ont.view(opts.actingUser);
@@ -744,7 +746,10 @@ export function createRuntime({ ont, tel, actions, audit, connectors = null }) {
       history: (id, k) => (view.get(id) ? tel.history(id, k) : []),
       fn: (name, ...args) => {
         if (!F[name]) throw new Error(`unknown function ${name}`);
-        return call(`fn:${name}`, args.length === 1 ? args[0] : args.map((a) => (a && a.id ? a.id : Array.isArray(a) ? `[${a.length}]` : a)), F[name](...args));
+        // the trace names its inputs; a series is logged as its length, not its 4,320 points (they are in the historian)
+        const brief = (a) => (a && a.id ? a.id : Array.isArray(a) ? `[${a.length}]` : a);
+        const one = args[0], plain = args.length === 1 && one && typeof one === "object" && !one.id && !Array.isArray(one);
+        return call(`fn:${name}`, plain ? Object.fromEntries(Object.entries(one).map(([k, v]) => [k, brief(v)])) : args.length === 1 ? args[0] : args.map(brief), F[name](...args));
       },
       act: (action, params, meta = {}) => {
         const no = (reason) => { run.refusals.push({ action, reason }); return call(action, params, { status: "refused", reason }); };
@@ -841,6 +846,7 @@ export function createRuntime({ ont, tel, actions, audit, connectors = null }) {
       return s;
     },
     run,
+    state: () => ({ n, autonomy: Object.fromEntries([...specs].map(([k, s]) => [k, s.autonomy])) }),
     runs: () => runs,
     getRun: (id) => runs.find((r) => r.id === id) || null
   };

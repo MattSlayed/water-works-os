@@ -20,6 +20,7 @@ cd "$ROOT"
 set -a; source "$ENV_FILE"; set +a
 SERVICE_ACCOUNT_NAME=${SERVICE_ACCOUNT_NAME:-wateros-run}
 ANTHROPIC_SECRET=${ANTHROPIC_SECRET:-anthropic-api-key}
+STATE_BUCKET=${STATE_BUCKET:-$PROJECT-$SERVICE-state}  # bucket names are global, so the default carries the project
 for v in PROJECT REGION SERVICE BILLING_ACCOUNT BUDGET_USD ALERT_EMAIL IAP_USERS VERTEX_REGION LLM_MODEL LLM_PROVIDER; do
   [[ -n ${!v:-} ]] || { echo "front-door: $v is empty in $ENV_FILE" >&2; exit 2; }
 done
@@ -69,7 +70,7 @@ IFS=, read -ra raw <<<"$IAP_USERS"
 for u in "${raw[@]}"; do u=${u//[[:space:]]/}; [[ -z $u ]] || { USERS+=("$u"); OPERATORS+=${OPERATORS:+,}$u=*; }; done
 [[ ${#USERS[@]} -gt 0 ]] || { echo "front-door: IAP_USERS has no users" >&2; exit 2; }  # empty operators = every request 403
 # Env values hold commas, so the list uses gcloud's alternate delimiter: ^|^KEY=V|KEY=V
-ENV_VARS="^|^WWOS_HOST=0.0.0.0|WWOS_LLM_MODEL=$LLM_MODEL|WWOS_IAP_AUDIENCE=$AUDIENCE|WWOS_OPERATORS=$OPERATORS"
+ENV_VARS="^|^WWOS_HOST=0.0.0.0|WWOS_LLM_MODEL=$LLM_MODEL|WWOS_IAP_AUDIENCE=$AUDIENCE|WWOS_OPERATORS=$OPERATORS|WWOS_STATE_FILE=/state/wateros-state.json"
 if [[ $LLM_PROVIDER = vertex ]]; then
   LLM_API=aiplatform.googleapis.com SECRETS=--clear-secrets  # a switch from anthropic must not leave the key mounted
   ENV_VARS+="|WWOS_LLM_PROVIDER=vertex|WWOS_VERTEX_PROJECT=$PROJECT|WWOS_VERTEX_REGION=$VERTEX_REGION"
@@ -79,7 +80,7 @@ fi
 
 echo "== 1. enable APIs" >&2
 run gcloud services enable iap.googleapis.com "$LLM_API" run.googleapis.com cloudbuild.googleapis.com \
-  artifactregistry.googleapis.com monitoring.googleapis.com billingbudgets.googleapis.com --project "$PROJECT"
+  artifactregistry.googleapis.com monitoring.googleapis.com billingbudgets.googleapis.com storage.googleapis.com --project "$PROJECT"
 
 echo "== 2. service account $SA_EMAIL and its access to Claude ($LLM_PROVIDER)" >&2
 get found '' gcloud iam service-accounts list --project "$PROJECT" "--filter=email=$SA_EMAIL" '--format=value(email)'
@@ -101,6 +102,13 @@ else
   run_retry gcloud secrets add-iam-policy-binding "$ANTHROPIC_SECRET" --project "$PROJECT" "--member=serviceAccount:$SA_EMAIL" --role=roles/secretmanager.secretAccessor --format=none
 fi
 
+echo "== 2b. state bucket gs://$STATE_BUCKET in $REGION, writable by the runtime account only" >&2
+# Saved state stays in the region (POPIA). Soft delete keeps overwritten snapshots 7 days, so a bad save can be rolled back.
+get found '' gcloud storage buckets list --project "$PROJECT" "--filter=name=$STATE_BUCKET" '--format=value(name)'
+[[ -n $found ]] || run gcloud storage buckets create "gs://$STATE_BUCKET" --project "$PROJECT" "--location=$REGION" \
+  --uniform-bucket-level-access --public-access-prevention --soft-delete-duration=7d
+run_retry gcloud storage buckets add-iam-policy-binding "gs://$STATE_BUCKET" "--member=serviceAccount:$SA_EMAIL" --role=roles/storage.objectUser --format=none
+
 if [[ -n $IAP_SETTINGS ]]; then
   echo "== 3. IAP sign-in uses the custom OAuth client" >&2
   run gcloud iap settings set "$IAP_SETTINGS" --project "$PROJECT" --format=none
@@ -108,7 +116,10 @@ fi
 
 echo "== 4. deploy (IAP on, no public access)" >&2
 run gcloud run deploy "$SERVICE" --project "$PROJECT" --region "$REGION" --source . --iap --no-allow-unauthenticated \
-  --service-account "$SA_EMAIL" --memory 1Gi --cpu 1 --min-instances 0 --max-instances 1 "--set-env-vars=$ENV_VARS" "$SECRETS"
+  --service-account "$SA_EMAIL" --memory 1Gi --cpu 1 --min-instances 0 --max-instances 1 "--set-env-vars=$ENV_VARS" "$SECRETS" \
+  --clear-volumes "--add-volume=name=state,type=cloud-storage,bucket=$STATE_BUCKET,mount-options=uid=1000;gid=1000" \
+  --clear-volume-mounts --add-volume-mount=volume=state,mount-path=/state
+# max-instances 1 is also what keeps the state file single-writer: two instances would overwrite each other's saves.
 
 echo "== 5. IAP service agent may invoke the service" >&2
 run gcloud beta services identity create --service=iap.googleapis.com --project "$PROJECT" --format=none

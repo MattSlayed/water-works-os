@@ -7,10 +7,24 @@ Private test deployment in project `se-project-49281`, region `africa-south1`. S
 - Synthetic data and the in-memory graph only. Timebase stays on this machine, so `WWOS_KG_BACKEND` isn't set.
 - Claude runs through Anthropic's first-party API (`LLM_PROVIDER=anthropic`). Its key is in Secret Manager (`anthropic-api-key`), mounted as `ANTHROPIC_API_KEY`, and only the `wateros-run` service account may read it. Vertex AI has no Claude quota on this project yet (the requests of 20 Aug 2026 were denied); see "Claude's API key" for the switch. Until `front-door.sh` has run, agents give deterministic answers.
 - People sign in with Google through IAP. Only the addresses in `IAP_USERS` get in. Anonymous requests never reach the app.
-- Scales to zero. **Everything changed at runtime is lost when the instance stops**, including approvals.
+- Scales to zero, and keeps what people and agents changed across restarts and redeploys (see "Saved state").
 - `.gcloudignore` is an allowlist. `data/geo/` stays on this machine. The anatomy figures in `web/figures/` are uploaded, in their blueprint colours, except CHL-A and CHL-B: sync refuses a zone above technician clearance.
 
 Operators (`WWOS_OPERATORS`) are demo operators: each signed-in address may act as any persona (`email=*`). Per-person limits come later, with real users.
+
+## Saved state
+
+`WWOS_STATE_FILE` names one JSON file (`src/state.mjs`). It holds what changed after the seed: objects and links, the hash-chained audit log, the agent runs, autonomy settings, the id counters and the plant clock. The server writes it every 30 s and on SIGTERM, which Cloud Run sends before stopping an instance. A start lays the file over a fresh seed, so a redeploy's seed fixes still show, except on objects someone has changed.
+
+- **Where.** Bucket `gs://se-project-49281-water-works-os-state` (`STATE_BUCKET`), in `africa-south1`, mounted at `/state`. Only `wateros-run` may write it. Soft delete keeps overwritten snapshots for 7 days.
+- **Limits.**
+  - A crash, as opposed to a normal stop, loses up to 30 s.
+  - Undo is not available for a decision made before a restart.
+  - Copilot chat sessions, "Mark seen" and muster start empty.
+  - `--max-instances 1` must stay: a second instance would overwrite the first's saves.
+- **Start over.** Delete the object, then restart: `gcloud storage rm gs://se-project-49281-water-works-os-state/wateros-state.json`.
+- **Roll back a bad save.** `gcloud storage ls --soft-deleted gs://se-project-49281-water-works-os-state/`, then `gcloud storage restore` the generation you want.
+- **Locally.** Unset, as before, every start is fresh. `WWOS_STATE_FILE=state.json npm start` keeps state between runs.
 
 ## Open it
 

@@ -4,3 +4,7 @@ node_modules/
 .playwright-mcp/
 # Flow Software's Timebase docs: a local mirror for internal use only, never published (scripts/vendor/mirror-timebase-docs.py)
 docs/vendor/timebase/
+
+# saved state from WWOS_STATE_FILE (docs/CLOUD-RUN.md, Saved state)
+state.json
+state.json.tmp

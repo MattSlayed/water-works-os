@@ -5,6 +5,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createSystem } from "./system.mjs";
+import { loadState, saveState } from "./state.mjs";
 import { dropPackEvidence } from "./agents.mjs";
 import { catalogueAllows } from "./actions.mjs";
 import { jobBrief, correctionsFor } from "./brief.mjs";
@@ -731,10 +732,20 @@ export function createServer(sys, { kgTools = createKgTools({ backend: createMem
 const SELF = fileURLToPath(import.meta.url);
 if (process.argv[1] && path.resolve(process.argv[1]).toLowerCase() === SELF.toLowerCase()) {
   const port = Number(process.argv[2]) || Number(process.env.PORT) || 8830;
-  const sys = createSystem({ seed: 7 });
+  // WWOS_STATE_FILE: where changes are kept across restarts (docs/CLOUD-RUN.md); unset, every start is fresh as before.
+  const stateFile = process.env.WWOS_STATE_FILE;
+  const state = stateFile ? loadState(stateFile, 7) : null;
+  const sys = createSystem({ seed: 7, state });
   const iap = process.env.WWOS_IAP_AUDIENCE ? { audience: process.env.WWOS_IAP_AUDIENCE, keys: googleIapKeys(), operators: parseOperators(process.env.WWOS_OPERATORS || "") } : undefined;
   const server = createServer(sys, { kgTools: await kgToolsFor(sys, process.env, { writeThrough: true }), iap });
-  for (const a of ["Shift Handover", "Process Watch", "Asset Watch", "Permit Guard", "Shift Cover", "Drop Pack", "Project Watch", "Procedure Steward"]) sys.runtime.run(a, { actingUser: SYSTEM_USER, trigger: { kind: "startup" } });
+  // a resumed shift has had its start-of-shift runs
+  if (!state) for (const a of ["Shift Handover", "Process Watch", "Asset Watch", "Permit Guard", "Shift Cover", "Drop Pack", "Project Watch", "Procedure Steward"]) sys.runtime.run(a, { actingUser: SYSTEM_USER, trigger: { kind: "startup" } });
   setInterval(() => server.tick(1), 2000).unref();
-  server.listen(port, process.env.WWOS_HOST || "127.0.0.1", () => console.log(`Water Works OS on http://localhost:${port}  (plant clock ${sys.tel.now()}, Claude ${llmEnabled() ? "on" : "off: deterministic agents"})`));
+  if (stateFile) {
+    const save = () => { try { saveState(stateFile, sys); } catch (e) { console.error(`state not saved: ${e.message}`); } };
+    setInterval(save, 30000).unref();
+    // Cloud Run sends SIGTERM 10 s before it stops an instance
+    for (const sig of ["SIGTERM", "SIGINT"]) process.once(sig, () => { save(); process.exit(0); });
+  }
+  server.listen(port, process.env.WWOS_HOST || "127.0.0.1", () => console.log(`Water Works OS on http://localhost:${port}  (plant clock ${sys.tel.now()}, Claude ${llmEnabled() ? "on" : "off: deterministic agents"}, state ${stateFile ? (state ? `resumed from ${state.savedAt}` : "new") : "not kept"})`));
 }

@@ -14,6 +14,8 @@ const lv = (l) => LEVELS.indexOf(l);
 
 let seq = 0;
 const nextId = (p) => `${p}-${String(++seq).padStart(5, "0")}`;
+// A restored state carries the counter, so a new id never lands on a saved object (src/state.mjs).
+export const actionIds = { get: () => seq, reserve: (n) => { seq = Math.max(seq, n); } };
 const wallClock = () => new Date().toISOString();
 
 // needs: the level an actor must hold to apply the action directly. ceiling: the most an agent may ever hold

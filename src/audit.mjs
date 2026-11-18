@@ -9,8 +9,9 @@ const canonical = (v) =>
 const digest = (prev, body) => createHash("sha256").update(prev + canonical(body)).digest("hex").slice(0, 32);
 export const GENESIS = "0".repeat(32);
 
-export function createAudit() {
-  const log = [];
+// records: a saved log (src/state.mjs), taken as is so verify() still checks the chain it was written with.
+export function createAudit(records = []) {
+  const log = [...records];
   return {
     append(entry) {
       const prev = log.length ? log[log.length - 1].hash : GENESIS;
